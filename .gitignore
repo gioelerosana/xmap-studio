@@ -1,0 +1,22 @@
+# Build Rust (copre anche src-tauri/target e xtask/target)
+target/
+
+# Artefatti di distribuzione
+dist/
+*.AppImage
+
+# Renderer MathJax: rigenerato automaticamente da build.rs
+# (copiato dall'oracolo ~/.local/share/xmind-latex oppure via `npm install`)
+src-tauri/resources/renderer/node_modules/
+src-tauri/resources/renderer/package.json
+src-tauri/resources/renderer/package-lock.json
+
+# Backup e file temporanei generati dall'app durante il salvataggio
+*.backup.*.xmind
+.xmind-eq-*.tmp
+
+# Log, editor, OS
+*.log
+*.swp
+*.swo
+.DS_Store
