@@ -19,21 +19,16 @@ use crate::raster;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TitleMode {
     /// Titolo vuoto: XMind nasconde la vista testo e mostra solo l'equazione.
+    #[default]
     FormulaOnly,
     KeepTitle,
     Custom {
         title: String,
     },
-}
-
-impl Default for TitleMode {
-    fn default() -> Self {
-        TitleMode::FormulaOnly
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,7 +71,7 @@ pub fn apply_equation(
 
     let render = renderer
         .render(latex, em_px)
-        .map_err(|e| crate::mathjax::render_error(e))?;
+        .map_err(crate::mathjax::render_error)?;
 
     if let Some(err) = render.error.as_deref() {
         return Err(ErrorPayload::new(

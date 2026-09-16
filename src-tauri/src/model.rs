@@ -441,7 +441,7 @@ mod tests {
             Some("R \\subseteq A \\times B")
         );
         assert!(find_topic(&typed, "t1").unwrap().is_equation());
-        assert!(find_topic(&typed, "t1").unwrap().is_plain_image() == false);
+        assert!(!find_topic(&typed, "t1").unwrap().is_plain_image());
         assert!(find_topic(&typed, "t2").unwrap().latex().is_none());
     }
 
