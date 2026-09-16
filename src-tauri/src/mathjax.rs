@@ -47,9 +47,7 @@ impl Renderer {
                 candidates.push(parent.join("src-tauri/resources/renderer"));
             }
         }
-        candidates.push(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/renderer"),
-        );
+        candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/renderer"));
         // Bundle installato: accanto all'eseguibile o in share/xmind-equation-studio.
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {

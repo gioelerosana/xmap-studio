@@ -19,9 +19,7 @@ pub fn ensure_extracted() -> Result<PathBuf> {
         // la lunghezza dell'archivio invalida la cache quando il renderer cambia
         .join(format!("{}-{}", env!("CARGO_PKG_VERSION"), ARCHIVE.len()));
 
-    if base.join("gen_equation.mjs").is_file()
-        && base.join("node_modules/mathjax-full").is_dir()
-    {
+    if base.join("gen_equation.mjs").is_file() && base.join("node_modules/mathjax-full").is_dir() {
         return Ok(base);
     }
 

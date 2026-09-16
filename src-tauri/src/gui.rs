@@ -255,7 +255,10 @@ fn build_ui(app: &adw::Application) {
             let Some(label) = li.child().and_then(|c| c.downcast::<gtk::Label>().ok()) else {
                 return;
             };
-            let Some(obj) = li.item().and_then(|o| o.downcast::<gtk::StringObject>().ok()) else {
+            let Some(obj) = li
+                .item()
+                .and_then(|o| o.downcast::<gtk::StringObject>().ok())
+            else {
                 return;
             };
             let id = obj.string().to_string();
@@ -591,12 +594,11 @@ fn build_ui(app: &adw::Application) {
             rebuild_list(&ui, &state, wb.as_ref());
         });
     }
-    for (b, f) in filter_buttons.iter().zip([
-        Filter::All,
-        Filter::Equation,
-        Filter::Text,
-        Filter::Image,
-    ]) {
+    for (b, f) in
+        filter_buttons
+            .iter()
+            .zip([Filter::All, Filter::Equation, Filter::Text, Filter::Image])
+    {
         let ui = ui.clone();
         let state = state.clone();
         b.connect_toggled(move |btn| {
@@ -765,8 +767,13 @@ fn build_ui(app: &adw::Application) {
     }
 }
 
-fn add_action<F>(app: &adw::Application, window: &adw::ApplicationWindow, name: &str, accels: &[&str], f: F)
-where
+fn add_action<F>(
+    app: &adw::Application,
+    window: &adw::ApplicationWindow,
+    name: &str,
+    accels: &[&str],
+    f: F,
+) where
     F: Fn() + 'static,
 {
     let action = gio::SimpleAction::new(name, None);
@@ -779,7 +786,8 @@ where
 
 fn editor_text(view: &gtk::TextView) -> String {
     let buf = view.buffer();
-    buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string()
+    buf.text(&buf.start_iter(), &buf.end_iter(), false)
+        .to_string()
 }
 
 fn spawn_blocking<T, F, D>(work: F, done: D)
@@ -845,7 +853,11 @@ fn rebuild_list(ui: &Rc<Ui>, state: &Rc<State>, wb: Option<&WorkbookDto>) {
         }
         t.display_title.to_lowercase().contains(&query)
             || t.title.to_lowercase().contains(&query)
-            || t.latex.as_deref().unwrap_or("").to_lowercase().contains(&query)
+            || t.latex
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&query)
             || t.path.join(" › ").to_lowercase().contains(&query)
     };
 
@@ -940,7 +952,8 @@ fn update_status(ui: &Rc<Ui>, status: &StatusDto) {
         ui.status_badges.remove(&child);
     }
     if status.dirty {
-        ui.status_badges.append(&badge("modifiche non salvate", "warning"));
+        ui.status_badges
+            .append(&badge("modifiche non salvate", "warning"));
     }
     if !status.xmind_running.is_empty() {
         let b = badge("XMind è aperto — salvataggio bloccato", "error");
@@ -948,7 +961,8 @@ fn update_status(ui: &Rc<Ui>, status: &StatusDto) {
         ui.status_badges.append(&b);
     }
     if status.conflict {
-        ui.status_badges.append(&badge("file modificato su disco", "error"));
+        ui.status_badges
+            .append(&badge("file modificato su disco", "error"));
     }
     if status.renderer_checked && !status.renderer_ready {
         let b = badge("renderer MathJax assente", "error");
@@ -1000,7 +1014,12 @@ fn run_preview(ui: &Rc<Ui>, state: &Rc<State>) {
     }
     ui.preview_box.set_visible(true);
 
-    let color = if state.dark.get() { "#ffffff" } else { "#000000" }.to_string();
+    let color = if state.dark.get() {
+        "#ffffff"
+    } else {
+        "#000000"
+    }
+    .to_string();
     let controller = state.controller.clone();
     let ui = ui.clone();
     spawn_blocking(
@@ -1037,8 +1056,11 @@ fn run_preview(ui: &Rc<Ui>, state: &Rc<State>) {
                     Err(_) => ui.preview_picture.set_paintable(None::<&gdk::Texture>),
                 }
                 ui.preview_error.set_visible(false);
-                ui.preview_dims
-                    .set_label(&format!("{} × {} px", render.width.round(), render.height.round()));
+                ui.preview_dims.set_label(&format!(
+                    "{} × {} px",
+                    render.width.round(),
+                    render.height.round()
+                ));
             }
             Ok(_) => clear_preview(&ui),
             Err(e) => {
@@ -1086,7 +1108,12 @@ fn do_apply(ui: &Rc<Ui>, state: &Rc<State>) {
     let ui = ui.clone();
     let state = state.clone();
     spawn_blocking(
-        move || controller.lock().unwrap().apply(&topic_id, &latex, title_mode),
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .apply(&topic_id, &latex, title_mode)
+        },
         move |result| {
             set_busy(&ui, false, "Applica");
             match result {

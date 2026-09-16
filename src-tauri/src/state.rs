@@ -75,17 +75,15 @@ pub struct TopicView {
 
 impl OpenWorkbook {
     pub fn open(path: &Path) -> Result<Self, ErrorPayload> {
-        let archive = archive::read_archive(path).map_err(|e| {
-            ErrorPayload::new(CODE_FORMAT, format!("{e:#}"))
-        })?;
+        let archive = archive::read_archive(path)
+            .map_err(|e| ErrorPayload::new(CODE_FORMAT, format!("{e:#}")))?;
 
         let content_bytes = archive
             .entries
             .get("content.json")
             .ok_or_else(|| ErrorPayload::new(CODE_FORMAT, "content.json assente"))?;
-        let content: Vec<Sheet> = serde_json::from_slice(content_bytes).map_err(|e| {
-            ErrorPayload::new(CODE_FORMAT, format!("content.json non valido: {e}"))
-        })?;
+        let content: Vec<Sheet> = serde_json::from_slice(content_bytes)
+            .map_err(|e| ErrorPayload::new(CODE_FORMAT, format!("content.json non valido: {e}")))?;
 
         // Il manifest può mancare in file molto vecchi: lo ricostruiamo al salvataggio.
         let manifest: Value = archive
@@ -94,9 +92,8 @@ impl OpenWorkbook {
             .and_then(|b| serde_json::from_slice(b).ok())
             .unwrap_or_else(|| serde_json::json!({ "file-entries": {} }));
 
-        let opened_hash = archive::hash_file(path).map_err(|e| {
-            ErrorPayload::new(crate::error::CODE_IO, format!("{e:#}"))
-        })?;
+        let opened_hash = archive::hash_file(path)
+            .map_err(|e| ErrorPayload::new(crate::error::CODE_IO, format!("{e:#}")))?;
         let opened_mtime = archive::mtime(path);
 
         Ok(Self {
@@ -155,13 +152,16 @@ impl OpenWorkbook {
             .insert("content.json".to_string(), content_bytes);
 
         // 2) thumbnail stantia: la rigenera XMind al prossimo salvataggio
-        self.archive.entries.shift_remove("Thumbnails/thumbnail.png");
+        self.archive
+            .entries
+            .shift_remove("Thumbnails/thumbnail.png");
 
         // 3) manifest: registra tutte le risorse + content/metadata
         let resource_names: Vec<String> = self.archive.resources.keys().cloned().collect();
         validate::refresh_manifest(&mut self.manifest, resource_names.into_iter(), true);
-        let manifest_bytes = serde_json::to_vec(&self.manifest)
-            .map_err(|e| ErrorPayload::new(CODE_FORMAT, format!("serializzazione manifest: {e}")))?;
+        let manifest_bytes = serde_json::to_vec(&self.manifest).map_err(|e| {
+            ErrorPayload::new(CODE_FORMAT, format!("serializzazione manifest: {e}"))
+        })?;
         self.archive
             .entries
             .insert("manifest.json".to_string(), manifest_bytes);
@@ -213,8 +213,9 @@ impl OpenWorkbook {
         })?;
 
         // Validazione post-scrittura del file reale.
-        let written = std::fs::read(target)
-            .map_err(|e| ErrorPayload::new(crate::error::CODE_IO, format!("rilettura fallita: {e:#}")))?;
+        let written = std::fs::read(target).map_err(|e| {
+            ErrorPayload::new(crate::error::CODE_IO, format!("rilettura fallita: {e:#}"))
+        })?;
         validate::validate_archive_bytes(&written).map_err(|e| {
             ErrorPayload::new(
                 CODE_VALIDATION,
@@ -394,10 +395,14 @@ mod tests {
         ]);
         let mut entries: Entries = IndexMap::new();
         entries.insert("content.json".into(), serde_json::to_vec(&content).unwrap());
-        entries.insert("metadata.json".into(), b"{\"dataStructureVersion\":\"3\"}".to_vec());
+        entries.insert(
+            "metadata.json".into(),
+            b"{\"dataStructureVersion\":\"3\"}".to_vec(),
+        );
         entries.insert(
             "manifest.json".into(),
-            br#"{"file-entries":{"content.json":{},"metadata.json":{},"resources/e.png":{}}}"#.to_vec(),
+            br#"{"file-entries":{"content.json":{},"metadata.json":{},"resources/e.png":{}}}"#
+                .to_vec(),
         );
         entries.insert("content.xml".into(), b"<x/>".to_vec());
         let mut resources = IndexMap::new();
@@ -439,11 +444,16 @@ mod tests {
         wb.commit();
         assert!(wb.is_dirty());
         assert!(wb.undo());
-        assert_eq!(serde_json::to_value(&wb.content).unwrap(), serde_json::to_value(&original).unwrap());
+        assert_eq!(
+            serde_json::to_value(&wb.content).unwrap(),
+            serde_json::to_value(&original).unwrap()
+        );
         assert!(!wb.is_dirty());
         assert!(wb.redo());
         assert_eq!(
-            crate::model::find_topic(&wb.content, "a").unwrap().title_str(),
+            crate::model::find_topic(&wb.content, "a")
+                .unwrap()
+                .title_str(),
             "Modificato"
         );
     }
@@ -452,7 +462,9 @@ mod tests {
     fn save_roundtrip_preserves_unknown_and_validates() {
         let (dir, mut wb) = open_fixture();
         // modifica: cambia titolo + aggiungi risorsa fittizia
-        crate::model::find_topic_mut(&mut wb.content, "a").unwrap().title = Some("Alfa 2".into());
+        crate::model::find_topic_mut(&mut wb.content, "a")
+            .unwrap()
+            .title = Some("Alfa 2".into());
         wb.archive
             .resources
             .insert("resources/z.png".into(), vec![1, 2, 3, 4]);
@@ -462,14 +474,19 @@ mod tests {
         // riapre e verifica
         let reopened = OpenWorkbook::open(&target).unwrap();
         assert_eq!(
-            crate::model::find_topic(&reopened.content, "a").unwrap().title_str(),
+            crate::model::find_topic(&reopened.content, "a")
+                .unwrap()
+                .title_str(),
             "Alfa 2"
         );
         // campi sconosciuti preservati
         let v = serde_json::to_value(&reopened.content).unwrap();
         assert_eq!(v[0]["revisionId"], json!("r1"));
         // la thumbnail è stata rimossa e manifest aggiornato
-        assert!(!reopened.archive.entries.contains_key("Thumbnails/thumbnail.png"));
+        assert!(!reopened
+            .archive
+            .entries
+            .contains_key("Thumbnails/thumbnail.png"));
         validate::validate_archive_bytes(&std::fs::read(&target).unwrap()).unwrap();
         // risorsa nuova registrata
         let reopened_raw = archive::read_archive(&target).unwrap();
@@ -481,7 +498,9 @@ mod tests {
         let (_d, mut wb) = open_fixture();
         // altera il file su disco
         std::fs::write(&wb.path, b"changed externally").unwrap();
-        let err = wb.save_to(&wb.path.clone(), false, false, false).unwrap_err();
+        let err = wb
+            .save_to(&wb.path.clone(), false, false, false)
+            .unwrap_err();
         assert_eq!(err.code, CODE_CONFLICT);
         assert!(wb.save_to(&wb.path.clone(), true, false, false).is_ok());
     }

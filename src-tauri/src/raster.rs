@@ -38,9 +38,7 @@ pub fn svg_to_png(
         &mut pixmap.as_mut(),
     );
 
-    pixmap
-        .encode_png()
-        .context("codifica PNG fallita")
+    pixmap.encode_png().context("codifica PNG fallita")
 }
 
 #[cfg(test)]
@@ -56,7 +54,13 @@ mod tests {
         // dimensioni pixel = logiche * 3
         let w = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
         let h = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
-        assert_eq!((w, h), ((112.54f64 * 3.0).round() as u32, (19.92f64 * 3.0).round() as u32));
+        assert_eq!(
+            (w, h),
+            (
+                (112.54f64 * 3.0).round() as u32,
+                (19.92f64 * 3.0).round() as u32
+            )
+        );
     }
 
     #[test]

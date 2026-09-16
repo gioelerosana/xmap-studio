@@ -93,9 +93,7 @@ fn e2e_apply_save_validate_reopen() {
                 let mut all = Vec::new();
                 model::walk_topic(root, &mut all);
                 for t in all {
-                    if t.child_count() == 0
-                        && !t.title_str().trim().is_empty()
-                        && !t.is_equation()
+                    if t.child_count() == 0 && !t.title_str().trim().is_empty() && !t.is_equation()
                     {
                         chosen = Some((t.id.clone().unwrap(), t.title_str().to_string()));
                         break 'outer;
@@ -110,9 +108,16 @@ fn e2e_apply_save_validate_reopen() {
     let latex = "A \\cup B = B \\iff A \\subseteq B";
     let (outcome, png) = {
         let topic = model::find_topic_mut(&mut wb.content, &target_id).unwrap();
-        let (o, png) =
-            apply_equation(&renderer, topic, latex, 23.33, 3.0, TitleMode::FormulaOnly, "#000000")
-                .unwrap();
+        let (o, png) = apply_equation(
+            &renderer,
+            topic,
+            latex,
+            23.33,
+            3.0,
+            TitleMode::FormulaOnly,
+            "#000000",
+        )
+        .unwrap();
         (o, png)
     };
 
@@ -124,7 +129,9 @@ fn e2e_apply_save_validate_reopen() {
     );
     assert!(outcome.width > 0 && outcome.height > 0);
 
-    wb.archive.resources.insert(outcome.resource.clone(), png.clone());
+    wb.archive
+        .resources
+        .insert(outcome.resource.clone(), png.clone());
     wb.commit();
     assert!(wb.is_dirty());
 
@@ -147,7 +154,11 @@ fn e2e_apply_save_validate_reopen() {
     let reopened = OpenWorkbook::open(&working).unwrap();
     let topic = model::find_topic(&reopened.content, &target_id).unwrap();
     assert_eq!(topic.latex(), Some(latex));
-    assert_eq!(topic.title_str(), "", "formula-only deve svuotare il titolo");
+    assert_eq!(
+        topic.title_str(),
+        "",
+        "formula-only deve svuotare il titolo"
+    );
     assert!(topic.title_unedited.is_none());
 
     let image = topic.image.as_ref().expect("image annidata presente");
@@ -156,15 +167,16 @@ fn e2e_apply_save_validate_reopen() {
     assert!(src.starts_with("xap:resources/"), "src errato: {src}");
     assert_eq!(src, format!("xap:{}", outcome.resource));
     assert_eq!(image.width.as_ref().unwrap().as_i64(), Some(outcome.width));
-    assert_eq!(image.height.as_ref().unwrap().as_i64(), Some(outcome.height));
+    assert_eq!(
+        image.height.as_ref().unwrap().as_i64(),
+        Some(outcome.height)
+    );
 
     // risorsa presente nello ZIP e registrata nel manifest
     assert!(reread.resources.contains_key(&outcome.resource[..]));
     let manifest: serde_json::Value =
         serde_json::from_slice(reread.entries.get("manifest.json").unwrap()).unwrap();
-    assert!(manifest["file-entries"]
-        .get(&outcome.resource)
-        .is_some());
+    assert!(manifest["file-entries"].get(&outcome.resource).is_some());
 
     // niente chiavi flat (errore classico)
     let flat_present = serde_json::to_value(topic)
@@ -194,7 +206,11 @@ fn e2e_apply_save_validate_reopen() {
         }
         v
     };
-    assert_eq!(new_topics.len(), original_topics.len(), "numero topic cambiato");
+    assert_eq!(
+        new_topics.len(),
+        original_topics.len(),
+        "numero topic cambiato"
+    );
     for (id, before) in &original_topics {
         if id == &target_id {
             continue;
@@ -209,7 +225,10 @@ fn e2e_apply_save_validate_reopen() {
         original_content[0].get("revisionId"),
         new_content[0].get("revisionId")
     );
-    assert_eq!(original_content[0].get("theme"), new_content[0].get("theme"));
+    assert_eq!(
+        original_content[0].get("theme"),
+        new_content[0].get("theme")
+    );
 
     eprintln!(
         "E2E OK → {} (backup: {})",

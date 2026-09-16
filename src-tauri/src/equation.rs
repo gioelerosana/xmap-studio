@@ -25,7 +25,9 @@ pub enum TitleMode {
     /// Titolo vuoto: XMind nasconde la vista testo e mostra solo l'equazione.
     FormulaOnly,
     KeepTitle,
-    Custom { title: String },
+    Custom {
+        title: String,
+    },
 }
 
 impl Default for TitleMode {
@@ -83,8 +85,14 @@ pub fn apply_equation(
         ));
     }
 
-    let png = raster::svg_to_png(&render.svg, render.width, render.height, raster_scale, color)
-        .map_err(|e| ErrorPayload::new(CODE_LATEX, format!("rasterizzazione fallita: {e:#}")))?;
+    let png = raster::svg_to_png(
+        &render.svg,
+        render.width,
+        render.height,
+        raster_scale,
+        color,
+    )
+    .map_err(|e| ErrorPayload::new(CODE_LATEX, format!("rasterizzazione fallita: {e:#}")))?;
 
     let width = render.width.round().max(1.0) as i64;
     let height = render.height.round().max(1.0) as i64;

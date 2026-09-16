@@ -65,7 +65,11 @@ fn appimage() {
     fs::copy(release.join(BIN), bin_dir.join(BIN)).expect("copia binario");
     fs::copy(root.join("assets/icon-256.png"), &icon256).expect("copia icona 256");
     fs::copy(root.join("assets/icon-512.png"), &icon512).expect("copia icona 512");
-    fs::copy(root.join("assets/icon-256.png"), appdir.join(format!("{APP_ID}.png"))).unwrap();
+    fs::copy(
+        root.join("assets/icon-256.png"),
+        appdir.join(format!("{APP_ID}.png")),
+    )
+    .unwrap();
     fs::copy(root.join("assets/icon-256.png"), appdir.join(".DirIcon")).unwrap();
 
     let apprun = appdir.join("AppRun");

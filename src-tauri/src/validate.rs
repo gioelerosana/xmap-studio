@@ -47,7 +47,8 @@ pub fn validate_archive_bytes(bytes: &[u8]) -> Result<ValidationReport> {
     let content_bytes = contents
         .get("content.json")
         .context("content.json assente nell'output")?;
-    let content: Value = serde_json::from_slice(content_bytes).context("content.json non è JSON")?;
+    let content: Value =
+        serde_json::from_slice(content_bytes).context("content.json non è JSON")?;
     if !content.is_array() {
         bail!("content.json non è un array di sheet");
     }
@@ -134,9 +135,7 @@ pub fn refresh_manifest(
     }
 
     for name in resource_names {
-        entries
-            .entry(name)
-            .or_insert_with(|| serde_json::json!({}));
+        entries.entry(name).or_insert_with(|| serde_json::json!({}));
     }
 }
 
@@ -150,18 +149,26 @@ mod tests {
         let mut entries: IndexMap<String, Vec<u8>> = IndexMap::new();
         entries.insert("content.json".into(), content.as_bytes().to_vec());
         entries.insert("manifest.json".into(), manifest.as_bytes().to_vec());
-        entries.insert("metadata.json".into(), b"{\"dataStructureVersion\":\"3\"}".to_vec());
+        entries.insert(
+            "metadata.json".into(),
+            b"{\"dataStructureVersion\":\"3\"}".to_vec(),
+        );
         let mut res: IndexMap<String, Vec<u8>> = IndexMap::new();
         for (n, b) in resources {
             res.insert((*n).to_string(), b.to_vec());
         }
-        build_archive_bytes(&RawArchive { entries, resources: res }).unwrap()
+        build_archive_bytes(&RawArchive {
+            entries,
+            resources: res,
+        })
+        .unwrap()
     }
 
     #[test]
     fn valid_archive_passes() {
         let content = r#"[{"id":"s","rootTopic":{"id":"r","title":"x"}}]"#;
-        let manifest = r#"{"file-entries":{"content.json":{},"metadata.json":{},"resources/a.png":{}}}"#;
+        let manifest =
+            r#"{"file-entries":{"content.json":{},"metadata.json":{},"resources/a.png":{}}}"#;
         let bytes = archive_with(content, manifest, &[("resources/a.png", b"png")]);
         let report = validate_archive_bytes(&bytes).unwrap();
         assert_eq!(report.resources, 1);
@@ -196,7 +203,11 @@ mod tests {
     #[test]
     fn refresh_manifest_registers_and_drops_thumbnail() {
         let mut m = serde_json::json!({"file-entries":{"Thumbnails/thumbnail.png":{},"x":{}}});
-        refresh_manifest(&mut m, vec!["resources/new.png".to_string()].into_iter(), true);
+        refresh_manifest(
+            &mut m,
+            vec!["resources/new.png".to_string()].into_iter(),
+            true,
+        );
         let e = &m["file-entries"];
         assert!(e.get("resources/new.png").is_some());
         assert!(e.get("content.json").is_some());

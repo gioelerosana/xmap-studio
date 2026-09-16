@@ -40,8 +40,16 @@ fn main() {
 
     let (outcome, png) = {
         let topic = model::find_topic_mut(&mut wb.content, &target_id).unwrap();
-        apply_equation(&renderer, topic, latex, 23.33, 3.0, TitleMode::FormulaOnly, "#000000")
-            .expect("applicazione equazione")
+        apply_equation(
+            &renderer,
+            topic,
+            latex,
+            23.33,
+            3.0,
+            TitleMode::FormulaOnly,
+            "#000000",
+        )
+        .expect("applicazione equazione")
     };
     wb.archive.resources.insert(outcome.resource.clone(), png);
     wb.commit();
@@ -51,12 +59,6 @@ fn main() {
         .expect("salvataggio");
     println!(
         "OK {} → {} (risorsa {}, {}×{} px, {} bytes, backup {:?})",
-        src,
-        out,
-        outcome.resource,
-        outcome.width,
-        outcome.height,
-        save.bytes,
-        save.backup
+        src, out, outcome.resource, outcome.width, outcome.height, save.bytes, save.backup
     );
 }

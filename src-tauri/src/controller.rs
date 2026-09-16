@@ -146,10 +146,7 @@ impl AppController {
             Some(wb) => StatusDto {
                 has_workbook: true,
                 path: Some(wb.path.display().to_string()),
-                file_name: wb
-                    .path
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string()),
+                file_name: wb.path.file_name().map(|s| s.to_string_lossy().to_string()),
                 dirty: wb.is_dirty(),
                 can_undo: wb.pos > 0,
                 can_redo: wb.pos + 1 < wb.history.len(),
@@ -241,10 +238,7 @@ impl AppController {
             .as_ref()
             .map(OpenWorkbook::to_dto)
             .ok_or_else(|| ErrorPayload::new(CODE_NO_WORKBOOK, "Nessun file aperto."))?;
-        Ok(BatchResultDto {
-            outcomes,
-            workbook,
-        })
+        Ok(BatchResultDto { outcomes, workbook })
     }
 
     pub fn apply(
@@ -266,9 +260,8 @@ impl AppController {
         title: Option<String>,
     ) -> Result<WorkbookDto, ErrorPayload> {
         self.with_wb(|wb| {
-            let topic = model::find_topic_mut(&mut wb.content, topic_id).ok_or_else(|| {
-                ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato.")
-            })?;
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
             equation::remove_equation(topic, title);
             wb.commit();
             Ok(wb.to_dto())
@@ -348,10 +341,7 @@ impl AppController {
             model::find_topic(&wb.content, topic_id)
                 .and_then(|t| t.latex().map(str::to_string))
                 .ok_or_else(|| {
-                    ErrorPayload::new(
-                        CODE_TOPIC_NOT_FOUND,
-                        "Il blocco non contiene un'equazione.",
-                    )
+                    ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Il blocco non contiene un'equazione.")
                 })?
         };
         let renderer = self.renderer()?;

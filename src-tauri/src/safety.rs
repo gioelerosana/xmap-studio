@@ -62,9 +62,7 @@ fn is_xmind_invocation(cmdline: &str) -> bool {
         let base = tok.rsplit('/').next().unwrap_or(tok);
         // Nome eseguibile ESATTO e minuscolo di XMind ("xmind"), non qualsiasi
         // token che finisce in "XMind" (es. il nome della nostra AppImage).
-        base == "xmind"
-            || tok.ends_with("/app/main/xmind")
-            || tok.contains("net.xmind.XMind")
+        base == "xmind" || tok.ends_with("/app/main/xmind") || tok.contains("net.xmind.XMind")
     })
 }
 
@@ -98,15 +96,11 @@ mod tests {
 
     #[test]
     fn flatpak_xmind_is_flagged() {
-        assert!(is_xmind_invocation(
-            "/app/main/xmind --enable-features=Foo"
-        ));
+        assert!(is_xmind_invocation("/app/main/xmind --enable-features=Foo"));
         assert!(is_xmind_invocation(
             "bwrap --args 34 /app/main/xmind /some/file.xmind"
         ));
-        assert!(is_xmind_invocation(
-            "/usr/bin/flatpak run net.xmind.XMind"
-        ));
+        assert!(is_xmind_invocation("/usr/bin/flatpak run net.xmind.XMind"));
     }
 
     #[test]

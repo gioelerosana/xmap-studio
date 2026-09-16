@@ -31,23 +31,11 @@ pub struct Sheet {
     pub class: Option<String>,
     #[serde(default, skip_serializing_if = "is_none")]
     pub title: Option<String>,
-    #[serde(
-        rename = "revisionId",
-        default,
-        skip_serializing_if = "is_none"
-    )]
+    #[serde(rename = "revisionId", default, skip_serializing_if = "is_none")]
     pub revision_id: Option<String>,
-    #[serde(
-        rename = "rootTopic",
-        default,
-        skip_serializing_if = "is_none"
-    )]
+    #[serde(rename = "rootTopic", default, skip_serializing_if = "is_none")]
     pub root_topic: Option<Topic>,
-    #[serde(
-        rename = "topicOverlapping",
-        default,
-        skip_serializing_if = "is_none"
-    )]
+    #[serde(rename = "topicOverlapping", default, skip_serializing_if = "is_none")]
     pub topic_overlapping: Option<Value>,
     #[serde(
         rename = "arrangeableLayerOrder",
@@ -81,17 +69,9 @@ pub struct Topic {
     pub extensions: Option<Vec<Extension>>,
     #[serde(default, skip_serializing_if = "is_none")]
     pub summaries: Option<Value>,
-    #[serde(
-        rename = "titleUnedited",
-        default,
-        skip_serializing_if = "is_none"
-    )]
+    #[serde(rename = "titleUnedited", default, skip_serializing_if = "is_none")]
     pub title_unedited: Option<bool>,
-    #[serde(
-        rename = "structureClass",
-        default,
-        skip_serializing_if = "is_none"
-    )]
+    #[serde(rename = "structureClass", default, skip_serializing_if = "is_none")]
     pub structure_class: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -123,11 +103,7 @@ pub struct Image {
     pub width: Option<serde_json::Number>,
     #[serde(default, skip_serializing_if = "is_none")]
     pub height: Option<serde_json::Number>,
-    #[serde(
-        rename = "isMathJaxImage",
-        default,
-        skip_serializing_if = "is_none"
-    )]
+    #[serde(rename = "isMathJaxImage", default, skip_serializing_if = "is_none")]
     pub is_mathjax_image: Option<bool>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -139,11 +115,7 @@ pub struct Extension {
     pub provider: Option<String>,
     #[serde(default, skip_serializing_if = "is_none")]
     pub content: Option<Value>,
-    #[serde(
-        rename = "resourceRefs",
-        default,
-        skip_serializing_if = "is_none"
-    )]
+    #[serde(rename = "resourceRefs", default, skip_serializing_if = "is_none")]
     pub resource_refs: Option<Value>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -435,9 +407,15 @@ mod tests {
         assert_eq!(root["weird"]["nested"], json!(true));
         let ch = &root["children"];
         assert_eq!(ch["unknownChildrenGroup"][0]["id"], json!("u1"));
-        assert_eq!(ch["attached"][1]["children"]["unknownGroup"][0]["title"], json!("y"));
+        assert_eq!(
+            ch["attached"][1]["children"]["unknownGroup"][0]["title"],
+            json!("y")
+        );
         assert_eq!(ch["attached"][0]["image"]["extraImageField"], json!(7));
-        assert_eq!(ch["attached"][0]["extensions"][0]["resourceRefs"], json!([]));
+        assert_eq!(
+            ch["attached"][0]["extensions"][0]["resourceRefs"],
+            json!([])
+        );
     }
 
     #[test]
@@ -458,7 +436,10 @@ mod tests {
             out
         };
         assert_eq!(all.len(), 6, "root + t1 + t2 + d1 + s1 + c1");
-        assert_eq!(find_topic(&typed, "t1").unwrap().latex(), Some("R \\subseteq A \\times B"));
+        assert_eq!(
+            find_topic(&typed, "t1").unwrap().latex(),
+            Some("R \\subseteq A \\times B")
+        );
         assert!(find_topic(&typed, "t1").unwrap().is_equation());
         assert!(find_topic(&typed, "t1").unwrap().is_plain_image() == false);
         assert!(find_topic(&typed, "t2").unwrap().latex().is_none());
