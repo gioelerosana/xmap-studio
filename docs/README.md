@@ -1,4 +1,4 @@
-# Documentazione — XMind Equation Studio
+# Documentazione — XMap Studio
 
 Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 [`README.md`](../README.md) nella radice; qui c'è il dettaglio per chi sviluppa.
@@ -10,6 +10,7 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Prerequisiti, build, run, renderer incorporato, AppImage |
 | [`TESTING.md`](TESTING.md) | Strategia di test, comandi, test su mappa reale |
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
+| [`PRODUCT.md`](PRODUCT.md) | Posizionamento, feature precluse a XMind Free, roadmap |
 
 Per le regole di lavoro destinate agli agenti (e ai contributor) vedi
 [`AGENTS.md`](../AGENTS.md) nella radice.

@@ -170,13 +170,13 @@ fn build_ui(app: &adw::Application) {
     // ---------------------------------------------------------------- finestra
     let window = adw::ApplicationWindow::builder()
         .application(app)
-        .title("XMind Equation Studio")
+        .title("XMap Studio")
         .default_width(1240)
         .default_height(820)
         .build();
 
     let header = adw::HeaderBar::new();
-    let header_title = adw::WindowTitle::new("XMind Equation Studio", "Nessun file aperto");
+    let header_title = adw::WindowTitle::new("XMap Studio", "Nessun file aperto");
     header.set_title_widget(Some(&header_title));
 
     let open_btn = gtk::Button::from_icon_name("document-open-symbolic");
@@ -1778,7 +1778,7 @@ fn open_path(ui: &Rc<Ui>, state: &Rc<State>, path: PathBuf) {
 fn choose_save_as(ui: &Rc<Ui>, state: &Rc<State>) {
     let dialog = gtk::FileDialog::builder()
         .title("Salva con nome")
-        .initial_name("mappa.equation-studio.xmind")
+        .initial_name("mappa.xmap-studio.xmind")
         .modal(true)
         .build();
     let filter = gtk::FileFilter::new();
@@ -1889,7 +1889,7 @@ fn toggle_theme(ui: &Rc<Ui>, state: &Rc<State>) {
 fn show_about(ui: &Ui) {
     let dialog = adw::MessageDialog::builder()
         .transient_for(&ui.window)
-        .heading("XMind Equation Studio")
+        .heading("XMap Studio")
         .body(format!(
             "Versione {}\n\nEditor nativo (GTK4) per equazioni LaTeX in formato \
              XMind. Rendering MathJax identico a XMind, scrittura atomica e validata.",

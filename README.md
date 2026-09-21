@@ -1,10 +1,17 @@
-# XMind Equation Studio
+# XMap Studio
 
-App desktop Linux nativa che fa **una cosa sola**: apre un file `.xmind`, mostra la
-mappa come lista di blocchi, permette di modificarli — testo, aggiunta di
-sotto-blocchi, eliminazione, spostamento con drag & drop — e di sostituire il
-contenuto di un blocco con una formula **LaTeX nativa** (MathJax), salvando in modo
-sicuro.
+Companion desktop Linux nativo di **XMind gratuito**. Apre un file `.xmind`,
+mostra la mappa come lista di blocchi e permette di fare ciò che l'app nativa non
+lascia fare, **restando pienamente compatibile con il formato XMind**: quello che
+scrivi si riapre in XMind e si modifica lì.
+
+Oggi sa:
+
+- modificare i blocchi — testo, aggiunta di sotto-blocchi, eliminazione,
+  spostamento con drag & drop;
+- sostituire il contenuto di un blocco con una formula **LaTeX nativa**
+  (MathJax), senza il pulsante "Equation" bloccato nella versione gratuita;
+- salvare in modo sicuro (scrittura atomica, backup nascosti, validazione).
 
 Niente account, niente telemetria, niente webview. Apre, mostra, modifica, salva.
 
@@ -12,6 +19,9 @@ XMind gratuito blocca il pulsante "Equation", ma **il formato su disco accetta l
 equazioni**: l'app scrive nel formato nativo, quindi in XMind la formula appare
 renderizzata e **cliccandoci sopra si riapre l'editor equazioni** con il LaTeX
 corretto.
+
+La direzione del prodotto — quali capacità di XMind Free reimplementare — è in
+[`docs/PRODUCT.md`](docs/PRODUCT.md).
 
 ---
 
@@ -56,7 +66,7 @@ xmind-LaTeX/
 │       ├── safety.rs                     # XMind aperto + conflitti su disco
 │       └── state.rs                      # workbook aperto, undo/redo, salvataggio
 ├── xtask/                        # `cargo xtask appimage` (task di build in Rust)
-└── demo/Relazioni.equation-studio.xmind
+└── demo/Relazioni.xmap-studio.xmind
 ```
 
 ### Renderer incorporato (nessuno script esterno)
@@ -72,7 +82,7 @@ xmind-LaTeX/
    binario muto.
 
 A runtime `renderer_assets.rs` estrae l'archivio una sola volta in
-`~/.cache/xmind-equation-studio/renderer/<versione>-<len>/` e da lì `node` esegue
+`~/.cache/xmap-studio/renderer/<versione>-<len>/` e da lì `node` esegue
 `gen_equation.mjs`. L'app funziona quindi **anche senza `resources/renderer` su
 disco** (verificato: i test passano con la cartella rimossa).
 
@@ -169,7 +179,7 @@ Regole rispettate (ognuna è una trappola già incontrata):
 - **Round-trip preservation** — test che serializza senza modifiche e confronta i
   JSON: i campi sconosciuti restano intatti.
 - **Scrittura atomica** — temp nella stessa directory → `fsync` → **backup datato**
-  in una cartella nascosta (`.xmind-equation-studio/backups/`, ultimi 5 per file)
+  in una cartella nascosta (`.xmap-studio/backups/`, ultimi 5 per file)
   → `rename()` → `fsync` della directory.
 - **XMind aperto** — rilevato via `/proc`; il salvataggio è **bloccato** (non un
   semplice avviso), con possibilità esplicita di forzare.
@@ -193,7 +203,7 @@ Nessun npm, nessun bundler, nessuno script di setup: solo Cargo.
 
 ```bash
 cargo run                 # avvio in sviluppo
-cargo build --release     # binario ottimizzato (target/release/xmind-equation-studio)
+cargo build --release     # binario ottimizzato (target/release/xmap-studio)
 cargo test                # 30 unit + 2 end-to-end su mappa reale
 cargo xtask appimage      # AppImage con icona in dist/
 ```
@@ -202,7 +212,7 @@ cargo xtask appimage      # AppImage con icona in dist/
 `.desktop`) e produce:
 
 ```
-dist/XMind_Equation_Studio-<versione>-x86_64.AppImage
+dist/XMap_Studio-<versione>-x86_64.AppImage
 ```
 
 `appimagetool` viene scaricato automaticamente in cache al primo uso.
@@ -244,11 +254,11 @@ Artefatto generato e verificato:
 ```bash
 cargo run --example inject -- \
   "$HOME/Nextcloud/Polimi/Logica e Algebra/Relazioni.xmind" \
-  demo/Relazioni.equation-studio.xmind \
+  demo/Relazioni.xmap-studio.xmind \
   "Unione" 'A \cup B = B \iff A \subseteq B'
 ```
 
-Per la conferma finale in XMind: apri `demo/Relazioni.equation-studio.xmind`,
+Per la conferma finale in XMind: apri `demo/Relazioni.xmap-studio.xmind`,
 l'equazione appare renderizzata sotto "Unione"; cliccandoci sopra si riapre
 l'editor equazioni nativo con il LaTeX corretto.
 

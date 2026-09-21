@@ -5,10 +5,10 @@
 //! Utile per generare un file di prova da aprire in XMind e per confrontarsi
 //! con l'oracolo Python.
 
-use xmind_equation_studio_lib::equation::{apply_equation, TitleMode};
-use xmind_equation_studio_lib::mathjax::Renderer;
-use xmind_equation_studio_lib::model;
-use xmind_equation_studio_lib::state::OpenWorkbook;
+use xmap_studio_lib::equation::{apply_equation, TitleMode};
+use xmap_studio_lib::mathjax::Renderer;
+use xmap_studio_lib::model;
+use xmap_studio_lib::state::OpenWorkbook;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

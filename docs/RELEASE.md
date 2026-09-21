@@ -5,17 +5,17 @@
 Il progetto segue [SemVer](https://semver.org/lang/it/). La versione vive in un
 unico punto:
 
-- `src-tauri/Cargo.toml` → campo `version` del package `xmind-equation-studio`.
+- `src-tauri/Cargo.toml` → campo `version` del package `xmap-studio`.
 
 Da lì viene letta da `xtask` per il nome dell'AppImage
-(`XMind_Equation_Studio-<versione>-x86_64.AppImage`) e compilata in
+(`XMap_Studio-<versione>-x86_64.AppImage`) e compilata in
 `env!("CARGO_PKG_VERSION")` (usata nella finestra "Informazioni" e nella cache
 del renderer). Non duplicare la versione altrove.
 
 ## Checklist
 
 1. Aggiorna `version` in `src-tauri/Cargo.toml` (e `Cargo.lock` di conseguenza:
-   `cargo update -p xmind-equation-studio --precise <versione>` oppure build).
+   `cargo update -p xmap-studio --precise <versione>` oppure build).
 2. Aggiorna il `README.md` se cambiano stack, architettura o limiti noti.
 3. `cargo fmt && cargo clippy --all-targets` — deve essere pulito.
 4. `cargo test` — tutti verdi (o skip correttamente motivati).
@@ -37,8 +37,8 @@ del renderer). Non duplicare la versione altrove.
 
 | Artefatto | Percorso | Distribuito |
 |---|---|---|
-| Binario di release | `target/release/xmind-equation-studio` | no |
-| AppImage | `dist/XMind_Equation_Studio-<versione>-x86_64.AppImage` | sì |
+| Binario di release | `target/release/xmap-studio` | no |
+| AppImage | `dist/XMap_Studio-<versione>-x86_64.AppImage` | sì |
 
 `dist/` è in `.gitignore`: gli artefatti **non** finiscono nel repository, ma
 vanno allegati alla release GitLab.

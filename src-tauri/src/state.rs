@@ -221,7 +221,7 @@ impl OpenWorkbook {
                 CODE_VALIDATION,
                 format!(
                     "ATTENZIONE: il file scritto non è valido ({e:#}). \
-                     Recupera un backup dalla cartella .xmind-equation-studio/backups/."
+                     Recupera un backup dalla cartella .xmap-studio/backups/."
                 ),
             )
         })?;

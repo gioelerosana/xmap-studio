@@ -1,4 +1,4 @@
-//! XMind Equation Studio — app desktop nativa (GTK4 + libadwaita).
+//! XMap Studio — app desktop nativa (GTK4 + libadwaita).
 //!
 //! Apre un `.xmind`, mostra i topic come blocchi, applica/rimuove equazioni
 //! MathJax native e salva in modo atomico e validato, senza mai distruggere i
@@ -19,7 +19,7 @@ pub mod state;
 pub mod validate;
 
 /// Application ID GApplication (deve essere un nome DNS invertito valido).
-pub const APP_ID: &str = "org.joel.xmind_equation_studio";
+pub const APP_ID: &str = "org.joel.xmap_studio";
 
 pub fn run() -> gtk::glib::ExitCode {
     gui::run()

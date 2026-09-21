@@ -9,8 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const APP_ID: &str = "org.joel.xmind_equation_studio";
-const BIN: &str = "xmind-equation-studio";
+const APP_ID: &str = "org.joel.xmap_studio";
+const BIN: &str = "xmap-studio";
 const APPIMAGE_TOOL_URL: &str =
     "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage";
 
@@ -79,8 +79,8 @@ fn appimage() {
     let desktop = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Name=XMind Equation Studio\n\
-         Comment=Editor di equazioni LaTeX per mappe XMind\n\
+         Name=XMap Studio\n\
+         Comment=Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato\n\
          Exec={BIN}\n\
          Icon={APP_ID}\n\
          Categories=Office;\n\
@@ -93,7 +93,7 @@ fn appimage() {
     let tool = ensure_appimagetool();
     let dist = root.join("dist");
     fs::create_dir_all(&dist).unwrap();
-    let output = dist.join(format!("XMind_Equation_Studio-{version}-x86_64.AppImage"));
+    let output = dist.join(format!("XMap_Studio-{version}-x86_64.AppImage"));
     let _ = fs::remove_file(&output);
 
     println!("==> appimagetool");
@@ -122,7 +122,7 @@ fn ensure_appimagetool() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(env::temp_dir)
-        .join("xmind-equation-studio");
+        .join("xmap-studio");
     fs::create_dir_all(&cache).expect("cache appimagetool");
     let tool = cache.join("appimagetool-x86_64.AppImage");
     if tool.is_file() {

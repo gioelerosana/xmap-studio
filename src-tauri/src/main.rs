@@ -1,3 +1,3 @@
 fn main() -> gtk::glib::ExitCode {
-    xmind_equation_studio_lib::run()
+    xmap_studio_lib::run()
 }
