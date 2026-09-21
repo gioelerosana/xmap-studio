@@ -1,0 +1,5 @@
+- [x] Spostamento dei blocchi nell'albero di fianco con drag & drop (rientro aggiornato)
+- [x] Save on close (prompt Salva/Non salvare/Annulla)
+- [x] Tasto elimina blocco più evidente (cestino rosso nella testata)
+- [x] Quando premo il tasto applica la colonna di sinistra deve mantenere la posizione e non tornare ogni volta all'inizio del file
+- [x] Evita di creare tutti questi file di backup o per lo meno non farmeli vedere tutti. Mettili dentro una cartella nascosta e tienili sotto controllo 

@@ -35,6 +35,7 @@ pub const CODE_RENDERER: &str = "renderer";
 pub const CODE_VALIDATION: &str = "validation";
 pub const CODE_IO: &str = "io";
 pub const CODE_FORMAT: &str = "format";
+pub const CODE_MOVE: &str = "move";
 
 /// Converte un `anyhow::Error` in payload, usando IO come fallback.
 pub fn from_anyhow(e: anyhow::Error) -> ErrorPayload {

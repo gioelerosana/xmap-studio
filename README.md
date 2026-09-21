@@ -1,8 +1,10 @@
 # XMind Equation Studio
 
 App desktop Linux nativa che fa **una cosa sola**: apre un file `.xmind`, mostra la
-mappa come lista di blocchi, permette di sostituire il contenuto di un blocco con
-una formula **LaTeX nativa** (MathJax), e salva in modo sicuro.
+mappa come lista di blocchi, permette di modificarli — testo, aggiunta di
+sotto-blocchi, eliminazione, spostamento con drag & drop — e di sostituire il
+contenuto di un blocco con una formula **LaTeX nativa** (MathJax), salvando in modo
+sicuro.
 
 Niente account, niente telemetria, niente webview. Apre, mostra, modifica, salva.
 
@@ -47,6 +49,7 @@ xmind-LaTeX/
 │       ├── model.rs                      # struct con #[serde(flatten)] extra
 │       ├── archive.rs                    # lettura/scrittura ZIP, atomic, backup
 │       ├── equation.rs                   # applica/rimuovi equazione su un topic
+│       ├── edit.rs                       # testo, aggiunta, eliminazione, spostamento topic
 │       ├── mathjax.rs                    # rendering LaTeX via Node (mathjax-full)
 │       ├── raster.rs                     # SVG → PNG (resvg), 3× supersampling
 │       ├── validate.rs                   # validazione ZIP/JSON/risorse/manifest
@@ -98,7 +101,7 @@ save(force)
   → safety::has_conflict       (file cambiato su disco dall'apertura?)
   → state.build_bytes          (content.json + manifest + thumbnail rimossa)
   → validate::validate_archive_bytes  (in memoria, PRIMA di scrivere)
-  → archive::atomic_write      (temp stessa dir → fsync → backup datato → rename → fsync dir)
+  → archive::atomic_write      (temp stessa dir → fsync → backup in cartella nascosta → rename → fsync dir)
   → validazione post-scrittura del file reale
 ```
 
@@ -106,6 +109,9 @@ La UI non blocca mai il main loop: apertura, rendering, applicazione e salvatagg
 girano su un thread di lavoro e rientrano via `glib::MainContext::spawn_local`.
 L'anteprima è debounced (~220 ms). La scoperta del renderer avviene in background
 all'avvio.
+
+Chiudendo la finestra con modifiche non salvate l'app chiede se salvare, scartare o
+annullare; non si perde nulla per distrazione.
 
 ---
 
@@ -163,6 +169,7 @@ Regole rispettate (ognuna è una trappola già incontrata):
 - **Round-trip preservation** — test che serializza senza modifiche e confronta i
   JSON: i campi sconosciuti restano intatti.
 - **Scrittura atomica** — temp nella stessa directory → `fsync` → **backup datato**
+  in una cartella nascosta (`.xmind-equation-studio/backups/`, ultimi 5 per file)
   → `rename()` → `fsync` della directory.
 - **XMind aperto** — rilevato via `/proc`; il salvataggio è **bloccato** (non un
   semplice avviso), con possibilità esplicita di forzare.
@@ -207,7 +214,17 @@ dist/XMind_Equation_Studio-<versione>-x86_64.AppImage
 ### Scorciatoie
 
 `Ctrl+O` apri · `Ctrl+S` salva · `Ctrl+Shift+S` salva con nome · `Ctrl+Z` annulla ·
-`Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+Enter` applica.
+`Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+Enter` applica · `Ctrl+Shift+N` aggiungi
+sotto-blocco.
+
+Nell'albero a sinistra puoi **trascinare un blocco** su un altro per spostarlo:
+rilasciando al centro diventa un sotto-blocco, sui bordi superiore/inferiore si
+riordina tra i fratelli. Il rientro si aggiorna da solo.
+
+Nella testata dell'editor il pulsante **+** aggiunge un sotto-blocco e il cestino
+rosso elimina il blocco (con i suoi figli) chiedendo conferma. Esportazione SVG/PNG,
+rimozione dell'equazione ed eliminazione stanno anche nel menu **☰**: si attivano
+solo quando il blocco selezionato le ammette.
 
 ---
 
@@ -263,5 +280,7 @@ l'editor equazioni nativo con il LaTeX corretto.
 - Solo formato moderno (`content.json`); il legacy XMind 8 (`content.xml`) non è
   supportato e viene segnalato.
 - Il rendering richiede Node.js nel `PATH` (già presente).
-- Nessun editing della struttura della mappa, note, marker o temi: fuori scope.
+- Editing supportato: testo dei blocchi, aggiunta di sotto-blocchi, eliminazione di
+  un blocco (con i suoi figli) e spostamento (riordino o riannidamento) via drag &
+  drop nell'albero. Restano fuori scope note, marker e temi.
 - L'AppImage non include GTK4/libadwaita né Node: vanno presenti sul sistema.

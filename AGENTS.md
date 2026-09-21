@@ -6,10 +6,11 @@ tecnico vedi [`docs/`](docs/README.md).
 
 ## Cos'è questo progetto
 
-**XMind Equation Studio** è un'app desktop Linux nativa che fa una cosa sola:
-apre un file `.xmind`, mostra la mappa come lista di blocchi, permette di
-sostituire il contenuto di un blocco con una formula **LaTeX nativa** (MathJax) e
-salva in modo sicuro. Scrive nel formato nativo di XMind, quindi in XMind la
+**XMind Equation Studio** è un'app desktop Linux nativa che apre un file
+`.xmind`, mostra la mappa come lista di blocchi, permette di **modificare il
+contenuto** dei blocchi — testo, aggiunta di sotto-blocchi, eliminazione,
+spostamento con drag & drop — e di sostituire il contenuto di un blocco con una
+formula **LaTeX nativa** (MathJax), salvando in modo sicuro. Scrive nel formato nativo di XMind, quindi in XMind la
 formula appare renderizzata e cliccandoci sopra si riapre l'editor equazioni con
 il LaTeX corretto.
 
@@ -29,8 +30,9 @@ una scelta di stile.
    deve sopravvivere al round-trip. Le struct hanno sempre
    `#[serde(flatten)] extra` (`src-tauri/src/model.rs`). Non rimuovere mai
    `extra`, non usare `serde(default)` senza `skip_serializing_if`.
-2. **Il disco si tocca solo in `archive::atomic_write`** (`archive.rs:144`):
-   temp nella stessa directory → `fsync` → backup datato → `rename` → `fsync`
+2. **Il disco si tocca solo in `archive::atomic_write`** (`archive.rs:209`):
+   temp nella stessa directory → `fsync` → backup datato nella cartella nascosta
+   `.xmind-equation-studio/backups/` (ultimi 5 per file) → `rename` → `fsync`
    della directory. Non aggiungere altre scritture dirette sul file `.xmind`.
 3. **Si valida prima di scrivere.** `validate_archive_bytes` (`validate.rs:28`)
    deve passare in memoria prima di sovrascrivere. Se fallisce, il file originale
@@ -131,7 +133,7 @@ Mappa dei moduli e flusso dati: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - `target/` (root, `src-tauri/`, `xtask/`)
 - `dist/` e `*.AppImage`
 - `src-tauri/resources/renderer/node_modules/` e i `package*.json` generati
-- backup `*.backup.*.xmind` e temp `.xmind-eq-*.tmp`
+- cartella backup `.xmind-equation-studio/`, `*.backup.*.xmind` e temp `.xmind-eq-*.tmp`
 - log e file editor/OS
 
 `Cargo.lock` è **versionato** (è un'applicazione, non una libreria). Non
@@ -202,7 +204,9 @@ cargo run --example inject -- \
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 non è supportato.
 - Il rendering richiede Node.js nel `PATH`.
-- Nessun editing di struttura, note, marker o temi: fuori scope.
+- Editing: testo dei blocchi, aggiunta di sotto-blocchi, eliminazione (con i
+  figli) e spostamento (riordino/riannidamento) via drag & drop nell'albero.
+  Restano fuori scope note, marker e temi.
 - L'AppImage non include GTK4/libadwaita né Node.
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della
   sicurezza dei dati e dell'undo).

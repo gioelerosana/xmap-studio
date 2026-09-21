@@ -40,12 +40,13 @@ Tutto vive in `src-tauri/src/`.
 |---|---|---|
 | `lib.rs` | radice della libreria, `APP_ID`, `run()` | `lib.rs:21` |
 | `main.rs` | entry point del binario | `main.rs:1` |
-| `gui.rs` | costruzione UI, segnali, azioni, thread di lavoro | `gui.rs:121`, `gui.rs:142`, `gui.rs:785` |
+| `gui.rs` | costruzione UI, segnali, azioni, drag & drop, thread di lavoro | `gui.rs:129`, `gui.rs:150`, `gui.rs:887` |
 | `controller.rs` | API sincrona del backend, stato globale (workbook + renderer) | `controller.rs:26` |
 | `state.rs` | workbook aperto, undo/redo, costruzione byte, salvataggio | `state.rs:18` |
 | `model.rs` | modello tipizzato di `content.json`, traversal, `extra` preservato | `model.rs:69` |
-| `archive.rs` | lettura/scrittura ZIP, hashing, scrittura atomica, backup | `archive.rs:57`, `archive.rs:144` |
+| `archive.rs` | lettura/scrittura ZIP, hashing, scrittura atomica, backup nascosti con retention | `archive.rs:59`, `archive.rs:209` |
 | `equation.rs` | applica/rimuove un'equazione su un topic | `equation.rs:61`, `equation.rs:135` |
+| `edit.rs` | rinomina, aggiunge, elimina e sposta topic (struttura) | `edit.rs:59`, `edit.rs:66`, `edit.rs:158` |
 | `mathjax.rs` | scoperta ed esecuzione del renderer Node | `mathjax.rs:30`, `mathjax.rs:90` |
 | `raster.rs` | SVG → PNG con resvg/tiny-skia | `raster.rs:10` |
 | `renderer_assets.rs` | estrazione del renderer incorporato in cache | `renderer_assets.rs:15` |
@@ -107,8 +108,8 @@ controller.save(force)
           → validate::refresh_manifest  (registra risorse, elimina thumbnail)
           → build_archive_bytes in memoria
           → validate::validate_archive_bytes  (PRIMA di scrivere)
-      → archive::atomic_write           (archive.rs:144)
-          → temp nella stessa dir → fsync → backup datato → rename → fsync dir
+      → archive::atomic_write           (archive.rs:209)
+          → temp nella stessa dir → fsync → backup (cartella nascosta) → rename → fsync dir
       → validazione post-scrittura del file reale
 ```
 
@@ -120,15 +121,39 @@ cosa. Se la validazione fallisce, il file dell'utente non viene toccato.
 ```
 gui::schedule_preview  (debounce ~220 ms)
   → controller.preview(latex, DEFAULT_EM_PX)
-  → raster::svg_to_png (2×, colore in base al tema)
+  → raster::svg_to_png (fino a 2×, colore in base al tema; scala ridotta se la
+    formula supera l'altezza massima della striscia)
   → gdk::Texture mostrata in una gtk::Picture
 ```
+
+### Spostamento nell'albero (drag & drop)
+
+```
+gtk::DragSource sulla riga
+  → prepare: id del topic in `State::dragging` + ContentProvider (string)
+gtk::DropTarget sulla riga
+  → enter/motion: `drop_plan` = id sorgente + id bersaglio, rifiuta sé stesso e i
+    discendenti; `drop_placement` (terzi della riga) → Into/Before/After
+  → drop: controller.move_topic(...) su un thread, poi refresh e selezione
+```
+
+`edit::move_topic` (`edit.rs:158`) stacca il sotto-albero e lo reinserisce rispetto
+al bersaglio, rifiutando radici e cicli. Il rientro è calcolato dal `depth` nel
+DTO, quindi si aggiorna da solo dopo ogni spostamento. La mappa `State::row_ids`
+associa ogni widget-riga al suo topic (il `ListItem` non è un widget).
+
+### Chiusura della finestra
+
+`gui::confirm_close` (`gui.rs:1615`) intercetta `close-request`: con modifiche non
+salvate chiede Salva / Non salvare / Annulla. "Salva" riusa `do_save` con
+`CloseAfter::Yes` (rispettando i blocchi XMind/conflitto) e chiude solo a
+salvataggio riuscito; il flag `State::closing` evita il ri-prompt al rientro.
 
 ## Threading
 
 Il main loop GTK non esegue mai lavoro pesante. Tutte le operazioni (apertura,
 rendering, applicazione, salvataggio, esportazione) passano per
-`gui::spawn_blocking` (`gui.rs:785`):
+`gui::spawn_blocking` (`gui.rs:1060`):
 
 ```rust
 fn spawn_blocking<T, F, D>(work: F, done: D)

@@ -7,6 +7,7 @@
 //! rientrano nel main loop con `glib::MainContext::spawn_local`.
 
 use crate::controller::{AppController, StatusDto, DEFAULT_EM_PX};
+use crate::edit::MovePlacement;
 use crate::equation::TitleMode;
 use crate::error::{ErrorPayload, CODE_CONFLICT, CODE_XMIND_RUNNING};
 use crate::raster;
@@ -24,7 +25,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 const CSS: &str = r#"
-.eq-preview { padding: 14px; border-radius: 8px; }
+.eq-preview { padding: 8px 10px; border-radius: 6px; }
 .eq-preview-light { background: #ffffff; }
 .eq-preview-dark { background: #1e1e1e; }
 .kind-badge { padding: 1px 8px; border-radius: 20px; background: alpha(currentColor, 0.08); font-size: 12px; }
@@ -33,28 +34,21 @@ const CSS: &str = r#"
 .badge.error { background: alpha(@error_color, 0.2); color: @error_color; }
 .mono { font-family: monospace; }
 .eq-row { color: @accent_color; }
+.delete-topic { color: @error_color; }
+/* Feedback del trascinamento nell'albero: riannida o riordina. */
+.drop-into { background: alpha(@accent_color, 0.22); border-radius: 6px; }
+.drop-before { box-shadow: inset 0 2px 0 0 @accent_color; }
+.drop-after { box-shadow: inset 0 -2px 0 0 @accent_color; }
 "#;
 
-const SNIPPETS: &[(&str, &str)] = &[
-    ("⊆", "\\subseteq "),
-    ("⊂", "\\subset "),
-    ("×", "\\times "),
-    ("⇔", "\\iff "),
-    ("⇒", "\\implies "),
-    ("∅", "\\varnothing "),
-    ("∀", "\\forall "),
-    ("∃", "\\exists "),
-    ("∄", "\\nexists "),
-    ("∈", "\\in "),
-    ("∉", "\\notin "),
-    ("∣", "\\mid "),
-    ("∪", "\\cup "),
-    ("∩", "\\cap "),
-    ("→", "\\to "),
-    ("↦", "\\mapsto "),
-    ("𝔸", "\\mathbb{A}"),
-    ("ℝ", "\\mathbb{R}"),
-];
+/// Altezza minima della striscia di anteprima. Serve a riservare lo spazio
+/// mentre il render è ancora in corso: la striscia viene mostrata subito, la
+/// texture arriva ~220 ms dopo, e senza questo minimo l'altezza salterebbe.
+const PREVIEW_MIN_HEIGHT: i32 = 56;
+
+/// Altezza massima della striscia: oltre questa la formula viene ridotta per
+/// stare nello spazio, così una matrice non si mangia mezza finestra.
+const PREVIEW_MAX_HEIGHT: i32 = 160;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Filter {
@@ -79,12 +73,23 @@ struct State {
     controller: Arc<Mutex<AppController>>,
     rows: RefCell<Vec<TopicView>>,
     by_id: RefCell<HashMap<String, TopicView>>,
+    /// Id del topic per ogni riga (widget) dell'albero, per il drag & drop: il
+    /// `ListItem` non è un widget e non si risale dalla label. La chiave è il
+    /// puntatore del widget, aggiornato a ogni bind (le righe sono riciclate).
+    row_ids: RefCell<HashMap<usize, String>>,
     selected: RefCell<Option<String>>,
     filter: Cell<Filter>,
     query: RefCell<String>,
     dark: Cell<bool>,
     preview_source: RefCell<Option<glib::SourceId>>,
     rebuilding: Cell<bool>,
+    /// Id del blocco in trascinamento; `None` fuori da un drag.
+    dragging: RefCell<Option<String>>,
+    /// Vero quando la finestra può chiudersi senza richiedere il salvataggio.
+    closing: Cell<bool>,
+    /// `Ui` è costruito dopo la lista (che ne ha bisogno per il drag & drop):
+    /// il riferimento debole evita il ciclo `Ui → State → Ui`.
+    ui: RefCell<Option<std::rc::Weak<Ui>>>,
 }
 
 #[derive(Clone)]
@@ -100,16 +105,19 @@ struct Ui {
     crumb: gtk::Label,
     kind_label: gtk::Label,
     latex_view: gtk::TextView,
+    /// Divisore + striscia di anteprima: spariscono insieme a formula vuota.
+    preview_section: gtk::Box,
+    /// La striscia: porta le classi di tema scambiate da `toggle_theme`.
     preview_box: gtk::Box,
     preview_picture: gtk::Picture,
-    preview_dims: gtk::Label,
     preview_error: gtk::Label,
-    title_mode: gtk::DropDown,
-    custom_title: gtk::Entry,
+    title_mode: adw::ComboRow,
+    custom_title: adw::EntryRow,
+    options_row: adw::ExpanderRow,
     apply_btn: gtk::Button,
-    remove_btn: gtk::Button,
-    export_svg: gtk::Button,
-    export_png: gtk::Button,
+    add_topic_btn: gtk::Button,
+    delete_btn: gtk::Button,
+    topic_text: adw::EntryRow,
     open_btn: gtk::Button,
     save_btn: gtk::Button,
     undo_btn: gtk::Button,
@@ -147,12 +155,16 @@ fn build_ui(app: &adw::Application) {
         controller: Arc::new(Mutex::new(AppController::new())),
         rows: RefCell::new(Vec::new()),
         by_id: RefCell::new(HashMap::new()),
+        row_ids: RefCell::new(HashMap::new()),
         selected: RefCell::new(None),
         filter: Cell::new(Filter::All),
         query: RefCell::new(String::new()),
         dark: Cell::new(dark),
         preview_source: RefCell::new(None),
         rebuilding: Cell::new(false),
+        dragging: RefCell::new(None),
+        closing: Cell::new(false),
+        ui: RefCell::new(None),
     });
 
     // ---------------------------------------------------------------- finestra
@@ -184,8 +196,13 @@ fn build_ui(app: &adw::Application) {
     let sec_topic = gio::Menu::new();
     sec_topic.append(Some("Esporta SVG"), Some("win.export-svg"));
     sec_topic.append(Some("Esporta PNG"), Some("win.export-png"));
-    sec_topic.append(Some("Rimuovi equazione"), Some("win.remove"));
+    sec_topic.append(Some("Rimuovi equazione"), Some("win.remove-equation"));
     menu.append_section(None, &sec_topic);
+    // Sezione a parte: `gio::Menu` non sa marcare una voce come distruttiva, e
+    // l'eliminazione non deve stare attaccata alle esportazioni.
+    let sec_danger = gio::Menu::new();
+    sec_danger.append(Some("Elimina blocco"), Some("win.delete-topic"));
+    menu.append_section(None, &sec_danger);
     let sec_app = gio::Menu::new();
     sec_app.append(Some("Tema chiaro/scuro"), Some("win.theme-toggle"));
     sec_app.append(Some("Informazioni"), Some("win.about"));
@@ -237,15 +254,22 @@ fn build_ui(app: &adw::Application) {
     selection.set_can_unselect(true);
 
     let factory = gtk::SignalListItemFactory::new();
-    factory.connect_setup(|_, item| {
-        let Some(li) = item.downcast_ref::<gtk::ListItem>() else {
-            return;
-        };
-        let label = gtk::Label::new(None);
-        label.set_xalign(0.0);
-        label.set_ellipsize(pango::EllipsizeMode::End);
-        li.set_child(Some(&label));
-    });
+    {
+        let state = state.clone();
+        factory.connect_setup(move |_, item| {
+            let Some(li) = item.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
+            let label = gtk::Label::new(None);
+            label.set_xalign(0.0);
+            label.set_ellipsize(pango::EllipsizeMode::End);
+            // Riempi la riga: serve sia a un bersaglio di drop ampio, sia a un
+            // rientro leggibile sui livelli profondi.
+            label.set_hexpand(true);
+            setup_topic_dnd(&label, &state);
+            li.set_child(Some(&label));
+        });
+    }
     {
         let state = state.clone();
         factory.connect_bind(move |_, item| {
@@ -255,6 +279,10 @@ fn build_ui(app: &adw::Application) {
             let Some(label) = li.child().and_then(|c| c.downcast::<gtk::Label>().ok()) else {
                 return;
             };
+            // La riga può essere riciclata: via il feedback di drop precedente.
+            label.remove_css_class("drop-into");
+            label.remove_css_class("drop-before");
+            label.remove_css_class("drop-after");
             let Some(obj) = li
                 .item()
                 .and_then(|o| o.downcast::<gtk::StringObject>().ok())
@@ -262,6 +290,10 @@ fn build_ui(app: &adw::Application) {
                 return;
             };
             let id = obj.string().to_string();
+            state
+                .row_ids
+                .borrow_mut()
+                .insert(label.as_ptr() as usize, id.clone());
             let by_id = state.by_id.borrow();
             let Some(tv) = by_id.get(&id) else {
                 label.set_label("");
@@ -324,6 +356,23 @@ fn build_ui(app: &adw::Application) {
     kind_label.add_css_class("kind-badge");
     kind_label.set_valign(gtk::Align::Start);
 
+    // Unico comando strutturale che resta nella colonna: «Aggiungi sotto-blocco».
+    // L'eliminazione, come le esportazioni e la rimozione dell'equazione, sta nel
+    // menu ☰, dove non compete visivamente con il lavoro sulla formula.
+    let add_topic_btn = gtk::Button::from_icon_name("list-add-symbolic");
+    add_topic_btn.add_css_class("flat");
+    add_topic_btn.set_valign(gtk::Align::Start);
+    add_topic_btn.set_tooltip_text(Some("Aggiungi sotto-blocco (Ctrl+Shift+N)"));
+
+    // L'eliminazione resta anche nel menu ☰, ma qui è a portata di mano e
+    // colorata di rosso: è distruttiva, deve vedersi prima di premere.
+    let delete_btn = gtk::Button::from_icon_name("user-trash-symbolic");
+    delete_btn.add_css_class("flat");
+    delete_btn.add_css_class("delete-topic");
+    delete_btn.set_valign(gtk::Align::Start);
+    delete_btn.set_tooltip_text(Some("Elimina il blocco e i suoi sotto-blocchi"));
+    delete_btn.set_sensitive(false);
+
     let titles = gtk::Box::new(gtk::Orientation::Vertical, 2);
     titles.set_hexpand(true);
     titles.append(&topic_title);
@@ -331,6 +380,8 @@ fn build_ui(app: &adw::Application) {
     let head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     head.append(&titles);
     head.append(&kind_label);
+    head.append(&add_topic_btn);
+    head.append(&delete_btn);
 
     let latex_label = gtk::Label::new(Some("Formula LaTeX"));
     latex_label.set_xalign(0.0);
@@ -344,44 +395,11 @@ fn build_ui(app: &adw::Application) {
     latex_view.set_bottom_margin(8);
     latex_view.set_left_margin(8);
     latex_view.set_right_margin(8);
+    latex_view.set_tooltip_text(Some("Formula LaTeX (MathJax). Ctrl+Enter per applicare."));
     let latex_scroll = gtk::ScrolledWindow::builder()
         .min_content_height(96)
         .child(&latex_view)
         .build();
-    latex_scroll.add_css_class("card");
-
-    let snippets = gtk::FlowBox::new();
-    snippets.set_selection_mode(gtk::SelectionMode::None);
-    snippets.set_max_children_per_line(20);
-    snippets.set_column_spacing(4);
-    snippets.set_row_spacing(4);
-    for &(label, tex) in SNIPPETS.iter() {
-        let b = gtk::Button::with_label(label);
-        b.add_css_class("flat");
-        b.set_tooltip_text(Some(tex));
-        let view = latex_view.clone();
-        let tex = tex.to_string();
-        b.connect_clicked(move |_| {
-            let buf = view.buffer();
-            let mut iter = buf.iter_at_mark(&buf.get_insert());
-            buf.insert(&mut iter, &tex);
-            view.grab_focus();
-        });
-        snippets.append(&b);
-    }
-
-    let preview_title = gtk::Label::new(Some("Anteprima"));
-    preview_title.set_xalign(0.0);
-    preview_title.set_hexpand(true);
-    preview_title.add_css_class("dim-label");
-    preview_title.add_css_class("caption");
-    let preview_dims = gtk::Label::new(None);
-    preview_dims.add_css_class("dim-label");
-    preview_dims.add_css_class("caption");
-    preview_dims.add_css_class("mono");
-    let preview_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    preview_head.append(&preview_title);
-    preview_head.append(&preview_dims);
 
     let preview_error = gtk::Label::new(None);
     preview_error.set_xalign(0.0);
@@ -391,9 +409,21 @@ fn build_ui(app: &adw::Application) {
 
     let preview_picture = gtk::Picture::new();
     preview_picture.set_can_shrink(true);
-    preview_picture.set_halign(gtk::Align::Start);
+    // `ScaleDown` = rimpicciolisce per stare nello spazio, mai ingrandisce: con
+    // il fit predefinito (`Contain`) la Picture si allargava a riempire la card
+    // e si portava dietro un'altezza enorme per una formula minuscola.
+    preview_picture.set_content_fit(gtk::ContentFit::ScaleDown);
+    preview_picture.set_halign(gtk::Align::Center);
+    preview_picture.set_valign(gtk::Align::Center);
+    preview_picture.set_visible(false);
 
-    let preview_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    // La striscia vive dentro la card della formula, subito sotto al testo che
+    // si sta scrivendo: si aggiorna da sola ~220 ms dopo l'ultimo tasto
+    // (`schedule_preview`). L'altezza la detta la formula, entro `PREVIEW_MAX_HEIGHT`:
+    // il tetto lo applica `run_preview` scegliendo la scala di rasterizzazione,
+    // così una matrice non si mangia mezza schermata e una formula piccola non
+    // riempie la striscia di vuoto.
+    let preview_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
     preview_box.add_css_class("eq-preview");
     preview_box.add_css_class(if dark {
         "eq-preview-dark"
@@ -401,70 +431,94 @@ fn build_ui(app: &adw::Application) {
         "eq-preview-light"
     });
     preview_box.set_visible(false);
+    preview_box.set_size_request(-1, PREVIEW_MIN_HEIGHT);
+    preview_box.set_valign(gtk::Align::Start);
+    preview_box.set_margin_top(6);
+    preview_box.set_margin_bottom(8);
+    preview_box.set_margin_start(8);
+    preview_box.set_margin_end(8);
+    preview_box.append(&preview_error);
     preview_box.append(&preview_picture);
 
-    let preview_frame = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    preview_frame.add_css_class("card");
-    preview_frame.append(&preview_head);
-    preview_frame.append(&preview_error);
-    preview_frame.append(&preview_box);
+    // Il separatore sta dentro la sezione: a formula vuota sparisce con la
+    // striscia, senza lasciare una riga orfana in fondo alla card.
+    let preview_section = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    preview_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    preview_section.append(&preview_box);
+    preview_section.set_visible(false);
 
-    let tm_label = gtk::Label::new(Some("Titolo del blocco"));
-    tm_label.set_xalign(0.0);
-    tm_label.add_css_class("dim-label");
-    tm_label.add_css_class("caption");
-    let title_mode = gtk::DropDown::from_strings(&[
+    let formula_card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    formula_card.add_css_class("card");
+    formula_card.append(&latex_scroll);
+    formula_card.append(&preview_section);
+
+    let topic_text = adw::EntryRow::new();
+    topic_text.set_title("Testo del blocco");
+    topic_text.set_show_apply_button(true);
+
+    let title_mode = adw::ComboRow::new();
+    title_mode.set_title("Titolo mostrato");
+    title_mode.set_model(Some(&gtk::StringList::new(&[
         "Solo formula (nasconde il testo)",
         "Mantieni il titolo attuale",
         "Titolo personalizzato",
-    ]);
+    ])));
     title_mode.set_selected(0);
-    let custom_title = gtk::Entry::new();
-    custom_title.set_placeholder_text(Some("Nuovo titolo"));
+
+    let custom_title = adw::EntryRow::new();
+    custom_title.set_title("Titolo personalizzato");
     custom_title.set_sensitive(false);
-    let tm_row = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    tm_row.append(&tm_label);
-    tm_row.append(&title_mode);
-    tm_row.append(&custom_title);
+
+    let options_row = adw::ExpanderRow::new();
+    options_row.set_title("Testo e titolo del blocco");
+    options_row.set_subtitle("Testo mostrato nel blocco e gestione del titolo");
+    options_row.set_expanded(false);
+    options_row.add_row(&topic_text);
+    options_row.add_row(&title_mode);
+    options_row.add_row(&custom_title);
+
+    let options_group = adw::PreferencesGroup::new();
+    options_group.set_margin_start(0);
+    options_group.set_margin_end(0);
+    options_group.add(&options_row);
 
     let apply_btn = gtk::Button::with_label("Applica");
     apply_btn.add_css_class("suggested-action");
-    apply_btn.set_tooltip_text(Some("Applica (Ctrl+Enter)"));
-    let remove_btn = gtk::Button::with_label("Rimuovi equazione");
-    remove_btn.add_css_class("destructive-action");
-    let export_svg = gtk::Button::with_label("Esporta SVG");
-    let export_png = gtk::Button::with_label("Esporta PNG");
-    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    actions.append(&apply_btn);
-    actions.append(&remove_btn);
-    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    actions.append(&spacer);
-    actions.append(&export_svg);
-    actions.append(&export_png);
+    apply_btn.set_tooltip_text(Some(
+        "Applica (Ctrl+Enter) — solo in memoria: usa Salva per scrivere il file",
+    ));
 
+    // Affordance di sicurezza dei dati: resta visibile, non solo nel tooltip.
     let note = gtk::Label::new(Some(
-        "«Applica» modifica solo in memoria: usa Salva per scrivere il file. \
-         Puoi applicare più formule di seguito prima di salvare.",
+        "Modifica solo in memoria: usa Salva per scrivere il file.",
     ));
     note.set_xalign(0.0);
     note.set_wrap(true);
+    note.set_hexpand(true);
+    note.set_valign(gtk::Align::Center);
     note.add_css_class("dim-label");
     note.add_css_class("caption");
+    note.set_tooltip_text(Some(
+        "«Applica» non scrive il file: puoi applicare più formule di seguito prima di salvare.",
+    ));
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.append(&apply_btn);
+    actions.append(&note);
 
     let editor = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    // Contenuto di una ScrolledWindow: il viewport tende ad allungare il figlio
+    // fino alla propria altezza, e l'anteprima si gonfiava con lui.
+    editor.set_valign(gtk::Align::Start);
     editor.set_margin_top(14);
     editor.set_margin_bottom(14);
     editor.set_margin_start(16);
     editor.set_margin_end(16);
     editor.append(&head);
     editor.append(&latex_label);
-    editor.append(&latex_scroll);
-    editor.append(&snippets);
-    editor.append(&preview_frame);
-    editor.append(&tm_row);
+    editor.append(&formula_card);
     editor.append(&actions);
-    editor.append(&note);
+    editor.append(&options_group);
 
     let editor_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
@@ -550,16 +604,17 @@ fn build_ui(app: &adw::Application) {
         crumb,
         kind_label,
         latex_view: latex_view.clone(),
+        preview_section,
         preview_box,
         preview_picture,
-        preview_dims,
         preview_error,
         title_mode: title_mode.clone(),
         custom_title: custom_title.clone(),
+        options_row: options_row.clone(),
         apply_btn: apply_btn.clone(),
-        remove_btn: remove_btn.clone(),
-        export_svg: export_svg.clone(),
-        export_png: export_png.clone(),
+        add_topic_btn: add_topic_btn.clone(),
+        delete_btn: delete_btn.clone(),
+        topic_text: topic_text.clone(),
         open_btn: open_btn.clone(),
         save_btn: save_btn.clone(),
         undo_btn: undo_btn.clone(),
@@ -567,6 +622,9 @@ fn build_ui(app: &adw::Application) {
         status_path,
         status_badges,
     });
+    // Il drag & drop nella lista è armato prima che `Ui` esista: si registra
+    // ora il riferimento debole usato da `perform_drop`.
+    *state.ui.borrow_mut() = Some(Rc::downgrade(&ui));
 
     // --------------------------------------------------------------- segnali
     {
@@ -631,17 +689,23 @@ fn build_ui(app: &adw::Application) {
     {
         let ui = ui.clone();
         let state = state.clone();
-        remove_btn.connect_clicked(move |_| do_remove(&ui, &state));
+        topic_text.connect_apply(move |_| do_save_text(&ui, &state));
     }
     {
         let ui = ui.clone();
         let state = state.clone();
-        export_svg.connect_clicked(move |_| do_export(&ui, &state, "svg"));
+        add_topic_btn.connect_clicked(move |_| do_add_topic(&ui, &state));
     }
     {
         let ui = ui.clone();
         let state = state.clone();
-        export_png.connect_clicked(move |_| do_export(&ui, &state, "png"));
+        delete_btn.connect_clicked(move |_| confirm_delete_topic(&ui, &state));
+    }
+    {
+        let ui = ui.clone();
+        let state = state.clone();
+        let window = ui.window.clone();
+        window.connect_close_request(move |window| confirm_close(window, &ui, &state));
     }
     {
         let ui = ui.clone();
@@ -651,7 +715,7 @@ fn build_ui(app: &adw::Application) {
     {
         let ui = ui.clone();
         let state = state.clone();
-        save_btn.connect_clicked(move |_| do_save(&ui, &state, false));
+        save_btn.connect_clicked(move |_| do_save(&ui, &state, false, CloseAfter::No));
     }
     {
         let ui = ui.clone();
@@ -678,7 +742,7 @@ fn build_ui(app: &adw::Application) {
         let ui = ui.clone();
         let state = state.clone();
         add_action(app, &win, "save", &["<Control>s"], move || {
-            do_save(&ui, &state, false)
+            do_save(&ui, &state, false, CloseAfter::No)
         });
     }
     {
@@ -721,7 +785,25 @@ fn build_ui(app: &adw::Application) {
         let win = ui.window.clone();
         let ui = ui.clone();
         let state = state.clone();
-        add_action(app, &win, "remove", &[], move || do_remove(&ui, &state));
+        add_action(app, &win, "add-topic", &["<Control><Shift>n"], move || {
+            do_add_topic(&ui, &state)
+        });
+    }
+    {
+        let win = ui.window.clone();
+        let ui = ui.clone();
+        let state = state.clone();
+        add_action(app, &win, "remove-equation", &[], move || {
+            do_remove(&ui, &state)
+        });
+    }
+    {
+        let win = ui.window.clone();
+        let ui = ui.clone();
+        let state = state.clone();
+        add_action(app, &win, "delete-topic", &[], move || {
+            confirm_delete_topic(&ui, &state)
+        });
     }
     {
         let win = ui.window.clone();
@@ -780,6 +862,191 @@ fn add_action<F>(
     action.connect_activate(move |_, _| f());
     window.add_action(&action);
     app.set_accels_for_action(&format!("win.{name}"), accels);
+}
+
+/// Attiva/disattiva una voce del menu ☰ legata al blocco selezionato.
+///
+/// L'azione si recupera per nome dalla action map della finestra, la stessa in
+/// cui `add_action` la registra e da cui il menu risolve `win.*`: `Ui` viene
+/// costruito prima delle azioni (che ne catturano il `Rc`), quindi non può
+/// tenerne gli handle senza creare un ciclo.
+fn set_action_enabled(ui: &Ui, name: &str, enabled: bool) {
+    if let Some(action) = ui
+        .window
+        .lookup_action(name)
+        .and_then(|a| a.downcast::<gio::SimpleAction>().ok())
+    {
+        action.set_enabled(enabled);
+    }
+}
+
+// ------------------------------------------------------------------ drag&drop
+
+/// Arma una riga dell'albero per il trascinamento: sorgente (sposta il blocco)
+/// e bersaglio (decide se riannidare o riordinare in base a dove si rilascia).
+fn setup_topic_dnd(label: &gtk::Label, state: &Rc<State>) {
+    let drag = gtk::DragSource::new();
+    drag.set_actions(gdk::DragAction::MOVE);
+    {
+        let state = state.clone();
+        drag.connect_prepare(move |source, _, _| {
+            let id = source
+                .widget()
+                .as_ref()
+                .and_then(|w| list_item_id(w, &state))?;
+            // La radice di una sheet non si sposta.
+            if state.by_id.borrow().get(&id).map(|t| t.group.as_str()) == Some("root") {
+                return None;
+            }
+            *state.dragging.borrow_mut() = Some(id.clone());
+            Some(gdk::ContentProvider::for_value(&id.to_value()))
+        });
+    }
+    {
+        let state = state.clone();
+        drag.connect_drag_end(move |_, _, _| {
+            *state.dragging.borrow_mut() = None;
+        });
+    }
+    label.add_controller(drag);
+
+    let drop = gtk::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
+    {
+        let state = state.clone();
+        drop.connect_enter(move |target, _, y| drop_hover(target, y, &state));
+    }
+    {
+        let state = state.clone();
+        drop.connect_motion(move |target, _, y| drop_hover(target, y, &state));
+    }
+    drop.connect_leave(|target| set_drop_feedback(target, None));
+    {
+        let state = state.clone();
+        drop.connect_drop(move |target, _value, _, y| perform_drop(target, y, &state));
+    }
+    label.add_controller(drop);
+}
+
+/// Id del topic associato a una riga dell'albero, via la mappa compilata in
+/// fase di bind (`ListItem` non è un widget, quindi non si risale dalla label).
+fn list_item_id(widget: &gtk::Widget, state: &State) -> Option<String> {
+    state
+        .row_ids
+        .borrow()
+        .get(&(widget.as_ptr() as usize))
+        .cloned()
+}
+
+/// Vero se `candidate_id` discende da `ancestor_id`.
+fn is_descendant(state: &State, ancestor_id: &str, candidate_id: &str) -> bool {
+    let by_id = state.by_id.borrow();
+    let mut current = by_id.get(candidate_id).and_then(|t| t.parent_id.clone());
+    while let Some(parent) = current {
+        if parent == ancestor_id {
+            return true;
+        }
+        current = by_id.get(&parent).and_then(|t| t.parent_id.clone());
+    }
+    false
+}
+
+/// Terzo superiore = prima, terzo inferiore = dopo, centro = dentro.
+fn drop_placement(y: f64, height: f64) -> MovePlacement {
+    let edge = height.max(1.0) / 3.0;
+    if y < edge {
+        MovePlacement::Before
+    } else if y > height - edge {
+        MovePlacement::After
+    } else {
+        MovePlacement::Into
+    }
+}
+
+/// Punto di rilascio valido per il drag in corso, o `None` se va rifiutato.
+fn drop_plan(target: &gtk::DropTarget, y: f64, state: &State) -> Option<MovePlacement> {
+    let target_id = target
+        .widget()
+        .as_ref()
+        .and_then(|w| list_item_id(w, state))?;
+    let source_id = state.dragging.borrow().clone()?;
+    if source_id == target_id || is_descendant(state, &source_id, &target_id) {
+        return None;
+    }
+    let group = state.by_id.borrow().get(&target_id)?.group.clone();
+    let height = target.widget().map(|w| w.height() as f64).unwrap_or(1.0);
+    let placement = drop_placement(y, height);
+    if group == "root" && placement != MovePlacement::Into {
+        return None;
+    }
+    Some(placement)
+}
+
+fn set_drop_feedback(target: &gtk::DropTarget, placement: Option<MovePlacement>) {
+    let Some(widget) = target.widget() else {
+        return;
+    };
+    widget.remove_css_class("drop-into");
+    widget.remove_css_class("drop-before");
+    widget.remove_css_class("drop-after");
+    match placement {
+        Some(MovePlacement::Into) => widget.add_css_class("drop-into"),
+        Some(MovePlacement::Before) => widget.add_css_class("drop-before"),
+        Some(MovePlacement::After) => widget.add_css_class("drop-after"),
+        None => {}
+    }
+}
+
+fn drop_hover(target: &gtk::DropTarget, y: f64, state: &Rc<State>) -> gdk::DragAction {
+    let placement = drop_plan(target, y, state);
+    set_drop_feedback(target, placement);
+    if placement.is_some() {
+        gdk::DragAction::MOVE
+    } else {
+        gdk::DragAction::empty()
+    }
+}
+
+fn perform_drop(target: &gtk::DropTarget, y: f64, state: &Rc<State>) -> bool {
+    let Some(placement) = drop_plan(target, y, state) else {
+        set_drop_feedback(target, None);
+        return false;
+    };
+    let Some(source_id) = state.dragging.borrow().clone() else {
+        return false;
+    };
+    let Some(target_id) = target
+        .widget()
+        .as_ref()
+        .and_then(|w| list_item_id(w, state))
+    else {
+        return false;
+    };
+    let Some(ui) = state.ui.borrow().as_ref().and_then(std::rc::Weak::upgrade) else {
+        return false;
+    };
+    set_drop_feedback(target, None);
+
+    let controller = state.controller.clone();
+    let ui_cb = ui.clone();
+    let state_cb = state.clone();
+    let work_source = source_id.clone();
+    spawn_blocking(
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .move_topic(&work_source, &target_id, placement)
+        },
+        move |result| match result {
+            Ok(_) => {
+                *state_cb.selected.borrow_mut() = Some(source_id);
+                refresh(&ui_cb, &state_cb);
+                toast(&ui_cb, "Blocco spostato");
+            }
+            Err(e) => show_error(&ui_cb, "Spostamento non riuscito", &e.message),
+        },
+    );
+    true
 }
 
 // -------------------------------------------------------------------- helpers
@@ -879,34 +1146,104 @@ fn rebuild_list(ui: &Rc<Ui>, state: &Rc<State>, wb: Option<&WorkbookDto>) {
         .cloned()
         .collect();
 
-    *state.rows.borrow_mut() = rows.clone();
+    let previous_rows = state.rows.borrow().clone();
+    // Stesso ordine di prima (nessun blocco aggiunto, eliminato o spostato): si
+    // sostituiscono solo le righe cambiate, senza svuotare lo store. Così
+    // «Applica» aggiorna la lista senza riportarla in cima e lo scroll resta
+    // dov'era. La ricostruzione distruttiva serve solo quando cambia l'insieme
+    // delle righe (filtro, ricerca, aggiunta/eliminazione, annulla/ripeti).
+    let same_rows = rows_have_same_order(&previous_rows, &rows);
+
     *state.by_id.borrow_mut() = all.iter().map(|t| (t.id.clone(), t.clone())).collect();
 
-    let previous = state.selected.borrow().clone();
-    state.rebuilding.set(true);
-    ui.store.remove_all();
-    for row in &rows {
-        ui.store.append(&gtk::StringObject::new(&row.id));
-    }
-    match previous {
-        Some(id) => match rows.iter().position(|r| r.id == id) {
-            Some(index) => ui.selection.set_selected(index as u32),
-            None => {
-                ui.selection.set_selected(gtk::INVALID_LIST_POSITION);
-                *state.selected.borrow_mut() = None;
+    if same_rows {
+        for (index, (old, new)) in previous_rows.iter().zip(&rows).enumerate() {
+            if old != new {
+                ui.store
+                    .splice(index as u32, 1, &[gtk::StringObject::new(&new.id)]);
             }
-        },
-        None => ui.selection.set_selected(gtk::INVALID_LIST_POSITION),
+        }
+        // Sostituire una riga può far cadere la selezione: la si riafferma, se
+        // il blocco selezionato è ancora presente.
+        if let Some(id) = state.selected.borrow().clone() {
+            if let Some(index) = rows.iter().position(|r| r.id == id) {
+                if ui.selection.selected() != index as u32 {
+                    state.rebuilding.set(true);
+                    ui.selection.set_selected(index as u32);
+                    state.rebuilding.set(false);
+                }
+            }
+        }
+    } else {
+        let previous = state.selected.borrow().clone();
+        state.rebuilding.set(true);
+        ui.store.remove_all();
+        for row in &rows {
+            ui.store.append(&gtk::StringObject::new(&row.id));
+        }
+        match previous {
+            Some(id) => match rows.iter().position(|r| r.id == id) {
+                Some(index) => ui.selection.set_selected(index as u32),
+                None => {
+                    ui.selection.set_selected(gtk::INVALID_LIST_POSITION);
+                    *state.selected.borrow_mut() = None;
+                }
+            },
+            None => ui.selection.set_selected(gtk::INVALID_LIST_POSITION),
+        }
+        state.rebuilding.set(false);
     }
-    state.rebuilding.set(false);
+
+    *state.rows.borrow_mut() = rows.clone();
 
     ui.summary
         .set_label(&format!("{} / {} blocchi", rows.len(), all.len()));
 }
 
+/// Vero se le due liste di righe hanno gli stessi id nello stesso ordine: in
+/// quel caso aggiornare la lista non deve azzerarne lo scroll.
+fn rows_have_same_order(old: &[TopicView], new: &[TopicView]) -> bool {
+    old.len() == new.len() && old.iter().zip(new).all(|(a, b)| a.id == b.id)
+}
+
+/// Stato dei comandi di menu che agiscono sul blocco selezionato.
+#[derive(Debug, PartialEq, Eq)]
+struct TopicActionState {
+    selected: bool,
+    equation: bool,
+    deletable: bool,
+}
+
+/// Predicato puro sullo stato dei comandi: la radice della mappa non è
+/// eliminabile (il backend la rifiuta comunque, vedi `edit::remove_topic`).
+fn topic_action_state(topic: Option<&TopicView>) -> TopicActionState {
+    match topic {
+        None => TopicActionState {
+            selected: false,
+            equation: false,
+            deletable: false,
+        },
+        Some(t) => TopicActionState {
+            selected: true,
+            equation: t.kind == "equation",
+            deletable: t.group != "root",
+        },
+    }
+}
+
 fn update_editor(ui: &Rc<Ui>, state: &Rc<State>) {
     let selected = state.selected.borrow().clone();
     let topic = selected.and_then(|id| state.by_id.borrow().get(&id).cloned());
+
+    // Le voci del menu ☰ agiscono sul blocco selezionato: senza selezione
+    // restano spente (prima erano sempre attive e non facevano nulla).
+    let actions = topic_action_state(topic.as_ref());
+    set_action_enabled(ui, "remove-equation", actions.equation);
+    set_action_enabled(ui, "export-svg", actions.equation);
+    set_action_enabled(ui, "export-png", actions.equation);
+    set_action_enabled(ui, "delete-topic", actions.deletable);
+    ui.delete_btn.set_sensitive(actions.deletable);
+    ui.add_topic_btn.set_sensitive(actions.selected);
 
     let Some(topic) = topic else {
         ui.editor_stack.set_visible_child_name("empty");
@@ -936,10 +1273,9 @@ fn update_editor(ui: &Rc<Ui>, state: &Rc<State>) {
         buf.set_text(&desired);
     }
 
-    let has_equation = topic.kind == "equation";
-    ui.remove_btn.set_sensitive(has_equation);
-    ui.export_svg.set_sensitive(has_equation);
-    ui.export_png.set_sensitive(has_equation);
+    if ui.topic_text.text().as_str() != topic.title {
+        ui.topic_text.set_text(&topic.title);
+    }
 }
 
 fn update_status(ui: &Rc<Ui>, status: &StatusDto) {
@@ -987,8 +1323,18 @@ struct PreviewRender {
 
 fn clear_preview(ui: &Ui) {
     ui.preview_picture.set_paintable(None::<&gdk::Texture>);
+    ui.preview_picture.set_visible(false);
     ui.preview_error.set_visible(false);
-    ui.preview_dims.set_label("");
+    ui.preview_box.set_tooltip_text(None);
+}
+
+/// Errore di rendering dentro la striscia: niente immagine, solo il messaggio.
+fn show_preview_error(ui: &Ui, message: &str) {
+    ui.preview_picture.set_paintable(None::<&gdk::Texture>);
+    ui.preview_picture.set_visible(false);
+    ui.preview_error.set_label(message);
+    ui.preview_error.set_visible(true);
+    ui.preview_box.set_tooltip_text(None);
 }
 
 fn schedule_preview(ui: &Rc<Ui>, state: &Rc<State>) {
@@ -1008,10 +1354,11 @@ fn schedule_preview(ui: &Rc<Ui>, state: &Rc<State>) {
 fn run_preview(ui: &Rc<Ui>, state: &Rc<State>) {
     let latex = editor_text(&ui.latex_view);
     if latex.trim().is_empty() {
-        ui.preview_box.set_visible(false);
+        ui.preview_section.set_visible(false);
         clear_preview(ui);
         return;
     }
+    ui.preview_section.set_visible(true);
     ui.preview_box.set_visible(true);
 
     let color = if state.dark.get() {
@@ -1032,8 +1379,14 @@ fn run_preview(ui: &Rc<Ui>, state: &Rc<State>) {
                     ..Default::default()
                 });
             }
-            let png = raster::svg_to_png(&preview.svg, preview.width, preview.height, 2.0, &color)
-                .map_err(|e| ErrorPayload::new(crate::error::CODE_LATEX, format!("{e:#}")))?;
+            // La texture è mostrata 1:1 in pixel logici: si rasterizza a 2× per
+            // nitidezza, ma senza superare `PREVIEW_MAX_HEIGHT`, così una formula
+            // alta rimpicciolisce invece di far crescere la striscia.
+            let scale =
+                (2.0 * f64::from(PREVIEW_MAX_HEIGHT) / preview.height.max(1.0)).min(2.0) as f32;
+            let png =
+                raster::svg_to_png(&preview.svg, preview.width, preview.height, scale, &color)
+                    .map_err(|e| ErrorPayload::new(crate::error::CODE_LATEX, format!("{e:#}")))?;
             Ok(PreviewRender {
                 png: Some(png),
                 width: preview.width,
@@ -1043,32 +1396,28 @@ fn run_preview(ui: &Rc<Ui>, state: &Rc<State>) {
         },
         move |result| match result {
             Ok(render) if render.error.is_some() => {
-                ui.preview_picture.set_paintable(None::<&gdk::Texture>);
-                ui.preview_error
-                    .set_label(&format!("Errore LaTeX: {}", render.error.unwrap()));
-                ui.preview_error.set_visible(true);
-                ui.preview_dims.set_label("");
+                show_preview_error(&ui, &format!("Errore LaTeX: {}", render.error.unwrap()));
             }
             Ok(render) if render.png.is_some() => {
                 let bytes = glib::Bytes::from_owned(render.png.unwrap());
                 match gdk::Texture::from_bytes(&bytes) {
-                    Ok(texture) => ui.preview_picture.set_paintable(Some(&texture)),
-                    Err(_) => ui.preview_picture.set_paintable(None::<&gdk::Texture>),
+                    Ok(texture) => {
+                        ui.preview_picture.set_paintable(Some(&texture));
+                        ui.preview_picture.set_visible(true);
+                        ui.preview_error.set_visible(false);
+                        // Le dimensioni restano a portata di tooltip: utili per
+                        // capire come la formula finirà dentro XMind.
+                        ui.preview_box.set_tooltip_text(Some(&format!(
+                            "Anteprima: {} × {} px",
+                            render.width.round(),
+                            render.height.round()
+                        )));
+                    }
+                    Err(_) => clear_preview(&ui),
                 }
-                ui.preview_error.set_visible(false);
-                ui.preview_dims.set_label(&format!(
-                    "{} × {} px",
-                    render.width.round(),
-                    render.height.round()
-                ));
             }
             Ok(_) => clear_preview(&ui),
-            Err(e) => {
-                ui.preview_picture.set_paintable(None::<&gdk::Texture>);
-                ui.preview_error.set_label(&e.message);
-                ui.preview_error.set_visible(true);
-                ui.preview_dims.set_label("");
-            }
+            Err(e) => show_preview_error(&ui, &e.message),
         },
     );
 }
@@ -1080,9 +1429,8 @@ fn set_busy(ui: &Ui, busy: bool, label: &str) {
     ui.apply_btn.set_label(label);
     ui.open_btn.set_sensitive(!busy);
     ui.save_btn.set_sensitive(!busy);
-    if !busy {
-        ui.remove_btn.set_sensitive(false);
-    }
+    // Le voci del menu ☰ non si toccano qui: ogni callback di completamento
+    // chiama `refresh` → `update_editor`, che le riallinea al blocco selezionato.
 }
 
 fn do_apply(ui: &Rc<Ui>, state: &Rc<State>) {
@@ -1146,6 +1494,123 @@ fn do_remove(ui: &Rc<Ui>, state: &Rc<State>) {
     );
 }
 
+fn do_save_text(ui: &Rc<Ui>, state: &Rc<State>) {
+    let Some(topic_id) = state.selected.borrow().clone() else {
+        toast(ui, "Seleziona prima un blocco.");
+        return;
+    };
+    let title = ui.topic_text.text().to_string();
+    let current = state
+        .by_id
+        .borrow()
+        .get(&topic_id)
+        .map(|t| t.title.clone())
+        .unwrap_or_default();
+    if current == title {
+        toast(ui, "Nessuna modifica al testo.");
+        return;
+    }
+    let controller = state.controller.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    spawn_blocking(
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .set_topic_title(&topic_id, &title)
+        },
+        move |result| match result {
+            Ok(_) => {
+                refresh(&ui, &state);
+                toast(&ui, "Testo aggiornato");
+            }
+            Err(e) => show_error(&ui, "Modifica non riuscita", &e.message),
+        },
+    );
+}
+
+fn do_add_topic(ui: &Rc<Ui>, state: &Rc<State>) {
+    let Some(parent_id) = state.selected.borrow().clone() else {
+        toast(ui, "Seleziona il blocco a cui aggiungere un sotto-blocco.");
+        return;
+    };
+    let controller = state.controller.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    spawn_blocking(
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .add_topic(&parent_id, "Nuovo blocco")
+        },
+        move |result| match result {
+            Ok(outcome) => {
+                *state.selected.borrow_mut() = Some(outcome.topic_id);
+                refresh(&ui, &state);
+                ui.options_row.set_expanded(true);
+                ui.topic_text.grab_focus();
+                ui.topic_text.select_region(0, -1);
+                toast(&ui, "Sotto-blocco aggiunto");
+            }
+            Err(e) => show_error(&ui, "Aggiunta non riuscita", &e.message),
+        },
+    );
+}
+
+fn confirm_delete_topic(ui: &Rc<Ui>, state: &Rc<State>) {
+    let Some(topic_id) = state.selected.borrow().clone() else {
+        toast(ui, "Seleziona prima un blocco.");
+        return;
+    };
+    let display = state
+        .by_id
+        .borrow()
+        .get(&topic_id)
+        .map(|t| t.display_title.clone())
+        .unwrap_or_default();
+    let dialog = adw::MessageDialog::builder()
+        .transient_for(&ui.window)
+        .heading("Eliminare il blocco?")
+        .body(format!(
+            "«{display}» e tutti i suoi sotto-blocchi verranno rimossi dalla mappa. \
+             Puoi annullare con Ctrl+Z finché non salvi."
+        ))
+        .build();
+    dialog.add_response("cancel", "Annulla");
+    dialog.add_response("delete", "Elimina");
+    dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+    dialog.set_default_response(Some("cancel"));
+    dialog.set_close_response("cancel");
+    let ui = ui.clone();
+    let state = state.clone();
+    dialog.connect_response(None, move |_dialog, response| {
+        if response == "delete" {
+            do_delete_topic(&ui, &state, &topic_id);
+        }
+    });
+    dialog.present();
+}
+
+fn do_delete_topic(ui: &Rc<Ui>, state: &Rc<State>, topic_id: &str) {
+    let controller = state.controller.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    let topic_id = topic_id.to_string();
+    spawn_blocking(
+        move || controller.lock().unwrap().remove_topic(&topic_id),
+        move |result| match result {
+            Ok(_) => {
+                *state.selected.borrow_mut() = None;
+                refresh(&ui, &state);
+                toast(&ui, "Blocco eliminato");
+            }
+            Err(e) => show_error(&ui, "Eliminazione non riuscita", &e.message),
+        },
+    );
+}
+
 fn do_undo(ui: &Rc<Ui>, state: &Rc<State>) {
     let controller = state.controller.clone();
     let ui = ui.clone();
@@ -1172,7 +1637,57 @@ fn do_redo(ui: &Rc<Ui>, state: &Rc<State>) {
     );
 }
 
-fn do_save(ui: &Rc<Ui>, state: &Rc<State>, force: bool) {
+/// Se dopo un salvataggio riuscito la finestra va chiusa (uscita con modifiche
+/// pendenti) oppure no (salvataggio normale).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CloseAfter {
+    No,
+    Yes,
+}
+
+/// Chiusura della finestra: se ci sono modifiche non salvate chiede prima cosa
+/// farne. Restituisce `Stop` finché la decisione non è presa.
+fn confirm_close(
+    window: &adw::ApplicationWindow,
+    ui: &Rc<Ui>,
+    state: &Rc<State>,
+) -> glib::Propagation {
+    // Rientro dopo "Non salvare" o dopo un salvataggio: si chiude davvero.
+    if state.closing.get() {
+        return glib::Propagation::Proceed;
+    }
+    let dirty = state.controller.lock().unwrap().status().dirty;
+    if !dirty {
+        return glib::Propagation::Proceed;
+    }
+
+    let dialog = adw::MessageDialog::builder()
+        .transient_for(window)
+        .heading("Salvare le modifiche?")
+        .body("Ci sono modifiche non salvate. Se chiudi senza salvare andranno perse.")
+        .build();
+    dialog.add_response("cancel", "Annulla");
+    dialog.add_response("discard", "Non salvare");
+    dialog.add_response("save", "Salva");
+    dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
+    dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
+    dialog.set_default_response(Some("save"));
+    dialog.set_close_response("cancel");
+    let ui = ui.clone();
+    let state = state.clone();
+    dialog.connect_response(None, move |_dialog, response| match response {
+        "save" => do_save(&ui, &state, false, CloseAfter::Yes),
+        "discard" => {
+            state.closing.set(true);
+            ui.window.close();
+        }
+        _ => {}
+    });
+    dialog.present();
+    glib::Propagation::Stop
+}
+
+fn do_save(ui: &Rc<Ui>, state: &Rc<State>, force: bool, close_after: CloseAfter) {
     let controller = state.controller.clone();
     let ui = ui.clone();
     let state = state.clone();
@@ -1181,17 +1696,22 @@ fn do_save(ui: &Rc<Ui>, state: &Rc<State>, force: bool) {
         move |result| match result {
             Ok(outcome) => {
                 refresh(&ui, &state);
-                toast(&ui, &format!("Salvato — {} byte", outcome.bytes));
+                if close_after == CloseAfter::Yes {
+                    state.closing.set(true);
+                    ui.window.close();
+                } else {
+                    toast(&ui, &format!("Salvato — {} byte", outcome.bytes));
+                }
             }
             Err(e) if e.code == CODE_XMIND_RUNNING || e.code == CODE_CONFLICT => {
-                confirm_force(&ui, &state, &e);
+                confirm_force(&ui, &state, &e, close_after);
             }
             Err(e) => show_error(&ui, "Salvataggio non riuscito", &e.message),
         },
     );
 }
 
-fn confirm_force(ui: &Rc<Ui>, state: &Rc<State>, err: &ErrorPayload) {
+fn confirm_force(ui: &Rc<Ui>, state: &Rc<State>, err: &ErrorPayload, close_after: CloseAfter) {
     let dialog = adw::MessageDialog::builder()
         .transient_for(&ui.window)
         .heading("Procedere comunque?")
@@ -1206,7 +1726,7 @@ fn confirm_force(ui: &Rc<Ui>, state: &Rc<State>, err: &ErrorPayload) {
     let state = state.clone();
     dialog.connect_response(None, move |_dialog, response| {
         if response == "force" {
-            do_save(&ui, &state, true);
+            do_save(&ui, &state, true, close_after);
         }
     });
     dialog.present();
@@ -1291,7 +1811,7 @@ fn choose_save_as(ui: &Rc<Ui>, state: &Rc<State>) {
                     toast(&ui, &format!("Salvato in {}", outcome.path));
                 }
                 Err(e) if e.code == CODE_XMIND_RUNNING || e.code == CODE_CONFLICT => {
-                    confirm_force(&ui, &state, &e);
+                    confirm_force(&ui, &state, &e, CloseAfter::No);
                 }
                 Err(e) => show_error(&ui, "Salvataggio non riuscito", &e.message),
             },
@@ -1392,4 +1912,91 @@ fn show_error(ui: &Ui, heading: &str, body: &str) {
     dialog.set_default_response(Some("close"));
     dialog.set_close_response("close");
     dialog.present();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Blocco minimo per i predicati: contano solo `kind` e `group`.
+    fn topic(kind: &'static str, group: &str) -> TopicView {
+        TopicView {
+            id: "t1".into(),
+            sheet_index: 0,
+            parent_id: None,
+            depth: 0,
+            group: group.into(),
+            title: String::new(),
+            display_title: String::new(),
+            kind,
+            latex: None,
+            image_src: None,
+            path: Vec::new(),
+            child_count: 0,
+        }
+    }
+
+    #[test]
+    fn menu_actions_follow_the_selected_block() {
+        let none = topic_action_state(None);
+        assert_eq!(
+            none,
+            TopicActionState {
+                selected: false,
+                equation: false,
+                deletable: false
+            }
+        );
+
+        let equation = topic_action_state(Some(&topic("equation", "attached")));
+        assert!(equation.selected && equation.equation && equation.deletable);
+
+        // Un blocco di testo non ha equazione da esportare o rimuovere.
+        let text = topic_action_state(Some(&topic("text", "attached")));
+        assert!(!text.equation && text.deletable);
+
+        // La radice della mappa non è eliminabile.
+        let root = topic_action_state(Some(&topic("text", "root")));
+        assert!(!root.deletable && !root.equation);
+    }
+
+    #[test]
+    fn same_order_only_when_ids_match_in_sequence() {
+        let a = topic("text", "attached");
+        let mut b = a.clone();
+        b.id = "t2".into();
+        let mut c = a.clone();
+        c.id = "t3".into();
+
+        // stessi id, stesso ordine: aggiornamento in place (scroll preservato)
+        assert!(rows_have_same_order(
+            &[a.clone(), b.clone()],
+            &[a.clone(), b.clone()]
+        ));
+
+        // ordine diverso o insieme diverso: serve la ricostruzione
+        assert!(!rows_have_same_order(
+            &[a.clone(), b.clone()],
+            &[b.clone(), a.clone()]
+        ));
+        assert!(!rows_have_same_order(
+            &[a.clone(), b.clone()],
+            &[a.clone(), c]
+        ));
+        assert!(!rows_have_same_order(
+            std::slice::from_ref(&a),
+            &[a.clone(), b]
+        ));
+    }
+
+    #[test]
+    fn drop_placement_splits_row_into_three_bands() {
+        let height = 30.0;
+        assert_eq!(drop_placement(0.0, height), MovePlacement::Before);
+        assert_eq!(drop_placement(9.9, height), MovePlacement::Before);
+        assert_eq!(drop_placement(10.0, height), MovePlacement::Into);
+        assert_eq!(drop_placement(20.0, height), MovePlacement::Into);
+        assert_eq!(drop_placement(20.1, height), MovePlacement::After);
+        assert_eq!(drop_placement(29.9, height), MovePlacement::After);
+    }
 }

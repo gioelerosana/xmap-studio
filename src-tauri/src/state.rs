@@ -56,7 +56,7 @@ pub struct SheetDto {
     pub topics: Vec<TopicView>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicView {
     pub id: String,
@@ -219,7 +219,10 @@ impl OpenWorkbook {
         validate::validate_archive_bytes(&written).map_err(|e| {
             ErrorPayload::new(
                 CODE_VALIDATION,
-                format!("ATTENZIONE: il file scritto non è valido ({e:#}). Usa il backup."),
+                format!(
+                    "ATTENZIONE: il file scritto non è valido ({e:#}). \
+                     Recupera un backup dalla cartella .xmind-equation-studio/backups/."
+                ),
             )
         })?;
 

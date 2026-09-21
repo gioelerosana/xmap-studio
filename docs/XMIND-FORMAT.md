@@ -19,16 +19,17 @@ Un `.xmind` moderno (Vana, XMind 2020+) è uno ZIP contenente:
 
 Il formato legacy XMind 8 (`content.xml` come sorgente) **non è supportato**: se
 manca `content.json`, `archive::read_archive` restituisce errore
-(`archive.rs:83`).
+(`archive.rs:85`).
 
 ### Come lo trattiamo
 
 - Tutte le entry sono lette integralmente (verifica CRC implicita) e conservate
   **byte per byte**, comprese quelle sconosciute.
 - Le entry `resources/*` sono tenute separate per aggiornare il manifest in modo
-  affidabile (`archive.rs:57`).
-- In scrittura le entry non-risorsa precedono le risorse (`archive.rs:90`).
-- La scrittura è atomica con backup datato (`archive.rs:144`).
+  affidabile (`archive.rs:59`).
+- In scrittura le entry non-risorsa precedono le risorse (`archive.rs:92`).
+- La scrittura è atomica con backup datato in una cartella nascosta
+  (`.xmind-equation-studio/backups/`, ultimi 5 per file) (`archive.rs:209`).
 
 ## Modello di `content.json`
 

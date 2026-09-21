@@ -6,6 +6,7 @@
 
 pub mod archive;
 pub mod controller;
+pub mod edit;
 pub mod equation;
 pub mod error;
 pub mod gui;

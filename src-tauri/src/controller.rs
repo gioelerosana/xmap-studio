@@ -4,8 +4,9 @@
 //! sincrona richiamabile dalla UI GTK (su un thread di lavoro). Nessuna
 //! dipendenza da Tauri: solo stato, rendering e I/O.
 
+use crate::edit;
 use crate::equation::{self, TitleMode};
-use crate::error::{ErrorPayload, CODE_NO_WORKBOOK, CODE_TOPIC_NOT_FOUND};
+use crate::error::{ErrorPayload, CODE_MOVE, CODE_NO_WORKBOOK, CODE_TOPIC_NOT_FOUND};
 use crate::mathjax::{self, Renderer};
 use crate::model;
 use crate::raster;
@@ -52,6 +53,15 @@ pub struct SaveResultDto {
 #[serde(rename_all = "camelCase")]
 pub struct BatchResultDto {
     pub outcomes: Vec<equation::ApplyOutcome>,
+    pub workbook: WorkbookDto,
+}
+
+/// Risultato dell'aggiunta di un blocco: id generato (per selezionarlo) più lo
+/// stato aggiornato del workbook.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddTopicResultDto {
+    pub topic_id: String,
     pub workbook: WorkbookDto,
 }
 
@@ -263,6 +273,71 @@ impl AppController {
             let topic = model::find_topic_mut(&mut wb.content, topic_id)
                 .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
             equation::remove_equation(topic, title);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    /// Imposta il testo del blocco. Su un blocco con equazione cambia solo il
+    /// titolo mostrato accanto alla formula.
+    pub fn set_topic_title(
+        &mut self,
+        topic_id: &str,
+        title: &str,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            edit::set_title(topic, title);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    /// Aggiunge un sotto-blocco testuale al blocco `parent_id`.
+    pub fn add_topic(
+        &mut self,
+        parent_id: &str,
+        title: &str,
+    ) -> Result<AddTopicResultDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let parent = model::find_topic_mut(&mut wb.content, parent_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            let topic_id = edit::add_child(parent, title);
+            wb.commit();
+            Ok(AddTopicResultDto {
+                topic_id,
+                workbook: wb.to_dto(),
+            })
+        })
+    }
+
+    /// Sposta il blocco (con il suo sotto-albero) rispetto a un altro blocco,
+    /// per riordino tra fratelli o per riannidamento.
+    pub fn move_topic(
+        &mut self,
+        topic_id: &str,
+        target_id: &str,
+        placement: edit::MovePlacement,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            edit::move_topic(&mut wb.content, topic_id, target_id, placement)
+                .map_err(|e| ErrorPayload::new(CODE_MOVE, e.message()))?;
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    /// Elimina il blocco (e i suoi figli). La radice di una sheet non è
+    /// eliminabile.
+    pub fn remove_topic(&mut self, topic_id: &str) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            if edit::remove_topic(&mut wb.content, topic_id).is_none() {
+                return Err(ErrorPayload::new(
+                    CODE_TOPIC_NOT_FOUND,
+                    "Blocco non trovato o non eliminabile (la radice della mappa non si rimuove).",
+                ));
+            }
             wb.commit();
             Ok(wb.to_dto())
         })

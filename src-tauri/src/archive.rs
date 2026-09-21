@@ -6,7 +6,9 @@
 //!  * le risorse (`resources/*`) sono tenute separate per poter aggiornare il
 //!    manifest in modo affidabile;
 //!  * la scrittura è atomica: temp nella stessa directory → fsync → backup →
-//!    rename → fsync della directory.
+//!    rename → fsync della directory;
+//!  * i backup finiscono in una cartella nascosta accanto al file, con
+//!    retention: non si accumulano copie visibili nella cartella di lavoro.
 
 use anyhow::{anyhow, bail, Context, Result};
 use indexmap::IndexMap;
@@ -118,15 +120,32 @@ pub struct WriteReport {
     pub bytes_written: usize,
 }
 
+/// Quanti backup conservare per ogni mappa: oltre questa soglia i più vecchi
+/// vengono eliminati, così la cartella non cresce all'infinito.
+const MAX_BACKUPS: usize = 5;
+
+/// Cartella nascosta dei backup, accanto al file sorgente.
+const BACKUP_DIR: &str = ".xmind-equation-studio/backups";
+
 fn timestamp() -> String {
     chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
 }
 
-pub fn backup_path(target: &Path) -> Result<PathBuf> {
+/// Cartella dei backup per `target`, creata se assente.
+fn backup_dir(target: &Path) -> Result<PathBuf> {
     let dir = target
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .ok_or_else(|| anyhow!("percorso senza directory padre: {}", target.display()))?;
+    let backup_dir = dir.join(BACKUP_DIR);
+    fs::create_dir_all(&backup_dir)
+        .with_context(|| format!("creazione cartella backup {}", backup_dir.display()))?;
+    Ok(backup_dir)
+}
+
+/// Percorso del prossimo backup, unico anche con più salvataggi nello stesso
+/// secondo.
+fn backup_path(target: &Path, dir: &Path) -> PathBuf {
     let stem = target
         .file_stem()
         .and_then(|s| s.to_str())
@@ -137,7 +156,53 @@ pub fn backup_path(target: &Path) -> Result<PathBuf> {
         candidate = dir.join(format!("{stem}.backup.{}-{n}.xmind", timestamp()));
         n += 1;
     }
-    Ok(candidate)
+    candidate
+}
+
+/// Copia datata dell'originale nella cartella nascosta e potatura dei backup
+/// eccedenti.
+fn create_backup(target: &Path) -> Result<PathBuf> {
+    let dir = backup_dir(target)?;
+    let backup = backup_path(target, &dir);
+    fs::copy(target, &backup).with_context(|| format!("backup in {}", backup.display()))?;
+    File::open(&backup)?.sync_all().context("fsync backup")?;
+    prune_backups(&dir, target);
+    Ok(backup)
+}
+
+/// Elimina i backup più vecchi di `target`, lasciando i `MAX_BACKUPS` recenti.
+fn prune_backups(dir: &Path, target: &Path) {
+    let stem = target
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("workbook");
+    let prefix = format!("{stem}.backup.");
+    let Ok(read) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut backups: Vec<PathBuf> = read
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with(&prefix) && n.ends_with(".xmind"))
+                .unwrap_or(false)
+        })
+        .collect();
+    if backups.len() <= MAX_BACKUPS {
+        return;
+    }
+    // Ordina dal più vecchio al più recente; a parità di mtime (salvataggi nello
+    // stesso istante) decide il nome, per un ordine deterministico.
+    backups.sort_by(|a, b| {
+        let ma = fs::metadata(a).and_then(|m| m.modified()).ok();
+        let mb = fs::metadata(b).and_then(|m| m.modified()).ok();
+        ma.cmp(&mb).then_with(|| a.cmp(b))
+    });
+    for old in &backups[..backups.len() - MAX_BACKUPS] {
+        let _ = fs::remove_file(old);
+    }
 }
 
 /// Scrive `bytes` in `target` in modo atomico, con backup datato dell'esistente.
@@ -162,10 +227,7 @@ pub fn atomic_write(target: &Path, bytes: &[u8], make_backup: bool) -> Result<Wr
 
     // 2) backup datato dell'originale, prima di toccarlo
     let backup = if make_backup && target.exists() {
-        let b = backup_path(target)?;
-        fs::copy(target, &b).with_context(|| format!("backup in {}", b.display()))?;
-        File::open(&b)?.sync_all().context("fsync backup")?;
-        Some(b)
+        Some(create_backup(target)?)
     } else {
         None
     };
@@ -212,6 +274,16 @@ mod tests {
             .to_str()
             .unwrap()
             .contains(".backup."));
+        // il backup sta nella cartella nascosta, non accanto al file
+        assert_eq!(
+            backup.parent().unwrap(),
+            backup_dir(&target).unwrap().as_path()
+        );
+        assert!(backup
+            .parent()
+            .unwrap()
+            .to_string_lossy()
+            .contains(".xmind-equation-studio"));
         // nessun temp residuo
         let leftovers: Vec<_> = fs::read_dir(dir.path())
             .unwrap()
@@ -219,6 +291,28 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().starts_with(".xmind-eq-"))
             .collect();
         assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn backups_are_pruned_to_the_retention_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("m.xmind");
+        fs::write(&target, b"v0").unwrap();
+        for i in 0..(MAX_BACKUPS + 3) {
+            fs::write(&target, format!("v{i}")).unwrap();
+            atomic_write(&target, b"new", true).unwrap();
+        }
+        let count = fs::read_dir(backup_dir(&target).unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .map(|n| n.starts_with("m.backup.") && n.ends_with(".xmind"))
+                    .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(count, MAX_BACKUPS);
     }
 
     #[test]

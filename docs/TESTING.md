@@ -21,7 +21,7 @@ invarianti che non possono rompersi.
 | Area | File | Cosa garantisce |
 |---|---|---|
 | Round-trip del modello | `model.rs` | campo sconosciuti preservati, interi restano interi, traversal e lookup LaTeX |
-| Archivio | `archive.rs` | SHA-256 noto, scrittura atomica + backup, round-trip delle entry ZIP |
+| Archivio | `archive.rs` | SHA-256 noto, scrittura atomica + backup nascosti con retention, round-trip delle entry ZIP |
 | Validazione | `validate.rs` | risorsa mancante rifiutata, risorsa fuori manifest rifiutata, JSON invalido rifiutato, `refresh_manifest` |
 | Equazione | `equation.rs` | rimozione pulita di extension/immagine, immagini normali intatte, LaTeX vuoto rifiutato prima del render |
 | Stato/undo | `state.rs` | DTO con breadcrumb e kind, undo/redo, salvataggio che valida e preserva l'ignoto, conflitto vs `force` |
