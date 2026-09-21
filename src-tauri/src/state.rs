@@ -69,6 +69,13 @@ pub struct TopicView {
     pub kind: &'static str,
     pub latex: Option<String>,
     pub image_src: Option<String>,
+    /// Testo delle note (`plain`), vuoto se assenti.
+    pub notes: String,
+    /// `"icon"`, `"block"` o `None` (predefinito di XMind).
+    pub notes_display: Option<String>,
+    pub labels: Vec<String>,
+    pub markers: Vec<String>,
+    pub href: Option<String>,
     pub path: Vec<String>,
     pub child_count: usize,
 }
@@ -345,6 +352,11 @@ fn visit(
         kind: kind_of(topic),
         latex: topic.latex().map(str::to_string),
         image_src: topic.image_src().map(str::to_string),
+        notes: topic.notes_text().map(str::to_string).unwrap_or_default(),
+        notes_display: topic.notes_display.clone(),
+        labels: topic.labels_list().to_vec(),
+        markers: topic.marker_ids().map(str::to_string).collect(),
+        href: topic.href_str().map(str::to_string),
         path,
         child_count: topic.child_count(),
     });

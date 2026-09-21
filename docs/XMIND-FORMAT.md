@@ -62,6 +62,65 @@ Regole di serializzazione:
 - L'ordine delle chiavi non è semanticamente rilevante per XMind; `serde_json`
   senza `preserve_order` produce un output deterministico (utile ai test).
 
+## Campi verificati (Fase 0.5)
+
+Estratti dal serializer di XMind 26.03.04129 (vedi
+[`AGENTS.md`](../AGENTS.md) §"Verificare un campo di formato"). Stato e priorità
+sono in [`PRODUCT.md`](PRODUCT.md) §3; qui solo i nomi e le forme.
+
+**Topic** (oltre a quelli della struct sopra):
+
+| Campo | Forma |
+|---|---|
+| `titleUnedited` | `bool` |
+| `attributedTitle` | `[{ text, "fo:font-family"?, "fo:font-style"?, "fo:font-weight"?, "fo:font-size"?, "fo:color"?, "fo:text-decoration"?, "fo:text-transform"? }]` |
+| `notes` | `{ plain:{content}, realHTML:{content} }` (XMind scrive entrambe; `notesDisplay` = `"icon"`/`"block"`) |
+| `labels` | `[string]` |
+| `image` | `{ src, width, height, align?, lockRatio?, borderColor?, borderWidth?, shadowVisible?, opacity?, isMathJaxImage? }` |
+| `customWidth` | numero (larghezza manuale del blocco) |
+| `href` | web `http(s)://…`/`mailto:…`, file `file:…`, topic `xmind:#<topicId>` |
+| `markers` | `[{ markerId }]` |
+| `position` | `{ x, y }` (topic staccati) |
+| `branch` | `"folded"` o assente |
+| `boundaries` | `[{ id, class:"boundary", range:"(start,end)" \| "master", title?, attributedTitle?, style? }]` |
+| `summaries` | `[{ id, class:"summary", range:"(start,end)", topicId, style? }]` **+** topic in `children.summary` |
+| `style` | `{ id, properties:{ "svg:fill"?, "svg:opacity"?, "fill-pattern"?, "line-color/-width/-pattern"?, "border-line-*"?, "shape-class"?, "line-class"?, "arrow-*-class"?, "fo:*"? } }` |
+
+**Note.** Nel binario `Converter.notesDataToHTML` restituisce `realHTML.content`
+così com'è (è XHTML caricato via `innerHTML`); `plainText` preferisce
+`plain.content`. Il serializer di `content.json` scrive `plain` solo se
+`text !== null` e `realHTML` solo se `html !== null`: vanno quindi scritte
+**entrambe** le metà. `realHTML` deve avere le entità corrette *dentro* la
+stringa (`&amp;`, `&lt;`, `&gt;`), mentre `serde_json` lascia `<`/`>`/`&`
+letterali nel JSON (nessun doppio escaping). `notesDisplay` è `"icon"`
+(predefinito) o `"block"`.
+
+**Marker.** Gli id validi sono i nomi file senza estensione sotto
+`static/snowbird/resource/markers/**` (173 id unici in 26.03.04129, in 15
+gruppi); `crate::markers` li espone. Su disco sono `[{ "markerId": "<id>" }]`.
+
+**Sheet**: `id, class, title, revisionId, rootTopic, topicOverlapping,
+arrangeableLayerOrder, zones, extensions, theme, relationships`.
+`sheet.relationships[]` = `{ id, class:"relationship", end1Id, end2Id, title?,
+attributedTitle?, controlPoints?{"0","1"}, lineEndPoints?{"0","1"},
+flexibleControlPoints?, style? }` (riferimenti per id a livello sheet).
+
+**Extension provider** (enum autorevole nel binario):
+`org.xmind.ui.mathJax`, `org.xmind.ui.audionotes`, `org.xmind.ui.webVideo`,
+`org.xmind.ui.spreadsheet` (Matrix), `org.xmind.ui.grid`,
+`org.xmind.ui.skeleton.structure.style`, `org.xmind.ui.numbering` (content
+`{pattern, tiered, fixedIndex}`), `org.xmind.ui.task` (content `{priority,
+progress, startDate, dueDate, assignees, dependencies, creator}`),
+`org.xmind.ui.extended-style`, `org.xmind.ui.working-day-settings`.
+Non esistono `org.xmind.ui.attachment` né `org.xmind.ui.equation`.
+
+**Allegati**: entry ZIP `attachments/<id>.bin` (fuori da `resources/`) +
+registrazione nel `manifest.json` + link `xap:attachments/<id>.bin` sul topic.
+
+**Marker**: il catalogo è nei file `markers/**` del binario; gli id coincidono
+con il nome file senza estensione (`priority-1`, `task-half`, `flag-red`,
+`star-yellow`, `smiley-smile`, `people-green`, `symbol-plus`, `tag-red`, …).
+
 ## Un topic con equazione, su disco
 
 ```json

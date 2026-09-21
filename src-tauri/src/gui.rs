@@ -10,6 +10,7 @@ use crate::controller::{AppController, StatusDto, DEFAULT_EM_PX};
 use crate::edit::MovePlacement;
 use crate::equation::TitleMode;
 use crate::error::{ErrorPayload, CODE_CONFLICT, CODE_XMIND_RUNNING};
+use crate::markers;
 use crate::raster;
 use crate::state::{TopicView, WorkbookDto};
 
@@ -118,6 +119,16 @@ struct Ui {
     add_topic_btn: gtk::Button,
     delete_btn: gtk::Button,
     topic_text: adw::EntryRow,
+    // Contenuto ricco del blocco (Fase 1): note, etichette, marker, link.
+    notes_view: gtk::TextView,
+    notes_switch: adw::SwitchRow,
+    notes_apply: gtk::Button,
+    labels_entry: adw::EntryRow,
+    href_entry: adw::EntryRow,
+    markers_row: adw::ExpanderRow,
+    markers_flow: gtk::FlowBox,
+    marker_drop: gtk::DropDown,
+    marker_add: gtk::Button,
     open_btn: gtk::Button,
     save_btn: gtk::Button,
     undo_btn: gtk::Button,
@@ -193,6 +204,11 @@ fn build_ui(app: &adw::Application) {
     let sec_file = gio::Menu::new();
     sec_file.append(Some("Salva con nome"), Some("win.save-as"));
     menu.append_section(None, &sec_file);
+    let sec_io = gio::Menu::new();
+    sec_io.append(Some("Esporta Markdown…"), Some("win.export-markdown"));
+    sec_io.append(Some("Esporta OPML…"), Some("win.export-opml"));
+    sec_io.append(Some("Importa Markdown/OPML…"), Some("win.import-outline"));
+    menu.append_section(None, &sec_io);
     let sec_topic = gio::Menu::new();
     sec_topic.append(Some("Esporta SVG"), Some("win.export-svg"));
     sec_topic.append(Some("Esporta PNG"), Some("win.export-png"));
@@ -309,7 +325,20 @@ fn build_ui(app: &adw::Application) {
             } else {
                 String::new()
             };
-            label.set_label(&format!("{marker}  {}{}", tv.display_title, group));
+            let mut meta = String::new();
+            if !tv.notes.is_empty() {
+                meta.push_str("  ✎");
+            }
+            if !tv.labels.is_empty() {
+                meta.push_str(&format!("  #{}", tv.labels.len()));
+            }
+            if !tv.markers.is_empty() {
+                meta.push_str(&format!("  ⚑{}", tv.markers.len()));
+            }
+            if tv.href.is_some() {
+                meta.push_str("  ↗");
+            }
+            label.set_label(&format!("{marker}  {}{}{}", tv.display_title, meta, group));
             label.set_margin_start(tv.depth as i32 * 16);
             label.set_tooltip_text(Some(&if tv.path.is_empty() {
                 tv.display_title.clone()
@@ -482,6 +511,95 @@ fn build_ui(app: &adw::Application) {
     options_group.set_margin_end(0);
     options_group.add(&options_row);
 
+    // ------------------------------------------------ contenuto ricco (Fase 1)
+    // Note: XMind salva `plain` + `realHTML`; qui si scrive testo semplice e il
+    // backend genera l'HTML escapato. Il testo resta nell'editor finché non si
+    // preme «Salva note», perché scrivere a ogni tasto farebbe uno snapshot di
+    // undo per battuta.
+    let notes_view = gtk::TextView::new();
+    notes_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    notes_view.set_top_margin(8);
+    notes_view.set_bottom_margin(8);
+    notes_view.set_left_margin(8);
+    notes_view.set_right_margin(8);
+    notes_view.set_tooltip_text(Some("Note del blocco (testo semplice)."));
+    let notes_scroll = gtk::ScrolledWindow::builder()
+        .min_content_height(96)
+        .child(&notes_view)
+        .build();
+
+    let notes_switch = adw::SwitchRow::new();
+    notes_switch.set_title("Mostra le note come blocco");
+    notes_switch.set_subtitle("Spento: icona accanto al blocco (predefinito di XMind)");
+
+    let notes_apply = gtk::Button::with_label("Salva note");
+    notes_apply.add_css_class("flat");
+
+    let notes_row = adw::ExpanderRow::new();
+    notes_row.set_title("Note");
+    notes_row.set_subtitle("Appunti estesi del blocco, visibili in XMind");
+    notes_row.set_expanded(false);
+    notes_row.add_row(&notes_scroll);
+    notes_row.add_row(&notes_switch);
+    notes_row.add_row(&notes_apply);
+
+    let labels_entry = adw::EntryRow::new();
+    labels_entry.set_title("Etichette");
+    labels_entry.set_show_apply_button(true);
+    labels_entry.set_tooltip_text(Some("Separate da virgola. Invio per confermare."));
+
+    let href_entry = adw::EntryRow::new();
+    href_entry.set_title("Link");
+    href_entry.set_show_apply_button(true);
+    href_entry.set_tooltip_text(Some(
+        "https://… , mailto:… , file:… oppure #id di un blocco. Vuoto per rimuovere.",
+    ));
+
+    // Marker: catalogo completo in un menu a tendina + chip di quelli attivi.
+    let mut marker_ids: Vec<String> = Vec::new();
+    let mut marker_names: Vec<String> = Vec::new();
+    for group in markers::GROUPS {
+        for (id, name) in group.markers {
+            marker_ids.push((*id).to_string());
+            marker_names.push(format!("{} — {}", group.label, name));
+        }
+    }
+    let marker_names_ref: Vec<&str> = marker_names.iter().map(String::as_str).collect();
+    let marker_drop = gtk::DropDown::new(
+        Some(gtk::StringList::new(&marker_names_ref)),
+        None::<gtk::Expression>,
+    );
+    marker_drop.set_hexpand(true);
+    marker_drop.set_tooltip_text(Some("Scegli un marker dal catalogo di XMind."));
+    let marker_add = gtk::Button::with_label("Aggiungi");
+    marker_add.add_css_class("flat");
+    let marker_picker = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    marker_picker.append(&marker_drop);
+    marker_picker.append(&marker_add);
+
+    let markers_flow = gtk::FlowBox::new();
+    markers_flow.set_selection_mode(gtk::SelectionMode::None);
+    markers_flow.set_max_children_per_line(6);
+    markers_flow.set_row_spacing(4);
+    markers_flow.set_column_spacing(4);
+    markers_flow.set_halign(gtk::Align::Start);
+
+    let markers_row = adw::ExpanderRow::new();
+    markers_row.set_title("Marker");
+    markers_row.set_subtitle("Nessun marker");
+    markers_row.set_expanded(false);
+    markers_row.add_row(&marker_picker);
+    markers_row.add_row(&markers_flow);
+
+    let meta_group = adw::PreferencesGroup::new();
+    meta_group.set_title("Contenuto del blocco");
+    meta_group.add(&notes_row);
+    meta_group.add(&labels_entry);
+    meta_group.add(&markers_row);
+    meta_group.add(&href_entry);
+
+    let marker_ids = Rc::new(marker_ids);
+
     let apply_btn = gtk::Button::with_label("Applica");
     apply_btn.add_css_class("suggested-action");
     apply_btn.set_tooltip_text(Some(
@@ -519,6 +637,7 @@ fn build_ui(app: &adw::Application) {
     editor.append(&formula_card);
     editor.append(&actions);
     editor.append(&options_group);
+    editor.append(&meta_group);
 
     let editor_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
@@ -615,6 +734,15 @@ fn build_ui(app: &adw::Application) {
         add_topic_btn: add_topic_btn.clone(),
         delete_btn: delete_btn.clone(),
         topic_text: topic_text.clone(),
+        notes_view: notes_view.clone(),
+        notes_switch: notes_switch.clone(),
+        notes_apply: notes_apply.clone(),
+        labels_entry: labels_entry.clone(),
+        href_entry: href_entry.clone(),
+        markers_row: markers_row.clone(),
+        markers_flow: markers_flow.clone(),
+        marker_drop: marker_drop.clone(),
+        marker_add: marker_add.clone(),
         open_btn: open_btn.clone(),
         save_btn: save_btn.clone(),
         undo_btn: undo_btn.clone(),
@@ -690,6 +818,27 @@ fn build_ui(app: &adw::Application) {
         let ui = ui.clone();
         let state = state.clone();
         topic_text.connect_apply(move |_| do_save_text(&ui, &state));
+    }
+    {
+        let ui = ui.clone();
+        let state = state.clone();
+        notes_apply.connect_clicked(move |_| do_save_notes(&ui, &state));
+    }
+    {
+        let ui = ui.clone();
+        let state = state.clone();
+        labels_entry.connect_apply(move |_| do_save_labels(&ui, &state));
+    }
+    {
+        let ui = ui.clone();
+        let state = state.clone();
+        href_entry.connect_apply(move |_| do_save_href(&ui, &state));
+    }
+    {
+        let ui = ui.clone();
+        let state = state.clone();
+        let ids = marker_ids.clone();
+        marker_add.connect_clicked(move |_| do_add_marker(&ui, &state, &ids));
     }
     {
         let ui = ui.clone();
@@ -819,6 +968,30 @@ fn build_ui(app: &adw::Application) {
         let state = state.clone();
         add_action(app, &win, "export-png", &[], move || {
             do_export(&ui, &state, "png")
+        });
+    }
+    {
+        let win = ui.window.clone();
+        let ui = ui.clone();
+        let state = state.clone();
+        add_action(app, &win, "export-markdown", &[], move || {
+            do_export_outline(&ui, &state, "markdown")
+        });
+    }
+    {
+        let win = ui.window.clone();
+        let ui = ui.clone();
+        let state = state.clone();
+        add_action(app, &win, "export-opml", &[], move || {
+            do_export_outline(&ui, &state, "opml")
+        });
+    }
+    {
+        let win = ui.window.clone();
+        let ui = ui.clone();
+        let state = state.clone();
+        add_action(app, &win, "import-outline", &[], move || {
+            do_import_outline(&ui, &state)
         });
     }
     {
@@ -1125,6 +1298,13 @@ fn rebuild_list(ui: &Rc<Ui>, state: &Rc<State>, wb: Option<&WorkbookDto>) {
                 .unwrap_or("")
                 .to_lowercase()
                 .contains(&query)
+            || t.notes.to_lowercase().contains(&query)
+            || t.labels.iter().any(|l| l.to_lowercase().contains(&query))
+            || t.href
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&query)
             || t.path.join(" › ").to_lowercase().contains(&query)
     };
 
@@ -1275,6 +1455,58 @@ fn update_editor(ui: &Rc<Ui>, state: &Rc<State>) {
 
     if ui.topic_text.text().as_str() != topic.title {
         ui.topic_text.set_text(&topic.title);
+    }
+
+    // Note: non sovrascrivere il buffer mentre l'utente lo sta modificando.
+    let notes = topic.notes.clone();
+    if !ui.notes_view.has_focus() && editor_text(&ui.notes_view) != notes {
+        ui.notes_view.buffer().set_text(&notes);
+    }
+    let as_block = topic.notes_display.as_deref() == Some("block");
+    if ui.notes_switch.is_active() != as_block {
+        ui.notes_switch.set_active(as_block);
+    }
+
+    let labels = topic.labels.join(", ");
+    if ui.labels_entry.text().as_str() != labels {
+        ui.labels_entry.set_text(&labels);
+    }
+
+    let href = topic.href.clone().unwrap_or_default();
+    if ui.href_entry.text().as_str() != href {
+        ui.href_entry.set_text(&href);
+    }
+
+    rebuild_markers(ui, state, &topic);
+}
+
+/// Ridisegna i chip dei marker attivi sul blocco selezionato.
+fn rebuild_markers(ui: &Rc<Ui>, state: &Rc<State>, topic: &TopicView) {
+    while let Some(child) = ui.markers_flow.first_child() {
+        ui.markers_flow.remove(&child);
+    }
+    ui.markers_row.set_subtitle(&if topic.markers.is_empty() {
+        "Nessun marker".to_string()
+    } else {
+        topic
+            .markers
+            .iter()
+            .map(|m| markers::display_name(m))
+            .collect::<Vec<_>>()
+            .join(", ")
+    });
+    for id in &topic.markers {
+        let chip = gtk::Button::with_label(&format!("{} ✕", markers::display_name(id)));
+        chip.add_css_class("flat");
+        chip.set_tooltip_text(Some("Rimuovi questo marker"));
+        let ui_cb = ui.clone();
+        let state_cb = state.clone();
+        let topic_id = topic.id.clone();
+        let marker_id = id.clone();
+        chip.connect_clicked(move |_| {
+            do_toggle_marker(&ui_cb, &state_cb, &topic_id, &marker_id);
+        });
+        ui.markers_flow.append(&chip);
     }
 }
 
@@ -1429,6 +1661,8 @@ fn set_busy(ui: &Ui, busy: bool, label: &str) {
     ui.apply_btn.set_label(label);
     ui.open_btn.set_sensitive(!busy);
     ui.save_btn.set_sensitive(!busy);
+    ui.notes_apply.set_sensitive(!busy);
+    ui.marker_add.set_sensitive(!busy);
     // Le voci del menu ☰ non si toccano qui: ogni callback di completamento
     // chiama `refresh` → `update_editor`, che le riallinea al blocco selezionato.
 }
@@ -1526,6 +1760,139 @@ fn do_save_text(ui: &Rc<Ui>, state: &Rc<State>) {
                 toast(&ui, "Testo aggiornato");
             }
             Err(e) => show_error(&ui, "Modifica non riuscita", &e.message),
+        },
+    );
+}
+
+/// Salva note e modo di visualizzazione. Testo vuoto rimuove le note.
+fn do_save_notes(ui: &Rc<Ui>, state: &Rc<State>) {
+    let Some(topic_id) = state.selected.borrow().clone() else {
+        toast(ui, "Seleziona prima un blocco.");
+        return;
+    };
+    let text = editor_text(&ui.notes_view);
+    let display = ui.notes_switch.is_active().then_some("block");
+    let controller = state.controller.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    spawn_blocking(
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .set_topic_notes(&topic_id, &text, display)
+        },
+        move |result| match result {
+            Ok(_) => {
+                refresh(&ui, &state);
+                toast(&ui, "Note aggiornate");
+            }
+            Err(e) => show_error(&ui, "Salvataggio note non riuscito", &e.message),
+        },
+    );
+}
+
+/// Salva le etichette scritte nell'EntryRow (separate da virgola).
+fn do_save_labels(ui: &Rc<Ui>, state: &Rc<State>) {
+    let Some(topic_id) = state.selected.borrow().clone() else {
+        toast(ui, "Seleziona prima un blocco.");
+        return;
+    };
+    let labels: Vec<String> = ui
+        .labels_entry
+        .text()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let controller = state.controller.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    spawn_blocking(
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .set_topic_labels(&topic_id, labels)
+        },
+        move |result| match result {
+            Ok(_) => {
+                refresh(&ui, &state);
+                toast(&ui, "Etichette aggiornate");
+            }
+            Err(e) => show_error(&ui, "Salvataggio etichette non riuscito", &e.message),
+        },
+    );
+}
+
+/// Salva (o rimuove, con campo vuoto) il link del blocco.
+fn do_save_href(ui: &Rc<Ui>, state: &Rc<State>) {
+    let Some(topic_id) = state.selected.borrow().clone() else {
+        toast(ui, "Seleziona prima un blocco.");
+        return;
+    };
+    let text = ui.href_entry.text().to_string();
+    let href = (!text.trim().is_empty()).then_some(text);
+    let controller = state.controller.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    spawn_blocking(
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .set_topic_href(&topic_id, href.as_deref())
+        },
+        move |result| match result {
+            Ok(_) => {
+                refresh(&ui, &state);
+                toast(&ui, "Link aggiornato");
+            }
+            Err(e) => show_error(&ui, "Salvataggio link non riuscito", &e.message),
+        },
+    );
+}
+
+/// Aggiunge il marker scelto nel menu a tendina al blocco selezionato.
+fn do_add_marker(ui: &Rc<Ui>, state: &Rc<State>, marker_ids: &Rc<Vec<String>>) {
+    let Some(topic_id) = state.selected.borrow().clone() else {
+        toast(ui, "Seleziona prima un blocco.");
+        return;
+    };
+    let Some(marker_id) = marker_ids.get(ui.marker_drop.selected() as usize).cloned() else {
+        toast(ui, "Scegli un marker dall'elenco.");
+        return;
+    };
+    let already = state
+        .by_id
+        .borrow()
+        .get(&topic_id)
+        .map(|t| t.markers.iter().any(|m| m == &marker_id))
+        .unwrap_or(false);
+    if already {
+        toast(ui, "Marker già presente sul blocco.");
+        return;
+    }
+    do_toggle_marker(ui, state, &topic_id, &marker_id);
+}
+
+/// Aggiunge o rimuove un marker dal blocco indicato.
+fn do_toggle_marker(ui: &Rc<Ui>, state: &Rc<State>, topic_id: &str, marker_id: &str) {
+    let controller = state.controller.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    let topic_id = topic_id.to_string();
+    let marker_id = marker_id.to_string();
+    spawn_blocking(
+        move || {
+            controller
+                .lock()
+                .unwrap()
+                .toggle_topic_marker(&topic_id, &marker_id)
+        },
+        move |result| match result {
+            Ok(_) => refresh(&ui, &state),
+            Err(e) => show_error(&ui, "Marker non modificato", &e.message),
         },
     );
 }
@@ -1867,6 +2234,151 @@ fn do_export(ui: &Rc<Ui>, state: &Rc<State>, format: &str) {
     });
 }
 
+/// Nome file (senza estensione) ricavato dal titolo della mappa: sostituisce i
+/// separatori di percorso e i caratteri di controllo, e ripiega su "mappa".
+fn filename_stem(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .map(|c| {
+            if c == '/' || c == '\\' {
+                '-'
+            } else if c.is_control() {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    if cleaned.is_empty() {
+        "mappa".to_string()
+    } else {
+        cleaned.chars().take(80).collect()
+    }
+}
+
+/// Esporta l'intera mappa in Markdown o OPML (file scelto dall'utente).
+fn do_export_outline(ui: &Rc<Ui>, state: &Rc<State>, format: &str) {
+    let (has_workbook, map_title) = {
+        let controller = state.controller.lock().unwrap();
+        (controller.status().has_workbook, controller.map_title())
+    };
+    if !has_workbook {
+        toast(ui, "Apri prima una mappa.");
+        return;
+    }
+    let stem = filename_stem(map_title.as_deref().unwrap_or("mappa"));
+    let (title, ext, filter_name) = match format {
+        "markdown" => ("Esporta Markdown", "md", "Markdown"),
+        _ => ("Esporta OPML", "opml", "OPML"),
+    };
+    let dialog = gtk::FileDialog::builder()
+        .title(title)
+        .initial_name(format!("{stem}.{ext}"))
+        .modal(true)
+        .build();
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some(filter_name));
+    filter.add_pattern(&format!("*.{ext}"));
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
+    dialog.set_default_filter(Some(&filter));
+
+    let format = format.to_string();
+    let win = ui.window.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    dialog.save(Some(&win), None::<&gio::Cancellable>, move |result| {
+        let Ok(file) = result else {
+            return;
+        };
+        let Some(path) = file.path() else {
+            return;
+        };
+        let path = path.display().to_string();
+        let controller = state.controller.clone();
+        let ui = ui.clone();
+        let format = format.clone();
+        spawn_blocking(
+            move || controller.lock().unwrap().export_outline(&format, &path),
+            move |result| match result {
+                Ok(out) => toast(&ui, &format!("Esportato in {out}")),
+                Err(e) => show_error(&ui, "Esportazione non riuscita", &e.message),
+            },
+        );
+    });
+}
+
+/// Importa un file Markdown/OPML come nuova sheet della mappa aperta.
+fn do_import_outline(ui: &Rc<Ui>, state: &Rc<State>) {
+    if !state.controller.lock().unwrap().status().has_workbook {
+        toast(ui, "Apri prima una mappa: l'import aggiunge una sheet.");
+        return;
+    }
+    let dialog = gtk::FileDialog::builder()
+        .title("Importa Markdown o OPML")
+        .modal(true)
+        .build();
+    let md = gtk::FileFilter::new();
+    md.set_name(Some("Markdown"));
+    md.add_pattern("*.md");
+    md.add_pattern("*.markdown");
+    let opml = gtk::FileFilter::new();
+    opml.set_name(Some("OPML"));
+    opml.add_pattern("*.opml");
+    opml.add_pattern("*.xml");
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&md);
+    filters.append(&opml);
+    dialog.set_filters(Some(&filters));
+
+    let win = ui.window.clone();
+    let ui = ui.clone();
+    let state = state.clone();
+    dialog.open(Some(&win), None::<&gio::Cancellable>, move |result| {
+        let Ok(file) = result else {
+            return;
+        };
+        let Some(path) = file.path() else {
+            return;
+        };
+        let format = match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("md" | "markdown") => "markdown",
+            Some("opml" | "xml") => "opml",
+            _ => {
+                show_error(
+                    &ui,
+                    "Formato non riconosciuto",
+                    "Usa un file .md, .markdown o .opml.",
+                );
+                return;
+            }
+        };
+        let path = path.display().to_string();
+        let controller = state.controller.clone();
+        let ui = ui.clone();
+        let state = state.clone();
+        spawn_blocking(
+            move || controller.lock().unwrap().import_outline(format, &path),
+            move |result| match result {
+                Ok(outcome) => {
+                    refresh(&ui, &state);
+                    let count = outcome.sheets.last().map(|s| s.topics.len()).unwrap_or(0);
+                    toast(&ui, &format!("Importati {count} blocchi"));
+                }
+                Err(e) => show_error(&ui, "Import non riuscito", &e.message),
+            },
+        );
+    });
+}
+
 fn toggle_theme(ui: &Rc<Ui>, state: &Rc<State>) {
     let manager = adw::StyleManager::default();
     let dark = !manager.is_dark();
@@ -1931,6 +2443,11 @@ mod tests {
             kind,
             latex: None,
             image_src: None,
+            notes: String::new(),
+            notes_display: None,
+            labels: Vec::new(),
+            markers: Vec::new(),
+            href: None,
             path: Vec::new(),
             child_count: 0,
         }
@@ -1987,6 +2504,14 @@ mod tests {
             std::slice::from_ref(&a),
             &[a.clone(), b]
         ));
+    }
+
+    #[test]
+    fn export_name_comes_from_map_title_sanitized() {
+        assert_eq!(filename_stem("Algebra di Boole"), "Algebra di Boole");
+        assert_eq!(filename_stem("  A / B \n"), "A - B");
+        assert_eq!(filename_stem("   "), "mappa");
+        assert_eq!(filename_stem("..."), "mappa");
     }
 
     #[test]

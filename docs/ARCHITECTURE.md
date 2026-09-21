@@ -46,7 +46,10 @@ Tutto vive in `src-tauri/src/`.
 | `model.rs` | modello tipizzato di `content.json`, traversal, `extra` preservato | `model.rs:69` |
 | `archive.rs` | lettura/scrittura ZIP, hashing, scrittura atomica, backup nascosti con retention | `archive.rs:59`, `archive.rs:209` |
 | `equation.rs` | applica/rimuove un'equazione su un topic | `equation.rs:61`, `equation.rs:135` |
-| `edit.rs` | rinomina, aggiunge, elimina e sposta topic (struttura) | `edit.rs:59`, `edit.rs:66`, `edit.rs:158` |
+| `edit.rs` | rinomina, aggiunge, elimina e sposta topic; note/etichette/marker/link | `edit.rs:59`, `edit.rs:66`, `edit.rs:158` |
+| `export.rs` | intera mappa in Markdown / OPML (solo modello, nessuno schema) | `export.rs:13`, `export.rs:119` |
+| `import.rs` | parse Markdown/OPML in albero e conversione in `Topic` | `import.rs:24`, `import.rs:82`, `import.rs:295` |
+| `markers.rs` | catalogo marker verificato dal binario XMind | `markers.rs:1` |
 | `mathjax.rs` | scoperta ed esecuzione del renderer Node | `mathjax.rs:30`, `mathjax.rs:90` |
 | `raster.rs` | SVG → PNG con resvg/tiny-skia | `raster.rs:10` |
 | `renderer_assets.rs` | estrazione del renderer incorporato in cache | `renderer_assets.rs:15` |
@@ -115,6 +118,19 @@ controller.save(force)
 
 Lo ZIP viene riaperto e validato in memoria prima di sovrascrivere qualsiasi
 cosa. Se la validazione fallisce, il file dell'utente non viene toccato.
+
+### Export / import testuale
+
+```
+controller.export_outline(format, path)
+  → export::to_markdown / to_opml        (solo modello in memoria)
+  → std::fs::write (file NUOVO dell'utente, non il .xmind)
+
+controller.import_outline(format, path)
+  → import::parse → OutlineNode          (parser senza dipendenze)
+  → import::node_to_topic + renderer     (le `$…$` diventano equazioni native)
+  → nuova Sheet in wb.content + commit   (nessuna scrittura finché non salvi)
+```
 
 ### Anteprima
 

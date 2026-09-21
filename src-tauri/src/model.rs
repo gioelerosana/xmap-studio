@@ -66,6 +66,16 @@ pub struct Topic {
     #[serde(default, skip_serializing_if = "is_none")]
     pub image: Option<Image>,
     #[serde(default, skip_serializing_if = "is_none")]
+    pub notes: Option<Notes>,
+    #[serde(rename = "notesDisplay", default, skip_serializing_if = "is_none")]
+    pub notes_display: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub labels: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub markers: Option<Vec<Marker>>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
     pub extensions: Option<Vec<Extension>>,
     #[serde(default, skip_serializing_if = "is_none")]
     pub summaries: Option<Value>,
@@ -105,6 +115,39 @@ pub struct Image {
     pub height: Option<serde_json::Number>,
     #[serde(rename = "isMathJaxImage", default, skip_serializing_if = "is_none")]
     pub is_mathjax_image: Option<bool>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Una metà di `notes`: XMind scrive `plain` (testo) e `realHTML` (XHTML).
+/// Entrambe hanno la forma `{ "content": "…" }`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NotesPart {
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub content: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Note di un topic. XMind scrive **entrambe** le rappresentazioni; scriverne
+/// una sola può desincronizzare la UI. La forma su disco è:
+/// `{ "plain": { "content": … }, "realHTML": { "content": … } }`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Notes {
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub plain: Option<NotesPart>,
+    #[serde(rename = "realHTML", default, skip_serializing_if = "is_none")]
+    pub real_html: Option<NotesPart>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Un marker (icona) applicato a un topic: su disco `{ "markerId": "…" }`.
+/// Il catalogo degli id validi è in `crate::markers`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Marker {
+    #[serde(rename = "markerId", default, skip_serializing_if = "is_none")]
+    pub marker_id: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -192,6 +235,34 @@ impl Topic {
 
     pub fn title_str(&self) -> &str {
         self.title.as_deref().unwrap_or("")
+    }
+
+    /// Testo delle note: preferisce `plain`, ripiega su `realHTML`. `None` se
+    /// assenti o vuote. Il fallback non viene ripulito dall'HTML: serve solo a
+    /// mostrare qualcosa nell'editor, che riscrive entrambe le metà.
+    pub fn notes_text(&self) -> Option<&str> {
+        let notes = self.notes.as_ref()?;
+        let text = notes
+            .plain
+            .as_ref()
+            .and_then(|p| p.content.as_deref())
+            .or_else(|| notes.real_html.as_ref().and_then(|p| p.content.as_deref()))?;
+        (!text.is_empty()).then_some(text)
+    }
+
+    pub fn labels_list(&self) -> &[String] {
+        self.labels.as_deref().unwrap_or(&[])
+    }
+
+    pub fn marker_ids(&self) -> impl Iterator<Item = &str> {
+        self.markers
+            .iter()
+            .flatten()
+            .filter_map(|m| m.marker_id.as_deref())
+    }
+
+    pub fn href_str(&self) -> Option<&str> {
+        self.href.as_deref().filter(|h| !h.is_empty())
     }
 }
 
@@ -443,6 +514,65 @@ mod tests {
         assert!(find_topic(&typed, "t1").unwrap().is_equation());
         assert!(!find_topic(&typed, "t1").unwrap().is_plain_image());
         assert!(find_topic(&typed, "t2").unwrap().latex().is_none());
+    }
+
+    const RICH: &str = r##"[
+      {
+        "id": "s",
+        "rootTopic": {
+          "id": "r",
+          "title": "x",
+          "notes": {
+            "plain": {"content": "riga1\nriga2", "extraNote": 1},
+            "realHTML": {"content": "<p>riga1</p>", "x": 2}
+          },
+          "notesDisplay": "block",
+          "labels": ["alfa", "beta"],
+          "markers": [{"markerId": "priority-1", "extraMarker": 3}, {"markerId": "flag-red"}],
+          "href": "https://example.org",
+          "unknownMeta": {"z": 9}
+        }
+      }
+    ]"##;
+
+    #[test]
+    fn round_trip_preserves_rich_topic_fields() {
+        let original = parse(RICH);
+        let typed: Vec<Sheet> = serde_json::from_value(original.clone()).unwrap();
+        let reserialized = serde_json::to_value(&typed).unwrap();
+        assert_eq!(original, reserialized, "note/label/marker/href alterati");
+    }
+
+    #[test]
+    fn rich_topic_helpers() {
+        let typed: Vec<Sheet> = serde_json::from_str(RICH).unwrap();
+        let root = typed[0].root_topic.as_ref().unwrap();
+        assert_eq!(root.notes_text(), Some("riga1\nriga2"));
+        assert_eq!(root.labels_list(), ["alfa", "beta"]);
+        assert_eq!(
+            root.marker_ids().collect::<Vec<_>>(),
+            vec!["priority-1", "flag-red"]
+        );
+        assert_eq!(root.href_str(), Some("https://example.org"));
+    }
+
+    #[test]
+    fn notes_fall_back_to_real_html_and_empty_is_none() {
+        let mut root: Topic = serde_json::from_value(json!({
+            "id": "r",
+            "notes": {"realHTML": {"content": "<p>solo html</p>"}}
+        }))
+        .unwrap();
+        assert_eq!(root.notes_text(), Some("<p>solo html</p>"));
+
+        root.notes = Some(Notes {
+            plain: Some(NotesPart {
+                content: Some(String::new()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert_eq!(root.notes_text(), None);
     }
 
     #[test]

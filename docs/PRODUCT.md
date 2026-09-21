@@ -1,9 +1,9 @@
 # XMap Studio — posizionamento e roadmap
 
-> Documento di progettazione del rebranding. **Non** descrive codice già
-> esistente: fissa nome, posizionamento, inventario delle feature precluse a
-> XMind Free e la roadmap. Il codice si tocca solo dopo l'ok su questo
-> documento.
+> Documento di prodotto. Fissa visione, identità, inventario delle feature
+> precluse a XMind Free con i campi di formato verificati, e la roadmap. Il
+> codice delle fasi si tocca solo dopo l'ok sul documento e la verifica di Fase
+> 0.5.
 
 ## 1. Visione
 
@@ -54,47 +54,69 @@ Note di attuazione:
 
 ## 3. Inventario: cosa XMind Free blocca
 
-Legenda stato: **Fatto** = già in questa app · **Fattibile** = campo noto del
-formato, implementazione stimata · **Da verificare** = va confermato sul campo
-su XMind 26.03.04129 prima di stimare.
-
-> Metodo di verifica (Fase 0.5): in XMind Free provare la feature, poi
-> estrarre `content.json` dal file salvato (rename `.zip`) e confrontare con un
-> file Pro. Nessuna feature entra in roadmap senza questo riscontro.
+> **Nota di metodo.** XMind non pubblica più una matrice ufficiale Free vs Pro
+> per il desktop: dal 2024 il pricing è centrato su cloud e AI, e l'help
+> ufficiale dice solo *"Pro = file locali, Premium = cloud"*. Le fonti usate
+> qui sono la [feature matrix storica](https://xmind.app/pricing/_feature_matrix/),
+> il confronto utente Free/Pro/Trial, i progetti open source che hanno
+> reverse-engineerato `content.json` (`mab-go/xmind-mcp`,
+> `keweixin/xmind-mcp-server`), **il binario XMind installato** (Flatpak
+> `net.xmind.XMind`, `buildVersion 26.03.04129`: serializer di `content.json` e
+> catalogo marker dentro `.../main/resources/app.asar`) e le **mappe reali**
+> salvate da XMind su questa macchina. Il metodo è replicabile, vedi
+> [`AGENTS.md`](../AGENTS.md) §"Verificare un campo di formato su XMind reale".
+>
+> Legenda stato: **Fatto** = già in questa app · **Confermato** = campo e
+> provider estratti dal serializer di XMind 26.03.04129 o osservati su file
+> reali · **Fattibile** = campo noto, implementazione stimabile · **Da
+> verificare** = resta un dubbio (di norma il *lock* nella UI Free, non
+> verificabile offline).
+>
+> **Regola di ammissione in roadmap:** il formato/provider di una feature è
+> confermato a monte; prima di stimare si verifica l'unico punto non deducibile
+> dal binario (cosa la UI Free blocca) con il riscontro sul campo.
 
 ### 3.1 Equazioni e contenuto del topic
 
-| Feature (Pro) | Lock Free | Su disco (`content.json`) | Stato | Priorità |
-|---|---|---|---|---|
-| Math Equation (LaTeX) | sì (noto) | `extensions[org.xmind.ui.mathJax]` + `image.isMathJaxImage` + PNG in `resources/` | **Fatto** | — |
-| Notes | da verificare | `topic.notes.plain.content` + `topic.notes.realHTML.content` | Fattibile | Alta |
-| Labels | da verificare | `topic.labels: [string]` | Fattibile | Alta |
-| Markers / icone | da verificare | `topic.markers: [{markerId}]` (serve catalogo `markerId`) | Fattibile | Alta |
-| Task tracking | da verificare | marker di task/priorità (`task-done`, `priority-1..7`…) + eventuale extension | Da verificare | Media |
-| Topic Link (ipertesto) | da verificare | `topic.href` (+ `attributedTitle`, solo display) | Fattibile | Alta |
-| Link a file/cartella locali | da verificare | `topic.href` con `file://…` | Da verificare | Media |
+| Feature (Pro) | Lock Free | Campi su disco | Provider / nota | Stato | Priorità |
+|---|---|---|---|---|---|
+| Math Equation (LaTeX) | sì (noto) | `image` annidato con `isMathJaxImage:true` + PNG in `resources/` | `org.xmind.ui.mathJax` (verificato) | **Fatto** | — |
+| Notes | da confermare | `topic.notes = { plain:{content}, realHTML:{content} }` + `topic.notesDisplay` (`"icon"`/`"block"`) | XMind scrive entrambe le metà; plain-only ammesso ma può desincronizzarsi | **Fatto** (Fase 1) | **Alta** |
+| Labels | da confermare | `topic.labels: [string]` | additivo | **Fatto** (Fase 1) | Alta |
+| Markers / icone | da confermare | `topic.markers: [{markerId}]` | catalogo svg nel binario: `priority-1..9`, `task-start/oct/quarter/3oct/5oct/7oct/3quar/half/done/pause`, `flag-*`, `star-*`, `half-star-*`, `smiley-*`, `people-*`, `arrow-*`, `symbol-*`, `tag-*`, `month-*`, `week-*`, `other-*`, `celebration-*`, `c_symbol_*`/`c_simbol-*` | **Fatto** (Fase 1) | **Alta** |
+| Topic Link / File Link | sì (storico) | `topic.href`: web `http(s)://…`/`mailto:…`, file `file:…`, topic `xmind:#<id>` | XMind aggiunge `attributedTitle` **solo display**: va preservato, non generato | **Fatto** (Fase 1) | **Alta** |
+| Task tracking | sì | extension `org.xmind.ui.task` con `content {priority, progress, startDate, dueDate, assignees, dependencies, creator}`; marker `task-*` per lo stato | provider nativo = `org.xmind.ui.task`; `org.xmind.ui.taskInfo` esiste ma serve alla conversione cloud | **Confermato** | Media |
+| Rich text / numbering | sì | `topic.attributedTitle: [{text, "fo:font-*"…}]`; numbering = extension `org.xmind.ui.numbering` con `content {pattern, tiered, fixedIndex}` | run con chiavi `fo:font-family/style/weight/size`, `fo:color`, `fo:text-decoration/transform` | **Confermato** | Bassa |
 
 ### 3.2 Struttura e relazioni
 
-| Feature (Pro) | Lock Free | Su disco | Stato | Priorità |
-|---|---|---|---|---|
-| Relationship | da verificare | `sheet.relationships[] = {id, end1Id, end2Id, title?}` | Fattibile | Alta |
-| Boundary | da verificare | `topic.boundaries[] = {id, range, title?}` | Fattibile | Media |
-| Summary | da verificare | `topic.children.summary[]` + `topic.summaries[] = {id, range, topicId}` | Fattibile | Media |
-| Strutture (Fishbone/Org/Timeline/Matrix) | no/parziale | `topic.structureClass`, `sheet.extensions` | Da verificare | Bassa |
-| Align floating topic | da verificare | `topic.position {x,y}` per i `detached` | Fattibile | Bassa |
-| Colored branch | **limitato** in Free | stile/tema del ramo | Da verificare | Media |
+| Feature (Pro) | Lock Free | Campi su disco | Provider / nota | Stato | Priorità |
+|---|---|---|---|---|---|
+| Relationship | da confermare | `sheet.relationships[] = {id, class:"relationship", end1Id, end2Id, title?, attributedTitle?, controlPoints?{"0","1"}, lineEndPoints?{"0","1"}, flexibleControlPoints?, style?}` | a livello sheet, riferisce per id; `end1`/`end2` = sorgente/destinazione | **Confermato** | **Alta** |
+| Boundary | da confermare | `topic.boundaries[] = {id, class:"boundary", range:"(start,end)" \| "master", title?, attributedTitle?, style?}` | sta sul topic **genitore**; `range` indicizza i figli | **Confermato** | Media |
+| Summary | da confermare | `topic.summaries[] = {id, class:"summary", range:"(start,end)", topicId, style?}` **+** topic reale in `children.summary` | doppia rappresentazione, entrambe obbligatorie; l'`id` di `summaries` è un hash del `topicId` | **Confermato** | Media |
+| Callout / floating topic | probabile | `children.callout[]`, `children.detached[]` + `topic.position {x,y}` | già percorsi dal modello | **Confermato** | Media |
+| Strutture (Fishbone/Org/Timeline/Matrix/Tree table…) | no/parziale | `topic.structureClass` | default `org.xmind.ui.map.unbalanced`; catalogo reale: `map*`, `logic.*`, `org-chart.*`, `fishbone.*`, `tree.*`, `timeline.*`, `spreadsheet*`, `treetable*`, `brace.*`, `grid`, `clockwise` | **Confermato** (campo) | Bassa |
+| Align floating topic | sì | `topic.position` | solo UI di allineamento | **Confermato** | Bassa |
+| Colored branch | **limitato** in Free | `topic.style = {id, properties}` con chiavi `svg:fill`, `svg:opacity`, `fill-pattern`, `line-color/-width/-pattern`, `border-line-*`, `shape-class`, `line-class`, `arrow-*-class`, `fo:*` | campo confermato; da confermare solo cosa blocca la UI Free | Da verificare (lock) | Bassa |
+
+> Non è un campo su disco ma un dettaglio utile: `topic.branch` (`"folded"` o
+> assente) memorizza il ramo ripiegato, e `topic.customWidth` la larghezza
+> manuale del blocco.
 
 ### 3.3 Allegati e media
 
-| Feature (Pro) | Lock Free | Su disco | Stato | Priorità |
-|---|---|---|---|---|
-| Attachment | sì (noto) | `resources/` + extension di attachment sul topic | Da verificare | Media |
-| Audio Notes | sì (noto) | `resources/` + extension audio (`resourceRefs`) | Da verificare | Bassa |
+| Feature (Pro) | Lock Free | Campi su disco | Provider / nota | Stato | Priorità |
+|---|---|---|---|---|---|
+| Attachment | da confermare | entry ZIP `attachments/<id>.bin` + registrazione in `manifest.json` + link `xap:attachments/<id>.bin` sul topic (o sotto-topic collegato) | **non è un provider**: nel binario non esiste `org.xmind.ui.attachment` | Fattibile | Media |
+| Audio Notes | sì | extension `org.xmind.ui.audionotes` con `resourceRefs`; l'audio è una risorsa in `resources/` | `org.xmind.ui.audionotes` (confermato) | **Confermato** (provider) | Bassa |
+| Immagini locali / sticker | sì (sticker) | `image.src = "xap:resources/…"` + `width`, `height`, `align`, `lockRatio`, `borderColor`, `borderWidth`, `shadowVisible`, `opacity` | gli sticker proprietari richiedono asset XMind (licenza) | **Confermato** (campo) | Bassa |
 
-Audio e allegati richiedono di scoprire provider esatti e `content`: vanno
-verificati prima di stimare. L'audio in più richiede registrazione/codec:
-probabile scope ridotto ad **allegare** un file esistente.
+Gli allegati **non** passano da `resources/` né da una extension: XMind li mette
+nella cartella `attachments/` dello ZIP e sul topic scrive un link
+`xap:attachments/…`. Il manifest va quindi esteso alle entry non-risorsa. L'audio
+in più richiede registrazione/codec: probabile scope ridotto ad **allegare** un
+file esistente.
 
 ### 3.4 Export / import (lato app, nessun lock di formato)
 
@@ -104,57 +126,148 @@ non toccano lo schema: leggiamo il modello già in memoria.
 
 | Feature | Lock Free | Stato | Priorità |
 |---|---|---|---|
-| Export SVG | sì | Fattibile (abbiamo già `raster.rs`/SVG) | Alta |
-| Export Markdown / OPML | sì | Fattibile | Alta |
-| Import Markdown / OPML → mappa | sì | Fattibile | Media |
+| Export SVG | sì | Rinviato alla Fase 6: serve il layout dei rami, lo stesso dell'anteprima grafica | Media |
+| Export Markdown / OPML | sì | **Fatto** (Fase 2): `export.rs`, un `#` per sheet, `$latex$`/note/etichette; OPML con `_note`/`_equation`/`_labels` | **Alta** |
 | Export PNG senza watermark | watermark in Free | Fattibile (serve layout) | Media |
-| Export PDF senza watermark | watermark in Free | Fattibile (serve libreria PDF) | Bassa |
-| Split mappa per ramo principale | sì | Fattibile | Bassa |
+| Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `import.rs`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
 | Merge di file `.xmind` | sì | Fattibile (operazione sul modello) | Media |
-| Export Excel / Word | sì | Non prioritario | — |
+| Split mappa per ramo principale | sì | Fattibile | Bassa |
+| Export PDF senza watermark | watermark in Free | Fattibile (serve libreria PDF: dipendenza) | Bassa |
+| Export Excel / Word | sì | Non prioritario (dipendenza pesante) | — |
 
 ### 3.5 Presentazione e UI
 
 | Feature | Lock Free | Note | Priorità |
 |---|---|---|---|
 | Outliner (vista testo) | sì | Solo UI, il modello c'è già | Media |
-| ZEN mode (tutte le rese) | parziale | Solo UI | Bassa |
+| Ricerca / filtro nell'albero | sì | Solo UI, il modello c'è già | Media |
 | Temi / custom theme | sì | `sheet.theme` / `topic.style`: la parte difficile è l'editor | Bassa |
-| Rich text / numbering | sì | Probabile `attributedTitle`; da verificare | Bassa |
-| Set Password | sì | **Fuori scope**: cifratura ZIP, rischio alto | — |
+| ZEN mode (tutte le rese) | parziale | Solo UI | Bassa |
+| Set Password | sì | **Fuori scope**: cifratura ZIP, rompe atomicità e validazione | — |
+
+### 3.6 Trappole trasversali (valide per tutte le fasi)
+
+1. **HTML escaping: all'opposto di come sembra.** XMind vuole `&`, `<`, `>`
+   **letterali** dentro le stringhe JSON e `serde_json` fa già la cosa giusta
+   (escapa solo `"`, `\` e i caratteri di controllo, non `<`/`>`/`&`). Non
+   introdurre quindi un encoder HTML: il rischio è doppio-escaping. L'unica
+   attenzione vera è il contenuto di `realHTML`, che è XHTML e deve avere le
+   proprie entità corrette *dentro* la stringa.
+2. **Provider verificati nel binario.** L'insieme completo degli extension
+   provider di `content.json` è quello dell'enum di XMind: `org.xmind.ui.mathJax`,
+   `org.xmind.ui.audionotes`, `org.xmind.ui.webVideo`, `org.xmind.ui.spreadsheet`
+   (Matrix), `org.xmind.ui.grid`, `org.xmind.ui.skeleton.structure.style`,
+   `org.xmind.ui.numbering`, `org.xmind.ui.task`, `org.xmind.ui.extended-style`,
+   `org.xmind.ui.working-day-settings`. Non esistono `org.xmind.ui.attachment` /
+   `org.xmind.ui.equation`; `org.xmind.ui.taskInfo` è usato solo nel percorso di
+   conversione cloud.
+3. **Doppie rappresentazioni.** Notes (`plain` + `realHTML`), Summary
+   (`topic.summaries` + `children.summary`), link (`href` + `attributedTitle`):
+   se si scrive una sola metà, XMind può desincronizzarsi.
+4. **`extra` è intoccabile.** Ogni nuovo campo passa da struct con
+   `#[serde(flatten)] extra` e `skip_serializing_if`, mai `null` aggiunti.
 
 ## 4. Roadmap proposta
 
-### Fase 0 — Rebranding (nessun cambio di comportamento)
-Rinomina token (§2), aggiorna icona, docs (`README`, `AGENTS`, `docs/*`),
-`.desktop`, AppImage, test string. `cargo fmt && clippy && test` verdi.
-**Criterio di done**: nessun riferimento all'ex brand nel codice, salvo le
-esclusioni legacy in `safety.rs` (da mantenere) e la mappa storica in questo
-documento; i file `.xmind` restano byte-compatibili.
+Criterio di ordinamento: **valore per l'utente ÷ (rischio × sforzo × nuove
+dipendenze)**. Ogni fase è spedibile da sola, su branch dedicato, MR verso
+`main`, con verifica in XMind prima dell'unione.
 
-### Fase 0.5 — Verifica dei lock
-Su XMind 26.03.04129 Free: provare ogni feature "da verificare" e ispezionare
-`content.json`. Output: tabella aggiornata con provider/campi reali.
+| Fase | Obiettivo | Valore | Sforzo | Rischio formato | Dipendenze nuove |
+|---|---|---|---|---|---|
+| 1 | Contenuto ricco del topic | Alto | Basso | Basso (additivo) | No |
+| 2 | Interoperabilità (export/import) | Alto | Basso | Nullo (nessuno schema) | No |
+| 3 | Struttura visibile (relazioni) | Medio | Medio | Medio | No |
+| 4 | Media (allegati, audio) | Medio | Medio/alto | Medio | Forse (codec audio) |
+| 5 | Produttività (task, outliner, ricerca, temi) | Medio | Medio | Basso/medio | No |
 
-### Fase 1 — Topic ricchi (alto valore, basso rischio)
-Notes, Labels, Markers, Href. Campi additivi, tutti coperte da `extra`, nessuna
-interazione con l'archivio se non per i media. Prima UI: pannello laterale del
-topic selezionato.
+### Fase 0 — Rebranding (fatto)
+Rinomina token (§2), icona, docs, `.desktop`, AppImage, test string.
+**Done:** nessun riferimento all'ex brand salvo le esclusioni legacy in
+`safety.rs`; i file `.xmind` restano byte-compatibili.
 
-### Fase 2 — Struttura visibile
-Relationship, Boundary, Summary. Riguardano `sheet.relationships` e
-`topic.boundaries/summaries`; serve una vista che mostri/editi le relazioni.
+### Fase 0.5 — Verifica dei lock e dei provider (fatta offline)
+Campo e provider di §3 sono stati confermati **senza** dipendere da una licenza
+Pro: estraendo il serializer di `content.json` e il catalogo marker dal binario
+XMind 26.03.04129 e incrociandoli con le mappe reali salvate su disco (vedi
+[`AGENTS.md`](../AGENTS.md) §"Verificare un campo di formato su XMind reale"). Resta da
+confermare in UI solo cosa la versione Free blocca (colonna *Lock Free*).
+**Done:** ogni riga di §3 è `Fatto`, `Confermato`, `Fattibile` con campo noto, o
+esplicitamente `Fuori scope`.
 
-### Fase 3 — Interoperabilità
-Export SVG/Markdown/OPML e import Markdown/OPML; merge di mappe; split per ramo.
-Massimizza il distacco da XMind Free senza toccare lo schema.
+### Fase 1 — Topic ricco (valore alto, rischio basso)
+**Feature:** Notes, Labels, Markers (inclusi i marker di task), Href (web, file,
+topic link).
+**Perché prima:** sono additive, coprono i bisogni di studio/appunti, non
+toccano l'archivio se non per nessuna risorsa, e sono le più probabili a essere
+bloccate in Free. Riusano `extra` e la validazione esistenti.
+**Dove:** `model.rs` (struct tipizzate + helper), `edit.rs` (applica/rimuovi) e
+`markers.rs` (catalogo), `controller.rs`, `state.rs` per il DTO, pannello
+laterale topic in `gui.rs`.
+**Done:** round-trip fedele con note/label/marker/href; apertura in XMind con i
+valori visibili e modificabili; `cargo fmt && clippy && test` verdi.
+**Stato:** fatto. `model.rs`/`markers.rs`/`edit.rs` + pannello «Contenuto del
+blocco» in `gui.rs`; note scritte con entrambe le metà (plain + realHTML
+escapato), catalogo marker di 173 id verificato dal binario.
+
+### Fase 2 — Interoperabilità (nessuno schema, massimo distacco da Free)
+**Feature:** export Markdown, OPML; import Markdown/OPML; merge di `.xmind`;
+split per ramo principale.
+**Perché seconda:** è il distacco più visibile da XMind Free e non tocca il
+formato: si legge il modello in memoria.
+**Dove:** `export.rs` (Markdown/OPML) e `import.rs` (parser senza dipendenze),
+azioni nel menu ☰ in `gui.rs`, tutto in `spawn_blocking`.
+**Done:** export/import confrontati su mappe reali; nessuna dipendenza nuova.
+**Stato:** fatto per Markdown/OPML. L'**import crea una nuova sheet** e le
+equazioni `$…$` vengono renderizzate come native. L'**export SVG della mappa** e
+il **PNG senza watermark** richiedono il layout dei rami e passano alla Fase 6
+(anteprima grafica). Merge e split restano da fare (operazioni sul modello,
+nessun rischio di schema).
+
+### Fase 3 — Struttura visibile
+**Feature:** Relationship, Boundary, Summary, callout e floating topic con
+`position`.
+**Perché terza:** alto valore per mappe concettuali, ma richiede una vista
+dedicata (le relazioni vivono a livello sheet, boundary/summary sui figli) e la
+doppia rappresentazione va gestita con attenzione.
+**Dove:** `model.rs` (`relationships`, `boundaries`, `summaries`), nuovo
+`graph.rs`, rendering/editing relazioni in `gui.rs`.
+**Done:** relazioni e summary creati sopravvivono al round-trip e si vedono in
+XMind; nessun riferimento orfano dopo l'eliminazione di un topic.
 
 ### Fase 4 — Media
-Attachment e audio (almeno allegare file esistenti), dopo aver confermato i
-provider.
+**Feature:** Attachment (allegare file esistenti), poi Audio Notes solo in
+modalità "allega file".
+**Perché quarta:** richiede estensione di `archive.rs`/`validate.rs` per le entry
+non-risorsa (`attachments/`) e una risorsa audio in `resources/`. L'audio con
+registrazione/codec è probabile fuori scope.
+**Dove:** `archive.rs` (entry `attachments/`), `validate.rs` (manifest),
+`media.rs`.
+**Done:** allegato presente in `attachments/<id>.bin`, registrato nel manifest,
+link `xap:attachments/…` sul topic, apribile da XMind; le risorse orfane restano
+(scelta di sicurezza).
 
-### Fase 5 — Presentazione
-Outliner view, temi/stili, colored branch.
+### Fase 5 — Produttività
+**Feature:** Task tracking (marker `task-*` + extension `org.xmind.ui.task`),
+Outliner, ricerca/filtro, temi/stili e colored branch.
+**Perché ultima:** sono molto UI-heavy (temi, editor task, rich text) con valore
+inferiore rispetto alle fasi precedenti; il formato è ormai confermato.
+**Dove:** `gui.rs` (outliner, ricerca), `topic_meta.rs` (task), `theme.rs`
+(stili).
+
+### Fase 6 (futura) — Anteprima grafica della mappa
+**Idea:** accanto all'outliner testuale, una vista grafica della mappa — blocchi,
+rami, marker, relazioni — disegnata da un canvas GTK (`DrawingArea` /
+`Snapshot`) a partire dal modello in memoria, **senza webview**. Riusa i DTO già
+esistenti; il costo vero è il layout dei rami e la resa del testo.
+**Perché dopo:** è una feature di presentazione, non di formato: non sblocca
+nulla in XMind e ha complessità di layout alta. Va affrontata quando le fasi di
+contenuto (1–2) e struttura (3) hanno reso il modello completo.
+
+### Fuori scope (per scelta)
+Cloud/account/collaborazione/AI; Set Password (cifratura ZIP); sticker e
+IconFinder proprietari (asset XMind, licenza); export Word/Excel e PDF nativi
+(dipendenze pesanti); registrazione audio con codec.
 
 ## 5. Invarianti (non negoziabili)
 
@@ -167,15 +280,18 @@ l'arrivo di nuove feature:
    `archive::atomic_write` e da `validate::validate_archive_bytes`.
 3. Il backend resta senza GTK (`controller.rs` testabile headless).
 4. Nessuna nuova dipendenza se std o un crate esistente bastano.
+5. La UI non fa lavoro pesante: tutto passa da `gui::spawn_blocking`.
 
 ## 6. Rischi
 
 | Rischio | Impatto | Mitigazione |
 |---|---|---|
 | Drift del formato tra versioni XMind | Feature scritte male = file rotto | Validazione + test E2E su XMind reale a ogni feature |
-| Provider/campi non verificati | Implementazione inutile | Fase 0.5 obbligatoria |
+| Provider/campi non verificati | Implementazione inutile | Verifica offline dal binario XMind (§3, Fase 0.5); resta il solo lock Free |
+| Doppie rappresentazioni (notes/summary/link) | XMind desincronizza o perde dati | Scrivere entrambe le metà, test E2E |
+| Doppio escaping in `realHTML` (`&`/`<`/`>`) | Contenuto HTML corrotto | Lasciare `serde_json` (scrive `<`/`>`/`&` letterali), nessun encoder HTML, test di round-trip |
 | Confusione col marchio XMind | Legale | Nome proprio, solo "compatibile con" |
-| Audio/cifratura | Complessità, dipendenze | Scope ridotto / fuori scope |
+| Audio/cifratura/sticker | Complessità, dipendenze, licenza | Scope ridotto / fuori scope |
 | Vecchi backup/percorsi | Perdita storico utente | Fallback in lettura, nessuna cancellazione |
 
 ## 7. Decisioni prese
@@ -184,13 +300,18 @@ l'arrivo di nuove feature:
 2. **Repo**: rinominato su GitLab in `xmap-studio`; cartella locale `xmind-LaTeX`
    invariata.
 3. **Icona**: ritocco della palette, simbolo attuale invariato.
-4. **Ambito Fase 1 / export / ordine di roadmap**: uniche scelte ancora aperte,
-   da definire prima di iniziare la fase (priorità in §3).
+4. **Roadmap**: ordine Fase 1 → 5 come in §4. Export/import promosso a Fase 2
+   (nessuno schema, massimo distacco da Free). Notes/Labels/Markers/Href restano
+   i primi perché additivi e ad alto bisogno.
+5. **Fuori scope**: password ZIP, sticker/IconFinder proprietari, export
+   Word/Excel e PDF nativi, registrazione audio con codec, cloud/AI/collaborazione.
 
 ## 8. Come si procede
 
-1. **Fase 0 — rebranding**: su branch `refactor/xmap-studio-rebrand`, MR verso
-   `main`, senza mescolare feature.
-2. **Fase 0.5 — verifica dei lock** su XMind Free reale (§3).
-3. **Fasi successive**: ognuna su branch dedicato (`feat/<slug>`), con MR verso
+1. **Fase 0 — rebranding**: fatto su `refactor/xmap-studio-rebrand`.
+2. **Fase 0.5 — verifica di lock e provider**: fatta; campi e provider di §3
+   sono confermati dal binario XMind 26.03.04129. Resta la sola conferma dei
+   lock Free, da fare in UI quando serve.
+3. **Fase 1 — topic ricco**: fatta (note, etichette, marker, link).
+4. **Fasi successive**: ognuna su branch dedicato (`feat/<slug>`), con MR verso
    `main`, test e verifica in XMind prima dell'unione.

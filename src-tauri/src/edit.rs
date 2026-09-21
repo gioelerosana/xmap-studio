@@ -10,7 +10,7 @@
 //!   titolo mostrato accanto alla formula;
 //! - la radice di una sheet non è eliminabile (XMind richiede `rootTopic`).
 
-use crate::model::{self, Children, Sheet, Topic, CHILD_GROUPS};
+use crate::model::{self, Children, Marker, Notes, NotesPart, Sheet, Topic, CHILD_GROUPS};
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -73,6 +73,138 @@ pub fn add_child(parent: &mut Topic, title: &str) -> String {
     let children = parent.children.get_or_insert_with(Children::default);
     children.attached.get_or_insert_with(Vec::new).push(child);
     id
+}
+
+/// Sostituisce le note del topic con `text` (testo semplice).
+///
+/// XMind salva entrambe le metà: `plain` (testo) e `realHTML` (XHTML). Le
+/// scriviamo sempre insieme per non farle desincronizzare. `realHTML` viene
+/// generato escapando il testo (le entità devono essere corrette *dentro* la
+/// stringa HTML), una `p` per riga. Testo vuoto rimuove le note.
+pub fn set_notes(topic: &mut Topic, text: &str) {
+    if text.trim().is_empty() {
+        topic.notes = None;
+        topic.notes_display = None;
+        return;
+    }
+    topic.notes = Some(Notes {
+        plain: Some(NotesPart {
+            content: Some(text.to_string()),
+            ..Default::default()
+        }),
+        real_html: Some(NotesPart {
+            content: Some(notes_html(text)),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+}
+
+/// Imposta `notesDisplay` (`"icon"` o `"block"`). `None` = valore predefinito
+/// di XMind (icona).
+pub fn set_notes_display(topic: &mut Topic, display: Option<&str>) {
+    topic.notes_display = display
+        .map(str::trim)
+        .filter(|d| matches!(*d, "icon" | "block"))
+        .map(str::to_string);
+}
+
+/// Normalizza ed imposta le etichette: rimuove spazi, vuoti e duplicati
+/// (mantenendo l'ordine); lista vuota rimuove il campo.
+pub fn set_labels(topic: &mut Topic, labels: &[String]) {
+    let mut clean: Vec<String> = Vec::new();
+    for label in labels {
+        let label = label.trim();
+        if label.is_empty() || clean.iter().any(|l| l == label) {
+            continue;
+        }
+        clean.push(label.to_string());
+    }
+    topic.labels = (!clean.is_empty()).then_some(clean);
+}
+
+/// Aggiunge o rimuove un marker. Restituisce `true` se il marker è ora
+/// presente. Un id vuoto non fa nulla.
+pub fn toggle_marker(topic: &mut Topic, marker_id: &str) -> bool {
+    let id = marker_id.trim();
+    if id.is_empty() {
+        return false;
+    }
+    let removed = {
+        let markers = topic.markers.get_or_insert_with(Vec::new);
+        match markers
+            .iter()
+            .position(|m| m.marker_id.as_deref() == Some(id))
+        {
+            Some(pos) => {
+                markers.remove(pos);
+                true
+            }
+            None => {
+                markers.push(Marker {
+                    marker_id: Some(id.to_string()),
+                    ..Default::default()
+                });
+                false
+            }
+        }
+    };
+    let now_empty = topic
+        .markers
+        .as_ref()
+        .map(|m| m.is_empty())
+        .unwrap_or(false);
+    if now_empty {
+        topic.markers = None;
+    }
+    !removed
+}
+
+/// Imposta (o rimuove) il link del topic. Non genera `attributedTitle`: è solo
+/// una rappresentazione di visualizzazione di XMind e va preservata com'è.
+/// Una forma `#<id>` viene normalizzata nel topic link `xmind:#<id>`.
+pub fn set_href(topic: &mut Topic, href: Option<&str>) {
+    let clean = href.map(str::trim).filter(|s| !s.is_empty());
+    topic.href = clean.map(|s| {
+        if let Some(id) = s.strip_prefix('#') {
+            format!("xmind:#{id}")
+        } else {
+            s.to_string()
+        }
+    });
+}
+
+/// Converte testo semplice in XHTML per `notes.realHTML`. Ogni riga diventa
+/// un paragrafo; le righe vuote diventano `<p><br></p>`.
+pub fn notes_html(text: &str) -> String {
+    let mut out = String::new();
+    for line in text.split('\n') {
+        if line.is_empty() {
+            out.push_str("<p><br></p>");
+        } else {
+            out.push_str("<p>");
+            out.push_str(&escape_html(line));
+            out.push_str("</p>");
+        }
+    }
+    out
+}
+
+/// Escapa `& < > " '` per l'uso dentro `realHTML`. L'ordine conta: `&` per
+/// primo, altrimenti si ri-escapano le entità appena prodotte.
+fn escape_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Stacca e restituisce il topic con `id` (insieme a tutti i suoi figli).
@@ -469,6 +601,68 @@ mod tests {
             move_topic(&mut sheets, "a", "root", MovePlacement::Before),
             Err(MoveError::NoSiblings)
         );
+    }
+
+    #[test]
+    fn set_notes_writes_both_halves_and_escapes_html() {
+        let mut t = Topic::default();
+        set_notes(&mut t, "a < b & c\n\nfine");
+        let notes = t.notes.as_ref().unwrap();
+        assert_eq!(
+            notes.plain.as_ref().unwrap().content.as_deref(),
+            Some("a < b & c\n\nfine")
+        );
+        assert_eq!(
+            notes.real_html.as_ref().unwrap().content.as_deref(),
+            Some("<p>a &lt; b &amp; c</p><p><br></p><p>fine</p>")
+        );
+        assert_eq!(t.notes_text(), Some("a < b & c\n\nfine"));
+    }
+
+    #[test]
+    fn empty_notes_are_removed() {
+        let mut t = Topic::default();
+        set_notes(&mut t, "  ");
+        assert!(t.notes.is_none());
+        assert!(t.notes_display.is_none());
+    }
+
+    #[test]
+    fn labels_are_normalized_and_deduped() {
+        let mut t = Topic::default();
+        set_labels(&mut t, &[" a ".into(), "b".into(), "a".into(), "".into()]);
+        assert_eq!(
+            t.labels.as_deref(),
+            Some(&["a".to_string(), "b".to_string()][..])
+        );
+        set_labels(&mut t, &[]);
+        assert!(t.labels.is_none());
+    }
+
+    #[test]
+    fn toggle_marker_adds_and_removes() {
+        let mut t = Topic::default();
+        assert!(toggle_marker(&mut t, "priority-1"));
+        assert!(toggle_marker(&mut t, "flag-red"));
+        assert_eq!(
+            t.marker_ids().collect::<Vec<_>>(),
+            vec!["priority-1", "flag-red"]
+        );
+        assert!(!toggle_marker(&mut t, "priority-1"));
+        assert_eq!(t.marker_ids().collect::<Vec<_>>(), vec!["flag-red"]);
+        assert!(!toggle_marker(&mut t, "flag-red"));
+        assert!(t.markers.is_none());
+    }
+
+    #[test]
+    fn href_normalizes_topic_link_and_clears() {
+        let mut t = Topic::default();
+        set_href(&mut t, Some("#abc"));
+        assert_eq!(t.href.as_deref(), Some("xmind:#abc"));
+        set_href(&mut t, Some("https://example.org"));
+        assert_eq!(t.href.as_deref(), Some("https://example.org"));
+        set_href(&mut t, None);
+        assert!(t.href.is_none());
     }
 
     #[test]

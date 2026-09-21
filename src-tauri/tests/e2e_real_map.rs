@@ -5,7 +5,10 @@
 
 use std::path::{Path, PathBuf};
 use xmap_studio_lib::archive::{read_archive, sha256_hex};
+use xmap_studio_lib::controller::AppController;
+use xmap_studio_lib::edit;
 use xmap_studio_lib::equation::{apply_equation, TitleMode};
+use xmap_studio_lib::export;
 use xmap_studio_lib::mathjax::Renderer;
 use xmap_studio_lib::model::{self, Sheet};
 use xmap_studio_lib::state::OpenWorkbook;
@@ -132,6 +135,17 @@ fn e2e_apply_save_validate_reopen() {
     wb.archive
         .resources
         .insert(outcome.resource.clone(), png.clone());
+
+    // Fase 1: contenuto ricco sullo stesso blocco (note, etichette, marker, link).
+    {
+        let topic = model::find_topic_mut(&mut wb.content, &target_id).unwrap();
+        edit::set_notes(topic, "nota di prova <x> & y");
+        edit::set_notes_display(topic, Some("block"));
+        edit::set_labels(topic, &["prova".to_string(), "e2e".to_string()]);
+        assert!(edit::toggle_marker(topic, "priority-1"));
+        assert!(edit::toggle_marker(topic, "flag-red"));
+        edit::set_href(topic, Some("https://example.org"));
+    }
     wb.commit();
     assert!(wb.is_dirty());
 
@@ -170,6 +184,30 @@ fn e2e_apply_save_validate_reopen() {
     assert_eq!(
         image.height.as_ref().unwrap().as_i64(),
         Some(outcome.height)
+    );
+
+    // Fase 1: contenuto ricco sopravvissuto al round-trip.
+    assert_eq!(topic.notes_text(), Some("nota di prova <x> & y"));
+    assert_eq!(topic.notes_display.as_deref(), Some("block"));
+    assert_eq!(topic.labels_list(), ["prova", "e2e"]);
+    assert_eq!(
+        topic.marker_ids().collect::<Vec<_>>(),
+        vec!["priority-1", "flag-red"]
+    );
+    assert_eq!(topic.href_str(), Some("https://example.org"));
+    let html = topic
+        .notes
+        .as_ref()
+        .unwrap()
+        .real_html
+        .as_ref()
+        .unwrap()
+        .content
+        .as_deref()
+        .unwrap();
+    assert_eq!(
+        html, "<p>nota di prova &lt;x&gt; &amp; y</p>",
+        "realHTML non escapato correttamente"
     );
 
     // risorsa presente nello ZIP e registrata nel manifest
@@ -235,4 +273,65 @@ fn e2e_apply_save_validate_reopen() {
         working.display(),
         save.backup.unwrap().display()
     );
+}
+
+#[test]
+fn e2e_export_markdown_opml_then_import_as_sheet() {
+    let Some(map) = test_map() else {
+        eprintln!("skip: nessuna mappa di test disponibile");
+        return;
+    };
+    let (_dir, working) = copy_to_temp(&map);
+    let mut controller = AppController::new();
+    controller
+        .open(&working.display().to_string())
+        .expect("apertura mappa");
+
+    let out_dir = tempfile::tempdir().unwrap();
+    let md_path = out_dir.path().join("mappa.md");
+    let opml_path = out_dir.path().join("mappa.opml");
+    controller
+        .export_outline("markdown", &md_path.display().to_string())
+        .unwrap();
+    controller
+        .export_outline("opml", &opml_path.display().to_string())
+        .unwrap();
+
+    let md = std::fs::read_to_string(&md_path).unwrap();
+    assert!(md.starts_with('#'), "markdown senza titolo: {md:.80}");
+    assert!(opml_path.exists() && std::fs::metadata(&opml_path).unwrap().len() > 0);
+
+    // Il titolo OPML è quello della mappa aperta (radice della prima sheet).
+    let root_title = controller
+        .workbook()
+        .and_then(|w| {
+            w.sheets
+                .first()
+                .and_then(|s| s.topics.first().map(|t| t.title.clone()))
+        })
+        .unwrap_or_default();
+    if !root_title.trim().is_empty() {
+        let opml = std::fs::read_to_string(&opml_path).unwrap();
+        assert!(
+            opml.contains(&format!(
+                "<title>{}</title>",
+                export::xml_escape(&root_title)
+            )),
+            "il titolo OPML non usa il titolo della mappa ({root_title})"
+        );
+    }
+
+    // L'import crea una nuova sheet; le equazioni richiedono il renderer.
+    match controller.import_outline("markdown", &md_path.display().to_string()) {
+        Ok(dto) => {
+            assert_eq!(dto.sheets.len(), 2, "l'import non ha creato una sheet");
+            assert!(!dto.sheets[1].topics.is_empty());
+            let saved = out_dir.path().join("importato.xmind");
+            controller
+                .save_as(&saved.display().to_string(), false)
+                .unwrap();
+            validate_archive_bytes(&std::fs::read(&saved).unwrap()).unwrap();
+        }
+        Err(e) => eprintln!("skip import: renderer non disponibile ({})", e.message),
+    }
 }

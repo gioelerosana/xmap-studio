@@ -7,6 +7,8 @@
 use crate::edit;
 use crate::equation::{self, TitleMode};
 use crate::error::{ErrorPayload, CODE_MOVE, CODE_NO_WORKBOOK, CODE_TOPIC_NOT_FOUND};
+use crate::export;
+use crate::import;
 use crate::mathjax::{self, Renderer};
 use crate::model;
 use crate::raster;
@@ -133,6 +135,29 @@ impl AppController {
 
     pub fn workbook(&self) -> Option<WorkbookDto> {
         self.wb.as_ref().map(OpenWorkbook::to_dto)
+    }
+
+    /// Titolo della mappa aperta, per precompilare i nomi dei file esportati:
+    /// titolo del topic radice, poi titolo della sheet, poi nome del file.
+    pub fn map_title(&self) -> Option<String> {
+        let wb = self.wb.as_ref()?;
+        let sheet = wb.content.first()?;
+        let non_empty = |s: &str| {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        };
+        let root = sheet
+            .root_topic
+            .as_ref()
+            .and_then(|r| r.title.as_deref())
+            .and_then(non_empty);
+        let sheet_title = sheet.title.as_deref().and_then(non_empty);
+        let stem = wb
+            .path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .and_then(|s| non_empty(&s));
+        root.or(sheet_title).or(stem)
     }
 
     pub fn status(&self) -> StatusDto {
@@ -294,6 +319,91 @@ impl AppController {
         })
     }
 
+    /// Imposta le note del blocco (testo semplice) e, se presenti, il modo di
+    /// visualizzazione (`"icon"`/`"block"`). Testo vuoto rimuove le note.
+    pub fn set_topic_notes(
+        &mut self,
+        topic_id: &str,
+        text: &str,
+        display: Option<&str>,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            edit::set_notes(topic, text);
+            if topic.notes.is_some() {
+                edit::set_notes_display(topic, display);
+            }
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    /// Sostituisce le etichette del blocco.
+    pub fn set_topic_labels(
+        &mut self,
+        topic_id: &str,
+        labels: Vec<String>,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            edit::set_labels(topic, &labels);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    /// Aggiunge o rimuove un marker dal blocco. Rifiuta id malformati o non
+    /// presenti nel catalogo (tranne che per rimuovere un marker già presente,
+    /// così un file importato si può ripulire).
+    pub fn toggle_topic_marker(
+        &mut self,
+        topic_id: &str,
+        marker_id: &str,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        let id = marker_id.trim();
+        if id.is_empty()
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(ErrorPayload::new(
+                crate::error::CODE_FORMAT,
+                "Id marker non valido.",
+            ));
+        }
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            let already = topic.marker_ids().any(|m| m == id);
+            if !already && !crate::markers::is_known(id) {
+                return Err(ErrorPayload::new(
+                    crate::error::CODE_FORMAT,
+                    format!("Marker sconosciuto: {id}"),
+                ));
+            }
+            edit::toggle_marker(topic, id);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    /// Imposta (o rimuove) il link del blocco. `#<id>` diventa `xmind:#<id>`.
+    pub fn set_topic_href(
+        &mut self,
+        topic_id: &str,
+        href: Option<&str>,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            edit::set_href(topic, href);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
     /// Aggiunge un sotto-blocco testuale al blocco `parent_id`.
     pub fn add_topic(
         &mut self,
@@ -448,4 +558,107 @@ impl AppController {
         }
         Ok(target.display().to_string())
     }
+
+    /// Esporta l'intera mappa in Markdown o OPML. Non tocca lo schema: legge il
+    /// modello in memoria e scrive solo il file di destinazione scelto.
+    pub fn export_outline(&self, format: &str, out_path: &str) -> Result<String, ErrorPayload> {
+        let out_path = out_path
+            .strip_prefix("file://")
+            .unwrap_or(out_path)
+            .to_string();
+        let map_title = self.map_title().unwrap_or_else(|| "Mappa".to_string());
+        let wb = self
+            .wb
+            .as_ref()
+            .ok_or_else(|| ErrorPayload::new(CODE_NO_WORKBOOK, "Nessun file aperto."))?;
+        let text = match format {
+            "markdown" => export::to_markdown(&wb.content),
+            "opml" => export::to_opml(&wb.content, &map_title),
+            other => {
+                return Err(ErrorPayload::new(
+                    crate::error::CODE_FORMAT,
+                    format!("formato non supportato: {other}"),
+                ))
+            }
+        };
+        let target = PathBuf::from(&out_path);
+        std::fs::write(&target, text.as_bytes())
+            .map_err(|e| ErrorPayload::new(crate::error::CODE_IO, format!("{e:#}")))?;
+        Ok(target.display().to_string())
+    }
+
+    /// Importa un file Markdown/OPML come **nuova sheet** nella mappa aperta.
+    /// Le equazioni `$…$` vengono renderizzate come equazioni native.
+    pub fn import_outline(
+        &mut self,
+        format: &str,
+        path: &str,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        let path = path.strip_prefix("file://").unwrap_or(path);
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| ErrorPayload::new(crate::error::CODE_IO, format!("{e:#}")))?;
+        let outline = import::parse(format, &text)?;
+        let title = std::path::Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Importato".to_string());
+
+        // Renderer solo se servono equazioni; borrow disgiunti dei due campi.
+        if outline_has_latex(&outline) {
+            self.ensure_renderer()?;
+        }
+        let renderer = self.renderer.as_ref();
+        let wb = self
+            .wb
+            .as_mut()
+            .ok_or_else(|| ErrorPayload::new(CODE_NO_WORKBOOK, "Nessun file aperto."))?;
+
+        let mut pending: Vec<(String, Vec<u8>)> = Vec::new();
+        let mut root = {
+            let mut render = |topic: &mut model::Topic, latex: &str| -> Result<(), ErrorPayload> {
+                let renderer = renderer.ok_or_else(|| {
+                    ErrorPayload::new(
+                        crate::error::CODE_RENDERER,
+                        "Renderer MathJax non disponibile.",
+                    )
+                })?;
+                let (outcome, png) = equation::apply_equation(
+                    renderer,
+                    topic,
+                    latex,
+                    DEFAULT_EM_PX,
+                    RASTER_SCALE,
+                    TitleMode::KeepTitle,
+                    DEFAULT_COLOR,
+                )?;
+                pending.push((outcome.resource.clone(), png));
+                Ok(())
+            };
+            import::node_to_topic(&outline, &mut render)?
+        };
+
+        for (name, png) in pending {
+            wb.archive.resources.insert(name, png);
+        }
+        if root.title.as_deref().map(str::is_empty).unwrap_or(true) {
+            root.title = Some(title.clone());
+        }
+        let sheet = model::Sheet {
+            id: Some(edit::new_topic_id()),
+            class: Some("sheet".to_string()),
+            title: Some(title),
+            revision_id: Some(edit::new_topic_id()),
+            root_topic: Some(root),
+            ..Default::default()
+        };
+        wb.content.push(sheet);
+        wb.commit();
+        Ok(wb.to_dto())
+    }
+}
+
+/// Vero se l'albero importato contiene almeno un'equazione (serve il renderer).
+fn outline_has_latex(node: &import::OutlineNode) -> bool {
+    node.latex.is_some() || node.children.iter().any(outline_has_latex)
 }
