@@ -1,12 +1,12 @@
 [package]
-name = "xmind-equation-studio"
+name = "xmap-studio"
 version = "0.1.0"
-description = "Sostituisce blocchi XMind con equazioni LaTeX native (MathJax)"
+description = "Companion desktop per XMind: equazioni LaTeX native ed editing avanzato"
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "xmind_equation_studio_lib"
+name = "xmap_studio_lib"
 crate-type = ["rlib"]
 
 [dependencies]

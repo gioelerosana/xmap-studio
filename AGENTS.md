@@ -6,13 +6,18 @@ tecnico vedi [`docs/`](docs/README.md).
 
 ## Cos'è questo progetto
 
-**XMind Equation Studio** è un'app desktop Linux nativa che apre un file
-`.xmind`, mostra la mappa come lista di blocchi, permette di **modificare il
-contenuto** dei blocchi — testo, aggiunta di sotto-blocchi, eliminazione,
-spostamento con drag & drop — e di sostituire il contenuto di un blocco con una
-formula **LaTeX nativa** (MathJax), salvando in modo sicuro. Scrive nel formato nativo di XMind, quindi in XMind la
-formula appare renderizzata e cliccandoci sopra si riapre l'editor equazioni con
-il LaTeX corretto.
+**XMap Studio** è un'app desktop Linux nativa, companion di XMind gratuito.
+Apre un file `.xmind`, mostra la mappa come lista di blocchi, permette di
+**modificare il contenuto** dei blocchi — testo, aggiunta di sotto-blocchi,
+eliminazione, spostamento con drag & drop — e di sostituire il contenuto di un
+blocco con una formula **LaTeX nativa** (MathJax), salvando in modo sicuro.
+Scrive nel formato nativo di XMind, quindi in XMind la formula appare
+renderizzata e cliccandoci sopra si riapre l'editor equazioni con il LaTeX
+corretto.
+
+Obiettivo: fare ciò che XMind gratuito non consente, restando compatibili con il
+formato. Posizionamento, inventario delle feature e roadmap in
+[`docs/PRODUCT.md`](docs/PRODUCT.md).
 
 Niente account, niente telemetria, niente webview. Apre, mostra, modifica, salva.
 
@@ -32,7 +37,7 @@ una scelta di stile.
    `extra`, non usare `serde(default)` senza `skip_serializing_if`.
 2. **Il disco si tocca solo in `archive::atomic_write`** (`archive.rs:209`):
    temp nella stessa directory → `fsync` → backup datato nella cartella nascosta
-   `.xmind-equation-studio/backups/` (ultimi 5 per file) → `rename` → `fsync`
+   `.xmap-studio/backups/` (ultimi 5 per file) → `rename` → `fsync`
    della directory. Non aggiungere altre scritture dirette sul file `.xmind`.
 3. **Si valida prima di scrivere.** `validate_archive_bytes` (`validate.rs:28`)
    deve passare in memoria prima di sovrascrivere. Se fallisce, il file originale
@@ -133,7 +138,7 @@ Mappa dei moduli e flusso dati: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - `target/` (root, `src-tauri/`, `xtask/`)
 - `dist/` e `*.AppImage`
 - `src-tauri/resources/renderer/node_modules/` e i `package*.json` generati
-- cartella backup `.xmind-equation-studio/`, `*.backup.*.xmind` e temp `.xmind-eq-*.tmp`
+- cartella backup `.xmap-studio/`, `*.backup.*.xmind` e temp `.xmind-eq-*.tmp`
 - log e file editor/OS
 
 `Cargo.lock` è **versionato** (è un'applicazione, non una libreria). Non
@@ -179,7 +184,7 @@ glab mr create --fill --target-branch main
 ### Rigenerare il renderer / svuotare la cache
 
 ```bash
-rm -rf ~/.cache/xmind-equation-studio/renderer
+rm -rf ~/.cache/xmap-studio/renderer
 cargo build   # build.rs ricostruisce e reincorpora il renderer
 ```
 
@@ -188,7 +193,7 @@ cargo build   # build.rs ricostruisce e reincorpora il renderer
 ```bash
 cargo run --example inject -- \
   "$XMIND_TEST_MAP" \
-  demo/Relazioni.equation-studio.xmind \
+  demo/Relazioni.xmap-studio.xmind \
   "Unione" 'A \cup B = B \iff A \subseteq B'
 ```
 

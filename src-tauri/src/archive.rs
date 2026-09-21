@@ -125,7 +125,7 @@ pub struct WriteReport {
 const MAX_BACKUPS: usize = 5;
 
 /// Cartella nascosta dei backup, accanto al file sorgente.
-const BACKUP_DIR: &str = ".xmind-equation-studio/backups";
+const BACKUP_DIR: &str = ".xmap-studio/backups";
 
 fn timestamp() -> String {
     chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
@@ -283,7 +283,7 @@ mod tests {
             .parent()
             .unwrap()
             .to_string_lossy()
-            .contains(".xmind-equation-studio"));
+            .contains(".xmap-studio"));
         // nessun temp residuo
         let leftovers: Vec<_> = fs::read_dir(dir.path())
             .unwrap()

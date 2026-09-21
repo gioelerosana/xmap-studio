@@ -14,7 +14,7 @@ static ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/renderer.tar.g
 /// directory, pronta per essere passata a `Renderer::discover`.
 pub fn ensure_extracted() -> Result<PathBuf> {
     let base = cache_root()
-        .join("xmind-equation-studio")
+        .join("xmap-studio")
         .join("renderer")
         // la lunghezza dell'archivio invalida la cache quando il renderer cambia
         .join(format!("{}-{}", env!("CARGO_PKG_VERSION"), ARCHIVE.len()));
@@ -24,7 +24,7 @@ pub fn ensure_extracted() -> Result<PathBuf> {
     }
 
     let tmp = cache_root()
-        .join("xmind-equation-studio")
+        .join("xmap-studio")
         .join(format!("renderer.tmp-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).context("creazione cache renderer")?;

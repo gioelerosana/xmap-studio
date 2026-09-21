@@ -48,12 +48,12 @@ impl Renderer {
             }
         }
         candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/renderer"));
-        // Bundle installato: accanto all'eseguibile o in share/xmind-equation-studio.
+        // Bundle installato: accanto all'eseguibile o in share/xmap-studio.
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
                 candidates.push(dir.join("renderer"));
                 candidates.push(dir.join("resources/renderer"));
-                candidates.push(dir.join("../share/xmind-equation-studio/renderer"));
+                candidates.push(dir.join("../share/xmap-studio/renderer"));
             }
         }
         if let Some(rd) = resource_dir {

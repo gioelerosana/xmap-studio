@@ -59,7 +59,7 @@ Il collaudo definitivo è aprire il file prodotto in XMind:
 ```bash
 cargo run --example inject -- \
   "$XMIND_TEST_MAP" \
-  demo/Relazioni.equation-studio.xmind \
+  demo/Relazioni.xmap-studio.xmind \
   "Unione" 'A \cup B = B \iff A \subseteq B'
 ```
 

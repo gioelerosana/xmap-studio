@@ -29,7 +29,7 @@ manca `content.json`, `archive::read_archive` restituisce errore
   affidabile (`archive.rs:59`).
 - In scrittura le entry non-risorsa precedono le risorse (`archive.rs:92`).
 - La scrittura è atomica con backup datato in una cartella nascosta
-  (`.xmind-equation-studio/backups/`, ultimi 5 per file) (`archive.rs:209`).
+  (`.xmap-studio/backups/`, ultimi 5 per file) (`archive.rs:209`).
 
 ## Modello di `content.json`
 

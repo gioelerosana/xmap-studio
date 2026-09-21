@@ -4,12 +4,12 @@
 //! resta verde su altre macchine. Sovrascrivibile con `XMIND_TEST_MAP`.
 
 use std::path::{Path, PathBuf};
-use xmind_equation_studio_lib::archive::{read_archive, sha256_hex};
-use xmind_equation_studio_lib::equation::{apply_equation, TitleMode};
-use xmind_equation_studio_lib::mathjax::Renderer;
-use xmind_equation_studio_lib::model::{self, Sheet};
-use xmind_equation_studio_lib::state::OpenWorkbook;
-use xmind_equation_studio_lib::validate::validate_archive_bytes;
+use xmap_studio_lib::archive::{read_archive, sha256_hex};
+use xmap_studio_lib::equation::{apply_equation, TitleMode};
+use xmap_studio_lib::mathjax::Renderer;
+use xmap_studio_lib::model::{self, Sheet};
+use xmap_studio_lib::state::OpenWorkbook;
+use xmap_studio_lib::validate::validate_archive_bytes;
 
 fn test_map() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("XMIND_TEST_MAP") {

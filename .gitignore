@@ -12,6 +12,8 @@ src-tauri/resources/renderer/package.json
 src-tauri/resources/renderer/package-lock.json
 
 # Backup e file temporanei generati dall'app durante il salvataggio
+.xmap-studio/
+# Vecchio nome della cartella backup: resta ignorato per gli archivi esistenti
 .xmind-equation-studio/
 *.backup.*.xmind
 .xmind-eq-*.tmp

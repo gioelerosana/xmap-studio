@@ -1667,7 +1667,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "xmind-equation-studio"
+name = "xmap-studio"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -47,11 +47,15 @@ pub fn xmind_processes() -> Vec<String> {
 fn is_xmind_invocation(cmdline: &str) -> bool {
     // La nostra app non conta: né il binario, né il bundle AppImage, né la
     // cartella di progetto. Il confronto è case-insensitive perché il percorso
-    // può contenere "xmind-LaTeX" o "XMind Equation Studio".
+    // può contenere "xmap-studio", "xmind-LaTeX" o i vecchi nomi.
     let lower = cmdline.to_ascii_lowercase();
-    if lower.contains("xmind-equation-studio")
-        || lower.contains("xmind-latex")
+    if lower.contains("xmap-studio")
+        || lower.contains("xmap studio")
+        // Nomi precedenti: un'AppImage o un branch vecchio non deve essere
+        // scambiato per XMind.
+        || lower.contains("xmind-equation-studio")
         || lower.contains("xmind equation studio")
+        || lower.contains("xmind-latex")
         || lower.contains("appimage_extracted")
     {
         return false;
@@ -89,9 +93,12 @@ mod tests {
 
     #[test]
     fn self_is_not_flagged() {
-        // Il binario in test contiene "xmind-equation-studio" nel path.
-        let cmd = "/home/u/progetti/xmind-LaTeX/src-tauri/target/debug/xmind-equation-studio";
+        // Il binario in test contiene "xmap-studio" nel path.
+        let cmd = "/home/u/progetti/xmap-studio/src-tauri/target/debug/xmap-studio";
         assert!(!is_xmind_invocation(cmd));
+        // Vecchio nome: resta escluso.
+        let old = "/home/u/progetti/xmind-LaTeX/src-tauri/target/debug/xmind-equation-studio";
+        assert!(!is_xmind_invocation(old));
     }
 
     #[test]
@@ -112,7 +119,11 @@ mod tests {
     #[test]
     fn our_own_appimage_is_not_xmind() {
         // Falso positivo reale: il percorso, spezzato sugli spazi, produce il
-        // token ".../appimage/XMind" che NON deve essere scambiato per XMind.
+        // token ".../appimage/XMap" che NON deve essere scambiato per XMind.
+        assert!(!is_xmind_invocation(
+            "/home/joel/progetti/xmap-studio/src-tauri/target/release/bundle/appimage/XMap Studio_0.1.0_amd64.AppImage"
+        ));
+        // Vecchio nome: stesso falso positivo da evitare.
         assert!(!is_xmind_invocation(
             "/home/joel/progetti/xmind-LaTeX/src-tauri/target/release/bundle/appimage/XMind Equation Studio_0.1.0_amd64.AppImage"
         ));

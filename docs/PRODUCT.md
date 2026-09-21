@@ -27,7 +27,7 @@ webview. La promessa è **offline, nativa, sicura, gratuita**.
 | Elemento | Da | A |
 |---|---|---|
 | Nome prodotto | XMind Equation Studio | **XMap Studio** |
-| Repo / cartella | `xmind-LaTeX` | invariata (opzionale) |
+| Repo / cartella | `xmind-LaTeX` | repo GitLab rinominato in `xmap-studio`; cartella locale invariata |
 | `APP_ID` | `org.joel.xmind_equation_studio` | `org.joel.xmap_studio` |
 | Crate / binario | `xmind-equation-studio` | `xmap-studio` |
 | Lib | `xmind_equation_studio_lib` | `xmap_studio_lib` |
@@ -36,20 +36,21 @@ webview. La promessa è **offline, nativa, sicura, gratuita**.
 | Cartella backup | `.xmind-equation-studio/` | `.xmap-studio/` |
 | Cache renderer/appimagetool | `~/.cache/xmind-equation-studio/` | `~/.cache/xmap-studio/` |
 
+> **Stato:** attuato in Fase 0 (branch `refactor/xmap-studio-rebrand`).
+
 Note di attuazione:
 
 - **`safety.rs`**: il rilevamento dei processi XMind *non va indebolito*. Il
-  filtro che esclude la nostra app oggi cerca `xmind-equation-studio` e
-  `xmind-latex`; va aggiornato con `xmap-studio` **mantenendo** i pattern
-  vecchi, così un'AppImage/branch precedente non viene scambiata per XMind.
-  Aggiornare i test in `safety.rs:92` e `safety.rs:117`.
+  filtro che esclude la nostra app ora cerca `xmap-studio` **mantenendo** i
+  pattern vecchi (`xmind-equation-studio`, `xmind-latex`), così un'AppImage o
+  un branch precedente non viene scambiato per XMind.
 - **Compatibilità di percorso**: i vecchi backup in
   `.xmind-equation-studio/` non vanno cancellati; il nuovo nome convive, o si
   fa migrazione/fallback in lettura.
 - **Trademark**: usiamo "compatibile con XMind" come descrizione, mai il
   marchio nel nome. `XMap` è un nome proprio.
-- **Icona**: `assets/icon.svg` + PNG 256/512 vanno ridisegnati (richiede
-  decisione grafica; nessun impatto tecnico).
+- **Icona**: `assets/icon.svg` + PNG 256/512, ritoccati nella palette; simbolo
+  invariato, nessun impatto tecnico.
 
 ## 3. Inventario: cosa XMind Free blocca
 
@@ -127,8 +128,9 @@ non toccano lo schema: leggiamo il modello già in memoria.
 ### Fase 0 — Rebranding (nessun cambio di comportamento)
 Rinomina token (§2), aggiorna icona, docs (`README`, `AGENTS`, `docs/*`),
 `.desktop`, AppImage, test string. `cargo fmt && clippy && test` verdi.
-**Criterio di done**: nessun riferimento a "Equation Studio" nel codice
-prodotto; i file `.xmind` restano byte-compatibili.
+**Criterio di done**: nessun riferimento all'ex brand nel codice, salvo le
+esclusioni legacy in `safety.rs` (da mantenere) e la mappa storica in questo
+documento; i file `.xmind` restano byte-compatibili.
 
 ### Fase 0.5 — Verifica dei lock
 Su XMind 26.03.04129 Free: provare ogni feature "da verificare" e ispezionare
@@ -176,22 +178,19 @@ l'arrivo di nuove feature:
 | Audio/cifratura | Complessità, dipendenze | Scope ridotto / fuori scope |
 | Vecchi backup/percorsi | Perdita storico utente | Fallback in lettura, nessuna cancellazione |
 
-## 7. Decisioni aperte (servono prima del codice)
+## 7. Decisioni prese
 
-1. **Nome definitivo**: `XMap Studio` confermato? In alternativa `Mappa
-   Studio` se si vuole zero assonanza col marchio.
-2. **Repo**: rinominare `xmind-LaTeX` (e il remote GitLab) o lasciarlo?
-3. **Icona**: la ridisegno io via SVG o fornirai un asset?
-4. **Ambito Fase 1**: quali tra Note / Label / Marker / Href sono davvero
-   importanti per il tuo uso quotidiano?
-5. **Export**: Markdown o OPML per primo? Serve anche l'import?
-6. **Priorità**: confermi l'ordine di roadmap o sposti qualche fase?
+1. **Nome**: `XMap Studio`.
+2. **Repo**: rinominato su GitLab in `xmap-studio`; cartella locale `xmind-LaTeX`
+   invariata.
+3. **Icona**: ritocco della palette, simbolo attuale invariato.
+4. **Ambito Fase 1 / export / ordine di roadmap**: uniche scelte ancora aperte,
+   da definire prima di iniziare la fase (priorità in §3).
 
 ## 8. Come si procede
 
-1. Ok su questo documento (e risposte a §7).
-2. Fase 0.5 di verifica su XMind Free reale.
-3. Fase 0 (rebranding) su branch `refactor/xmap-studio-rebranding`, MR verso
+1. **Fase 0 — rebranding**: su branch `refactor/xmap-studio-rebrand`, MR verso
    `main`, senza mescolare feature.
-4. Le fasi successive, ognuna su branch `feat/<slug>` con test e verifica in
-   XMind prima della MR.
+2. **Fase 0.5 — verifica dei lock** su XMind Free reale (§3).
+3. **Fasi successive**: ognuna su branch dedicato (`feat/<slug>`), con MR verso
+   `main`, test e verifica in XMind prima dell'unione.

@@ -22,7 +22,7 @@ Nessun npm, nessun bundler, nessuno script di setup: solo Cargo.
 
 ```bash
 cargo run                 # avvio in sviluppo
-cargo build --release     # binario in target/release/xmind-equation-studio
+cargo build --release     # binario in target/release/xmap-studio
 cargo test                # test unitari + end-to-end
 cargo xtask appimage      # AppImage in dist/
 ```
@@ -44,12 +44,12 @@ Il progetto **non richiede passi manuali** per il renderer. `build.rs`:
 
 A runtime `renderer_assets::ensure_extracted` (`renderer_assets.rs:15`) estrae
 l'archivio una sola volta in
-`~/.cache/xmind-equation-studio/renderer/<versione>-<len>/` (o `$XDG_CACHE_HOME`).
+`~/.cache/xmap-studio/renderer/<versione>-<len>/` (o `$XDG_CACHE_HOME`).
 La lunghezza dell'archivio fa da chiave di cache: quando il renderer cambia, la
 cache si invalida da sola.
 
 L'app funziona quindi anche senza `resources/renderer` su disco. Per rigenerare
-la cache a mano: rimuovi la cartella in `~/.cache/xmind-equation-studio/renderer/`.
+la cache a mano: rimuovi la cartella in `~/.cache/xmap-studio/renderer/`.
 
 ### Variabili d'ambiente
 
@@ -70,7 +70,7 @@ cargo xtask appimage
 Compila in release, assembla l'AppDir (binario + icona + `.desktop`) e produce:
 
 ```
-dist/XMind_Equation_Studio-<versione>-x86_64.AppImage
+dist/XMap_Studio-<versione>-x86_64.AppImage
 ```
 
 `appimagetool` viene scaricato automaticamente in cache al primo uso; la versione
@@ -113,7 +113,7 @@ xmind-LaTeX/
 ```bash
 cargo run --example inject -- \
   "$HOME/Nextcloud/Polimi/Logica e Algebra/Relazioni.xmind" \
-  demo/Relazioni.equation-studio.xmind \
+  demo/Relazioni.xmap-studio.xmind \
   "Unione" 'A \cup B = B \iff A \subseteq B'
 ```
 
