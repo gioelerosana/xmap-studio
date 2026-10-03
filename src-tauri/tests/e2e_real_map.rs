@@ -276,6 +276,218 @@ fn e2e_apply_save_validate_reopen() {
 }
 
 #[test]
+fn e2e_merge_and_split_roundtrip() {
+    let demo =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../demo/Relazioni.xmap-studio.xmind");
+    if !demo.exists() {
+        eprintln!("skip: demo/Relazioni.xmap-studio.xmind assente");
+        return;
+    }
+    let (_da, a) = copy_to_temp(&demo);
+    let (_db, b) = copy_to_temp(&demo);
+    let mut controller = AppController::new();
+    controller.open(&a.display().to_string()).unwrap();
+    let before = controller.workbook().unwrap().sheets.len();
+
+    let merged = controller.merge_workbook(&b.display().to_string()).unwrap();
+    assert!(merged.added_sheets >= 1);
+    assert_eq!(
+        controller.workbook().unwrap().sheets.len(),
+        before + merged.added_sheets
+    );
+
+    let out_dir = tempfile::tempdir().unwrap();
+    let merged_path = out_dir.path().join("unito.xmind");
+    controller
+        .save_as(&merged_path.display().to_string(), false)
+        .unwrap();
+    validate_archive_bytes(&std::fs::read(&merged_path).unwrap()).unwrap();
+
+    // divide il primo figlio della radice
+    let branch_id = controller
+        .workbook()
+        .unwrap()
+        .sheets
+        .first()
+        .and_then(|s| s.topics.iter().find(|t| t.depth == 1).map(|t| t.id.clone()))
+        .expect("nessun ramo di primo livello");
+    let split_path = out_dir.path().join("ramo.xmind");
+    controller
+        .split_topic(&branch_id, &split_path.display().to_string())
+        .unwrap();
+    let bytes = std::fs::read(&split_path).unwrap();
+    validate_archive_bytes(&bytes).unwrap();
+    let reopened = OpenWorkbook::open(&split_path).unwrap();
+    assert_eq!(
+        reopened.content.len(),
+        1,
+        "il ramo deve essere una sheet sola"
+    );
+    assert!(reopened.content[0].root_topic.is_some());
+}
+
+#[test]
+fn e2e_structure_relationships_boundary_summary() {
+    let demo =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../demo/Relazioni.xmap-studio.xmind");
+    if !demo.exists() {
+        eprintln!("skip: demo/Relazioni.xmap-studio.xmind assente");
+        return;
+    }
+    let (dir, working) = copy_to_temp(&demo);
+    let mut controller = AppController::new();
+    controller.open(&working.display().to_string()).unwrap();
+
+    let dto = controller.workbook().unwrap();
+    let sheet = dto.sheets.first().unwrap();
+    let root_id = sheet.topics.first().unwrap().id.clone();
+    let children: Vec<String> = sheet
+        .topics
+        .iter()
+        .filter(|t| t.parent_id.as_deref() == Some(root_id.as_str()) && t.group == "attached")
+        .map(|t| t.id.clone())
+        .collect();
+    if children.len() < 2 {
+        eprintln!("skip: servono almeno due figli del topic radice");
+        return;
+    }
+
+    controller
+        .add_topic_relationship(&children[0], &children[1], Some("prova".into()))
+        .unwrap();
+    controller.add_topic_boundary(&root_id).unwrap();
+    controller.add_topic_summary(&root_id).unwrap();
+
+    let saved = dir.path().join("struttura.xmind");
+    controller
+        .save_as(&saved.display().to_string(), false)
+        .unwrap();
+    validate_archive_bytes(&std::fs::read(&saved).unwrap()).unwrap();
+
+    let reopened = OpenWorkbook::open(&saved).unwrap();
+    let sheet = &reopened.content[0];
+    assert_eq!(sheet.relationships_list().len(), 1);
+    assert_eq!(
+        sheet.relationships_list()[0].title.as_deref(),
+        Some("prova")
+    );
+    let root = sheet.root_topic.as_ref().unwrap();
+    assert_eq!(root.boundaries_list().len(), 1);
+    assert_eq!(root.summaries_list().len(), 1);
+    // doppia rappresentazione: il topic di sommario esiste davvero
+    let summary_topic_id = root.summaries_list()[0].topic_id.clone().unwrap();
+    assert!(root
+        .group("summary")
+        .unwrap()
+        .iter()
+        .any(|t| t.id.as_deref() == Some(summary_topic_id.as_str())));
+}
+
+#[test]
+fn e2e_attachment_is_linked_registered_and_preserved() {
+    let demo =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../demo/Relazioni.xmap-studio.xmind");
+    if !demo.exists() {
+        eprintln!("skip: demo/Relazioni.xmap-studio.xmind assente");
+        return;
+    }
+    let (dir, working) = copy_to_temp(&demo);
+    let source = dir.path().join("appunti.txt");
+    std::fs::write(&source, b"contenuto allegato").unwrap();
+
+    let mut controller = AppController::new();
+    controller.open(&working.display().to_string()).unwrap();
+    let topic_id = controller
+        .workbook()
+        .unwrap()
+        .sheets
+        .first()
+        .and_then(|s| s.topics.iter().find(|t| t.depth == 1).map(|t| t.id.clone()))
+        .expect("nessun topic di primo livello");
+
+    controller
+        .attach_file_to_topic(&topic_id, &source.display().to_string())
+        .unwrap();
+    let href = controller
+        .workbook()
+        .unwrap()
+        .sheets
+        .first()
+        .and_then(|s| {
+            s.topics
+                .iter()
+                .find(|t| t.id == topic_id)
+                .and_then(|t| t.href.clone())
+        })
+        .expect("href allegato mancante");
+    let key = href.strip_prefix("xap:").unwrap().to_string();
+    assert!(key.starts_with("attachments/"));
+
+    controller.save(false).unwrap();
+    let reopened = OpenWorkbook::open(&working).unwrap();
+    assert!(reopened.archive.entries.contains_key(&key));
+    let manifest: serde_json::Value =
+        serde_json::from_slice(reopened.archive.entries.get("manifest.json").unwrap()).unwrap();
+    assert!(
+        manifest["file-entries"].get(&key).is_some(),
+        "allegato non nel manifest"
+    );
+    assert_eq!(
+        reopened.archive.entries.get(&key).unwrap(),
+        b"contenuto allegato"
+    );
+}
+
+#[test]
+fn e2e_task_and_color_roundtrip() {
+    let demo =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../demo/Relazioni.xmap-studio.xmind");
+    if !demo.exists() {
+        eprintln!("skip: demo/Relazioni.xmap-studio.xmind assente");
+        return;
+    }
+    let (dir, working) = copy_to_temp(&demo);
+    let mut controller = AppController::new();
+    controller.open(&working.display().to_string()).unwrap();
+    let topic_id = controller
+        .workbook()
+        .unwrap()
+        .sheets
+        .first()
+        .and_then(|s| s.topics.iter().find(|t| t.depth == 1).map(|t| t.id.clone()))
+        .expect("nessun topic di primo livello");
+
+    controller
+        .set_topic_task(
+            &topic_id,
+            Some(3),
+            Some(50),
+            Some("2026-01-01T00:00:00.000Z".into()),
+            Some("2026-02-01T00:00:00.000Z".into()),
+        )
+        .unwrap();
+    controller
+        .set_topic_color(&topic_id, Some("#3366ff"))
+        .unwrap();
+
+    let saved = dir.path().join("task.xmind");
+    controller
+        .save_as(&saved.display().to_string(), false)
+        .unwrap();
+    validate_archive_bytes(&std::fs::read(&saved).unwrap()).unwrap();
+
+    let reopened = OpenWorkbook::open(&saved).unwrap();
+    let topic = model::find_topic(&reopened.content, &topic_id).unwrap();
+    let task = xmap_studio_lib::task::read(topic).expect("task assente");
+    assert_eq!(task.priority, Some(3));
+    assert_eq!(task.progress, Some(50));
+    assert_eq!(topic.fill_color(), Some("#3366ff"));
+
+    // azzerare il task non deve rompere il file
+    controller.save(false).unwrap();
+}
+
+#[test]
 fn e2e_export_markdown_opml_then_import_as_sheet() {
     let Some(map) = test_map() else {
         eprintln!("skip: nessuna mappa di test disponibile");

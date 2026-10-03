@@ -10,7 +10,10 @@
 //!   titolo mostrato accanto alla formula;
 //! - la radice di una sheet non è eliminabile (XMind richiede `rootTopic`).
 
-use crate::model::{self, Children, Marker, Notes, NotesPart, Sheet, Topic, CHILD_GROUPS};
+use crate::model::{
+    self, Boundary, Children, Marker, Notes, NotesPart, Relationship, Sheet, Summary, Topic,
+    CHILD_GROUPS,
+};
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -221,28 +224,153 @@ pub fn remove_topic(sheets: &mut [Sheet], id: &str) -> Option<Topic> {
         if root.id.as_deref() == Some(id) {
             return None;
         }
-        if let Some(found) = detach_from(root, id) {
-            return Some(found);
+        let mut path = Vec::new();
+        if !find_path(root, id, &mut path) {
+            continue;
         }
+        let (group_index, child_index) = *path.last().unwrap();
+
+        // Prima di staccare: i range di boundary/summary del genitore vanno
+        // riallineati all'indice del figlio che sparisce.
+        let removed = {
+            let parent = descend_mut(root, &path[..path.len() - 1], 0);
+            adjust_parent_ranges(parent, group_index, child_index);
+            let children = parent.group_mut(CHILD_GROUPS[group_index])?;
+            if child_index >= children.len() {
+                return None;
+            }
+            children.remove(child_index)
+        };
+
+        // Riferimenti per id (relazioni a livello sheet, summary orfani).
+        let mut removed_ids = std::collections::BTreeSet::new();
+        {
+            let mut all = Vec::new();
+            model::walk_topic(&removed, &mut all);
+            for t in all {
+                if let Some(i) = t.id.clone() {
+                    removed_ids.insert(i);
+                }
+            }
+        }
+        if let Some(rels) = sheet.relationships.as_mut() {
+            rels.retain(|r| !relationship_touches(r, &removed_ids));
+            if rels.is_empty() {
+                sheet.relationships = None;
+            }
+        }
+        if let Some(root) = sheet.root_topic.as_mut() {
+            remove_orphan_summary_refs(root, &removed_ids);
+        }
+        return Some(removed);
     }
     None
 }
 
-fn detach_from(topic: &mut Topic, id: &str) -> Option<Topic> {
-    for group in CHILD_GROUPS {
-        let Some(children) = topic.group_mut(group) else {
-            continue;
-        };
-        if let Some(pos) = children.iter().position(|t| t.id.as_deref() == Some(id)) {
-            return Some(children.remove(pos));
+/// Vero se una relazione tocca uno degli id rimossi.
+fn relationship_touches(rel: &Relationship, removed: &std::collections::BTreeSet<String>) -> bool {
+    [rel.end1_id.as_deref(), rel.end2_id.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|id| removed.contains(id))
+}
+
+/// Riallinea boundary/summary del genitore dopo la rimozione di un figlio.
+///
+/// `group_index` è l'indice in `CHILD_GROUPS`: 0 = `attached`, 2 = `summary`.
+fn adjust_parent_ranges(parent: &mut Topic, group_index: usize, child_index: usize) {
+    const ATTACHED: usize = 0;
+    const SUMMARY: usize = 2;
+
+    if group_index == SUMMARY {
+        // Eliminato un topic di sommario: cade il descrittore che lo riferisce.
+        let removed_topic_id = parent
+            .group("summary")
+            .and_then(|v| v.get(child_index))
+            .and_then(|t| t.id.clone());
+        if let Some(rid) = removed_topic_id {
+            if let Some(sums) = parent.summaries.as_mut() {
+                sums.retain(|s| s.topic_id.as_deref() != Some(rid.as_str()));
+                if sums.is_empty() {
+                    parent.summaries = None;
+                }
+            }
         }
-        for child in children.iter_mut() {
-            if let Some(found) = detach_from(child, id) {
-                return Some(found);
+        return;
+    }
+    if group_index != ATTACHED {
+        return;
+    }
+
+    if let Some(boundaries) = parent.boundaries.as_mut() {
+        boundaries.retain_mut(|b| shift_range(&mut b.range, child_index));
+        if boundaries.is_empty() {
+            parent.boundaries = None;
+        }
+    }
+
+    let mut dropped_topics = Vec::new();
+    if let Some(sums) = parent.summaries.as_mut() {
+        let mut keep = Vec::new();
+        for mut s in sums.drain(..) {
+            if shift_range(&mut s.range, child_index) {
+                keep.push(s);
+            } else if let Some(topic_id) = s.topic_id.clone() {
+                dropped_topics.push(topic_id);
+            }
+        }
+        parent.summaries = (!keep.is_empty()).then_some(keep);
+    }
+    for topic_id in dropped_topics {
+        if let Some(summary_topics) = parent.children.as_mut().and_then(|c| c.summary.as_mut()) {
+            summary_topics.retain(|t| t.id.as_deref() != Some(topic_id.as_str()));
+        }
+    }
+}
+
+/// Sposta di uno un range `(start,end)` per la rimozione dell'indice `removed`.
+/// Restituisce `false` se il range si svuota e va eliminato.
+fn shift_range(range: &mut Option<String>, removed: usize) -> bool {
+    let Some(text) = range.as_deref() else {
+        return true;
+    };
+    let Some((start, end)) = model::parse_range(text) else {
+        return true; // "master" e altre forme restano invariate
+    };
+    if removed > end {
+        return true;
+    }
+    if removed < start {
+        *range = Some(model::format_range(start - 1, end - 1));
+        return true;
+    }
+    if end == 0 {
+        return false;
+    }
+    *range = Some(model::format_range(start, end - 1));
+    true
+}
+
+/// Rimuove i descrittori di summary che puntano a topic non più esistenti.
+fn remove_orphan_summary_refs(topic: &mut Topic, removed: &std::collections::BTreeSet<String>) {
+    if let Some(sums) = topic.summaries.as_mut() {
+        sums.retain(|s| {
+            s.topic_id
+                .as_deref()
+                .map(|id| !removed.contains(id))
+                .unwrap_or(true)
+        });
+        if sums.is_empty() {
+            topic.summaries = None;
+        }
+    }
+    for group in CHILD_GROUPS {
+        if let Some(children) = topic.group_mut(group) {
+            for child in children.iter_mut() {
+                remove_orphan_summary_refs(child, removed);
             }
         }
     }
-    None
 }
 
 /// Punto di rilascio di un trascinamento nell'albero.
@@ -400,6 +528,131 @@ fn descend_mut<'a>(topic: &'a mut Topic, path: &[(usize, usize)], i: usize) -> &
     let (gi, ci) = path[i];
     let children = topic.group_mut(CHILD_GROUPS[gi]).unwrap();
     descend_mut(&mut children[ci], path, i + 1)
+}
+
+// ------------------------------------------------------- struttura (Fase 3)
+
+/// Aggiunge una relazione tra due topic alla sheet. Restituisce l'id.
+pub fn add_relationship(
+    sheet: &mut Sheet,
+    end1_id: &str,
+    end2_id: &str,
+    title: Option<&str>,
+) -> String {
+    let id = new_topic_id();
+    let rel = Relationship {
+        id: Some(id.clone()),
+        class: Some("relationship".to_string()),
+        end1_id: Some(end1_id.to_string()),
+        end2_id: Some(end2_id.to_string()),
+        title: title
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string),
+        ..Default::default()
+    };
+    sheet.relationships.get_or_insert_with(Vec::new).push(rel);
+    id
+}
+
+/// Rimuove una relazione per id. `true` se esisteva.
+pub fn remove_relationship(sheet: &mut Sheet, relationship_id: &str) -> bool {
+    let Some(rels) = sheet.relationships.as_mut() else {
+        return false;
+    };
+    let before = rels.len();
+    rels.retain(|r| r.id.as_deref() != Some(relationship_id));
+    let removed = rels.len() != before;
+    if rels.is_empty() {
+        sheet.relationships = None;
+    }
+    removed
+}
+
+/// Aggiunge un boundary sui figli `attached` del topic, nell'intervallo
+/// inclusivo `[start, end]`. Restituisce l'id.
+pub fn add_boundary(parent: &mut Topic, start: usize, end: usize, title: Option<&str>) -> String {
+    let id = new_topic_id();
+    let boundary = Boundary {
+        id: Some(id.clone()),
+        class: Some("boundary".to_string()),
+        range: Some(model::format_range(start, end)),
+        title: title
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string),
+        ..Default::default()
+    };
+    parent
+        .boundaries
+        .get_or_insert_with(Vec::new)
+        .push(boundary);
+    id
+}
+
+/// Rimuove un boundary per id. `true` se esisteva.
+pub fn remove_boundary(parent: &mut Topic, boundary_id: &str) -> bool {
+    let Some(boundaries) = parent.boundaries.as_mut() else {
+        return false;
+    };
+    let before = boundaries.len();
+    boundaries.retain(|b| b.id.as_deref() != Some(boundary_id));
+    let removed = boundaries.len() != before;
+    if boundaries.is_empty() {
+        parent.boundaries = None;
+    }
+    removed
+}
+
+/// Aggiunge un sommario sui figli `attached` di `parent` nell'intervallo
+/// inclusivo `[start, end]` e restituisce l'id del **topic** di sommario.
+///
+/// Servono entrambe le rappresentazioni: il topic reale in `children.summary` e
+/// il descrittore in `summaries` che lo riferisce con lo stesso id.
+pub fn add_summary(parent: &mut Topic, start: usize, end: usize, title: &str) -> String {
+    let topic_id = new_topic_id();
+    let summary_topic = Topic {
+        id: Some(topic_id.clone()),
+        title: Some(title.to_string()),
+        ..Default::default()
+    };
+    parent
+        .children
+        .get_or_insert_with(Children::default)
+        .summary
+        .get_or_insert_with(Vec::new)
+        .push(summary_topic);
+    let descriptor = Summary {
+        id: Some(new_topic_id()),
+        class: Some("summary".to_string()),
+        range: Some(model::format_range(start, end)),
+        topic_id: Some(topic_id.clone()),
+        ..Default::default()
+    };
+    parent
+        .summaries
+        .get_or_insert_with(Vec::new)
+        .push(descriptor);
+    topic_id
+}
+
+/// Rimuove il sommario che punta a `summary_topic_id` (descrittore + topic).
+pub fn remove_summary(parent: &mut Topic, summary_topic_id: &str) -> bool {
+    let mut removed = false;
+    if let Some(sums) = parent.summaries.as_mut() {
+        let before = sums.len();
+        sums.retain(|s| s.topic_id.as_deref() != Some(summary_topic_id));
+        removed = sums.len() != before;
+        if sums.is_empty() {
+            parent.summaries = None;
+        }
+    }
+    if let Some(summary_topics) = parent.children.as_mut().and_then(|c| c.summary.as_mut()) {
+        let before = summary_topics.len();
+        summary_topics.retain(|t| t.id.as_deref() != Some(summary_topic_id));
+        removed = removed || summary_topics.len() != before;
+    }
+    removed
 }
 
 #[cfg(test)]
@@ -663,6 +916,101 @@ mod tests {
         assert_eq!(t.href.as_deref(), Some("https://example.org"));
         set_href(&mut t, None);
         assert!(t.href.is_none());
+    }
+
+    fn structured() -> Vec<Sheet> {
+        serde_json::from_value(json!([
+            {
+                "id": "sheet",
+                "relationships": [
+                    {"id": "rel1", "end1Id": "a", "end2Id": "b"},
+                    {"id": "rel2", "end1Id": "a", "end2Id": "a1"}
+                ],
+                "rootTopic": {
+                    "id": "root",
+                    "title": "Radice",
+                    "children": {
+                        "attached": [
+                            {"id": "a", "title": "A", "children": {"attached": [{"id": "a1"}]}},
+                            {"id": "b", "title": "B"}
+                        ],
+                        "summary": [{"id": "sum1", "title": "Sommario"}]
+                    },
+                    "boundaries": [{"id": "bd1", "range": "(0,1)"}],
+                    "summaries": [{"id": "sm1", "range": "(0,1)", "topicId": "sum1"}]
+                }
+            }
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn relationship_add_and_remove() {
+        let mut sheets = structured();
+        {
+            let sheet = &mut sheets[0];
+            let id = add_relationship(sheet, "a", "b", Some("nota"));
+            assert_eq!(sheet.relationships_list().len(), 3);
+            assert!(remove_relationship(sheet, &id));
+        }
+        assert_eq!(sheets[0].relationships_list().len(), 2);
+        assert!(!remove_relationship(&mut sheets[0], "ghost"));
+    }
+
+    #[test]
+    fn remove_topic_drops_relationships_and_shifts_ranges() {
+        let mut sheets = structured();
+        // rimuove "b" (indice 1): rela rel1 e rel2 toccano b/a1? rel1 tocca b,
+        // rel2 no. boundary (0,1) e summary (0,1) diventano (0,0).
+        remove_topic(&mut sheets, "b").unwrap();
+        let sheet = &sheets[0];
+        assert_eq!(sheet.relationships_list().len(), 1);
+        assert_eq!(sheet.relationships_list()[0].id.as_deref(), Some("rel2"));
+        let root = sheet.root_topic.as_ref().unwrap();
+        assert_eq!(root.boundaries_list()[0].range.as_deref(), Some("(0,0)"));
+        assert_eq!(root.summaries_list()[0].range.as_deref(), Some("(0,0)"));
+    }
+
+    #[test]
+    fn removing_last_child_drops_now_empty_summary_and_boundary() {
+        let mut sheets = structured();
+        // toglie prima "b" poi "a": con un solo figlio il range diventa (0,0),
+        // rimuovendo anche l'ultimo il range si svuota e sparisce.
+        remove_topic(&mut sheets, "b").unwrap();
+        remove_topic(&mut sheets, "a").unwrap();
+        let root = sheets[0].root_topic.as_ref().unwrap();
+        assert!(root.boundaries_list().is_empty());
+        assert!(root.summaries_list().is_empty());
+        assert!(root.group("summary").map(|s| s.is_empty()).unwrap_or(true));
+    }
+
+    #[test]
+    fn add_summary_writes_both_representations() {
+        let mut sheets = structured();
+        let parent = model::find_topic_mut(&mut sheets, "root").unwrap();
+        let sid = add_summary(parent, 0, 1, "Nuovo sommario");
+        assert!(parent
+            .group("summary")
+            .unwrap()
+            .iter()
+            .any(|t| t.id.as_deref() == Some(sid.as_str())));
+        assert!(parent
+            .summaries_list()
+            .iter()
+            .any(|s| s.topic_id.as_deref() == Some(sid.as_str())));
+        assert!(remove_summary(parent, &sid));
+        assert!(!parent
+            .summaries_list()
+            .iter()
+            .any(|s| s.topic_id.as_deref() == Some(sid.as_str())));
+    }
+
+    #[test]
+    fn removing_summary_topic_removes_descriptor() {
+        let mut sheets = structured();
+        remove_topic(&mut sheets, "sum1").unwrap();
+        let root = sheets[0].root_topic.as_ref().unwrap();
+        assert!(root.summaries_list().is_empty());
     }
 
     #[test]

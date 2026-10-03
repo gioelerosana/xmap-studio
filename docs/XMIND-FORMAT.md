@@ -40,11 +40,13 @@ manca `content.json`, `archive::read_archive` restituisce errore
 struct Sheet {
     id, class, title, revisionId, rootTopic,
     topicOverlapping, arrangeableLayerOrder, zones, extensions, theme,
+    relationships: Vec<Relationship>,
     #[serde(flatten)] extra,           // ← obbligatorio
 }
 
 struct Topic {
-    id, class, title, children, image, extensions, summaries,
+    id, class, title, children, image, notes, notesDisplay, labels, markers,
+    href, extensions, summaries: Vec<Summary>, boundaries: Vec<Boundary>,
     titleUnedited, structureClass,
     #[serde(flatten)] extra,           // ← obbligatorio
 }
@@ -113,6 +115,21 @@ flexibleControlPoints?, style? }` (riferimenti per id a livello sheet).
 progress, startDate, dueDate, assignees, dependencies, creator}`),
 `org.xmind.ui.extended-style`, `org.xmind.ui.working-day-settings`.
 Non esistono `org.xmind.ui.attachment` né `org.xmind.ui.equation`.
+
+**Struttura (Fase 3).** `sheet.relationships[]` riferisce per id (`end1Id` =
+sorgente, `end2Id` = destinazione); su `Topic` `boundaries[]` e `summaries[]`
+usano `range:"(start,end)"` con indici **inclusivi** sui figli `attached`
+(`"master"` per un boundary sull'intero ramo). Il sommario ha **doppia
+rappresentazione obbligatoria**: descrittore `{id, class:"summary", range,
+topicId}` + topic reale in `children.summary` con `id == topicId`. L'`id` del
+descrittore è un UUID nuovo (non un hash: la nota "hash del topicId" è
+superata). Alla rimozione di un figlio i range vengono riallineati e le
+relazioni/descrittori orfani rimossi (`edit::remove_topic`).
+
+**Task (Fase 5).** L'extension `org.xmind.ui.task` è gestita per le sole chiavi
+scalari `priority` (1–9), `progress` (0–100), `startDate`, `dueDate` (ISO 8601);
+`dependencies` e le altre chiavi restano intatte. I marker `priority-*`/`task-*`
+non vengono riscritti automaticamente: restano gestibili dal pannello Marker.
 
 **Allegati**: entry ZIP `attachments/<id>.bin` (fuori da `resources/`) +
 registrazione nel `manifest.json` + link `xap:attachments/<id>.bin` sul topic.

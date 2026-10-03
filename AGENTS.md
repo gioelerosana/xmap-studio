@@ -73,7 +73,7 @@ sudo apt install libgtk-4-dev libadwaita-1-dev nodejs npm
 ```bash
 cargo run                 # avvio in sviluppo
 cargo build --release     # binario in target/release/
-cargo test                # 65 unit + 3 end-to-end (gli skip sono attesi)
+cargo test                # 90 unit + 7 end-to-end (gli skip sono attesi)
 cargo fmt                 # formattazione
 cargo clippy --all-targets
 cargo xtask appimage      # AppImage in dist/

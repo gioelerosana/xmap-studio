@@ -11,6 +11,13 @@ Oggi sa:
   spostamento con drag & drop;
 - sostituire il contenuto di un blocco con una formula **LaTeX nativa**
   (MathJax), senza il pulsante "Equation" bloccato nella versione gratuita;
+- arricchire il blocco con **note, etichette, marker e link**;
+- aggiungere **relazioni, cornici e sommari** e collegare i blocchi;
+- **allegare file** e gestire **task** (priorità, avanzamento, date) e il
+  **colore del ramo**;
+- **esportare** la mappa in **Markdown/OPML**, **importarla** e **unire o
+  dividere** file `.xmind`, oltre a una vista **outliner** e a un'**anteprima
+  grafica**;
 - salvare in modo sicuro (scrittura atomica, backup nascosti, validazione).
 
 Niente account, niente telemetria, niente webview. Apre, mostra, modifica, salva.
@@ -59,11 +66,18 @@ xmind-LaTeX/
 │       ├── model.rs                      # struct con #[serde(flatten)] extra
 │       ├── archive.rs                    # lettura/scrittura ZIP, atomic, backup
 │       ├── equation.rs                   # applica/rimuovi equazione su un topic
-│       ├── edit.rs                       # testo, aggiunta, eliminazione, spostamento topic
+│       ├── edit.rs                       # topic, struttura (relazioni/cornici/sommari)
+│       ├── merge.rs                      # unione .xmind e split di un ramo
+│       ├── media.rs                      # allegati (attachments/<id>.bin)
+│       ├── task.rs                       # extension org.xmind.ui.task
+│       ├── export.rs / import.rs         # Markdown, OPML, outliner
+│       ├── markers.rs                    # catalogo marker di XMind
+│       ├── layout.rs                     # layout per l'anteprima grafica (no GTK)
 │       ├── mathjax.rs                    # rendering LaTeX via Node (mathjax-full)
 │       ├── raster.rs                     # SVG → PNG (resvg), 3× supersampling
 │       ├── validate.rs                   # validazione ZIP/JSON/risorse/manifest
 │       ├── safety.rs                     # XMind aperto + conflitti su disco
+│       ├── error.rs                      # ErrorPayload { code, message }
 │       └── state.rs                      # workbook aperto, undo/redo, salvataggio
 ├── xtask/                        # `cargo xtask appimage` (task di build in Rust)
 └── demo/Relazioni.xmap-studio.xmind
@@ -290,7 +304,8 @@ l'editor equazioni nativo con il LaTeX corretto.
 - Solo formato moderno (`content.json`); il legacy XMind 8 (`content.xml`) non è
   supportato e viene segnalato.
 - Il rendering richiede Node.js nel `PATH` (già presente).
-- Editing supportato: testo dei blocchi, aggiunta di sotto-blocchi, eliminazione di
-  un blocco (con i suoi figli) e spostamento (riordino o riannidamento) via drag &
-  drop nell'albero. Restano fuori scope note, marker e temi.
+- Editing supportato: testo, note, etichette, marker, link e task dei blocchi;
+  aggiunta, eliminazione (con i figli), spostamento (riordino/riannidamento) e
+  struttura (relazioni, cornici, sommari). Restano fuori scope il rich text, la
+  registrazione audio e l'editor di temi (il colore del ramo è supportato).
 - L'AppImage non include GTK4/libadwaita né Node: vanno presenti sul sistema.

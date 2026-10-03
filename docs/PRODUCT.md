@@ -85,20 +85,20 @@ Note di attuazione:
 | Labels | da confermare | `topic.labels: [string]` | additivo | **Fatto** (Fase 1) | Alta |
 | Markers / icone | da confermare | `topic.markers: [{markerId}]` | catalogo svg nel binario: `priority-1..9`, `task-start/oct/quarter/3oct/5oct/7oct/3quar/half/done/pause`, `flag-*`, `star-*`, `half-star-*`, `smiley-*`, `people-*`, `arrow-*`, `symbol-*`, `tag-*`, `month-*`, `week-*`, `other-*`, `celebration-*`, `c_symbol_*`/`c_simbol-*` | **Fatto** (Fase 1) | **Alta** |
 | Topic Link / File Link | sì (storico) | `topic.href`: web `http(s)://…`/`mailto:…`, file `file:…`, topic `xmind:#<id>` | XMind aggiunge `attributedTitle` **solo display**: va preservato, non generato | **Fatto** (Fase 1) | **Alta** |
-| Task tracking | sì | extension `org.xmind.ui.task` con `content {priority, progress, startDate, dueDate, assignees, dependencies, creator}`; marker `task-*` per lo stato | provider nativo = `org.xmind.ui.task`; `org.xmind.ui.taskInfo` esiste ma serve alla conversione cloud | **Confermato** | Media |
+| Task tracking | sì | extension `org.xmind.ui.task` con `content {priority, progress, startDate, dueDate, assignees, dependencies, creator}`; marker `task-*` per lo stato | provider nativo = `org.xmind.ui.task`; `org.xmind.ui.taskInfo` esiste ma serve alla conversione cloud | **Fatto** (Fase 5) | Media |
 | Rich text / numbering | sì | `topic.attributedTitle: [{text, "fo:font-*"…}]`; numbering = extension `org.xmind.ui.numbering` con `content {pattern, tiered, fixedIndex}` | run con chiavi `fo:font-family/style/weight/size`, `fo:color`, `fo:text-decoration/transform` | **Confermato** | Bassa |
 
 ### 3.2 Struttura e relazioni
 
 | Feature (Pro) | Lock Free | Campi su disco | Provider / nota | Stato | Priorità |
 |---|---|---|---|---|---|
-| Relationship | da confermare | `sheet.relationships[] = {id, class:"relationship", end1Id, end2Id, title?, attributedTitle?, controlPoints?{"0","1"}, lineEndPoints?{"0","1"}, flexibleControlPoints?, style?}` | a livello sheet, riferisce per id; `end1`/`end2` = sorgente/destinazione | **Confermato** | **Alta** |
-| Boundary | da confermare | `topic.boundaries[] = {id, class:"boundary", range:"(start,end)" \| "master", title?, attributedTitle?, style?}` | sta sul topic **genitore**; `range` indicizza i figli | **Confermato** | Media |
-| Summary | da confermare | `topic.summaries[] = {id, class:"summary", range:"(start,end)", topicId, style?}` **+** topic reale in `children.summary` | doppia rappresentazione, entrambe obbligatorie; l'`id` di `summaries` è un hash del `topicId` | **Confermato** | Media |
+| Relationship | da confermare | `sheet.relationships[] = {id, class:"relationship", end1Id, end2Id, title?, attributedTitle?, controlPoints?{"0","1"}, lineEndPoints?{"0","1"}, flexibleControlPoints?, style?}` | a livello sheet, riferisce per id; `end1`/`end2` = sorgente/destinazione | **Fatto** (Fase 3) | **Alta** |
+| Boundary | da confermare | `topic.boundaries[] = {id, class:"boundary", range:"(start,end)" \| "master", title?, attributedTitle?, style?}` | sta sul topic **genitore**; `range` indicizza i figli | **Fatto** (Fase 3) | Media |
+| Summary | da confermare | `topic.summaries[] = {id, class:"summary", range:"(start,end)", topicId, style?}` **+** topic reale in `children.summary` | doppia rappresentazione, entrambe obbligatorie; l'`id` del descrittore è un UUID nuovo | **Fatto** (Fase 3) | Media |
 | Callout / floating topic | probabile | `children.callout[]`, `children.detached[]` + `topic.position {x,y}` | già percorsi dal modello | **Confermato** | Media |
 | Strutture (Fishbone/Org/Timeline/Matrix/Tree table…) | no/parziale | `topic.structureClass` | default `org.xmind.ui.map.unbalanced`; catalogo reale: `map*`, `logic.*`, `org-chart.*`, `fishbone.*`, `tree.*`, `timeline.*`, `spreadsheet*`, `treetable*`, `brace.*`, `grid`, `clockwise` | **Confermato** (campo) | Bassa |
 | Align floating topic | sì | `topic.position` | solo UI di allineamento | **Confermato** | Bassa |
-| Colored branch | **limitato** in Free | `topic.style = {id, properties}` con chiavi `svg:fill`, `svg:opacity`, `fill-pattern`, `line-color/-width/-pattern`, `border-line-*`, `shape-class`, `line-class`, `arrow-*-class`, `fo:*` | campo confermato; da confermare solo cosa blocca la UI Free | Da verificare (lock) | Bassa |
+| Colored branch | **limitato** in Free | `topic.style = {id, properties}` con chiavi `svg:fill`, `svg:opacity`, `fill-pattern`, `line-color/-width/-pattern`, `border-line-*`, `shape-class`, `line-class`, `arrow-*-class`, `fo:*` | campo confermato; la UI scrive `svg:fill`, le altre chiavi restano preservate | **Fatto** (Fase 5, solo riempimento) | Bassa |
 
 > Non è un campo su disco ma un dettaglio utile: `topic.branch` (`"folded"` o
 > assente) memorizza il ramo ripiegato, e `topic.customWidth` la larghezza
@@ -108,7 +108,7 @@ Note di attuazione:
 
 | Feature (Pro) | Lock Free | Campi su disco | Provider / nota | Stato | Priorità |
 |---|---|---|---|---|---|
-| Attachment | da confermare | entry ZIP `attachments/<id>.bin` + registrazione in `manifest.json` + link `xap:attachments/<id>.bin` sul topic (o sotto-topic collegato) | **non è un provider**: nel binario non esiste `org.xmind.ui.attachment` | Fattibile | Media |
+| Attachment | da confermare | entry ZIP `attachments/<id>.bin` + registrazione in `manifest.json` + link `xap:attachments/<id>.bin` sul topic (o sotto-topic collegato) | **non è un provider**: nel binario non esiste `org.xmind.ui.attachment` | **Fatto** (Fase 4) | Media |
 | Audio Notes | sì | extension `org.xmind.ui.audionotes` con `resourceRefs`; l'audio è una risorsa in `resources/` | `org.xmind.ui.audionotes` (confermato) | **Confermato** (provider) | Bassa |
 | Immagini locali / sticker | sì (sticker) | `image.src = "xap:resources/…"` + `width`, `height`, `align`, `lockRatio`, `borderColor`, `borderWidth`, `shadowVisible`, `opacity` | gli sticker proprietari richiedono asset XMind (licenza) | **Confermato** (campo) | Bassa |
 
@@ -126,12 +126,12 @@ non toccano lo schema: leggiamo il modello già in memoria.
 
 | Feature | Lock Free | Stato | Priorità |
 |---|---|---|---|
-| Export SVG | sì | Rinviato alla Fase 6: serve il layout dei rami, lo stesso dell'anteprima grafica | Media |
+| Export SVG | sì | Rinviato: l'anteprima grafica (Fase 6) disegna il layout, ma l'export SVG su file resta da fare | Media |
 | Export Markdown / OPML | sì | **Fatto** (Fase 2): `export.rs`, un `#` per sheet, `$latex$`/note/etichette; OPML con `_note`/`_equation`/`_labels` | **Alta** |
-| Export PNG senza watermark | watermark in Free | Fattibile (serve layout) | Media |
+| Export PNG senza watermark | watermark in Free | Fattibile (il layout della Fase 6 è la base) | Media |
 | Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `import.rs`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
-| Merge di file `.xmind` | sì | Fattibile (operazione sul modello) | Media |
-| Split mappa per ramo principale | sì | Fattibile | Bassa |
+| Merge di file `.xmind` | sì | **Fatto** (Fase 2): `merge.rs`, sheet accodate con id riassegnati | Media |
+| Split mappa per ramo principale | sì | **Fatto** (Fase 2): `merge.rs`, ramo → mappa autonoma validata | Bassa |
 | Export PDF senza watermark | watermark in Free | Fattibile (serve libreria PDF: dipendenza) | Bassa |
 | Export Excel / Word | sì | Non prioritario (dipendenza pesante) | — |
 
@@ -139,9 +139,9 @@ non toccano lo schema: leggiamo il modello già in memoria.
 
 | Feature | Lock Free | Note | Priorità |
 |---|---|---|---|
-| Outliner (vista testo) | sì | Solo UI, il modello c'è già | Media |
-| Ricerca / filtro nell'albero | sì | Solo UI, il modello c'è già | Media |
-| Temi / custom theme | sì | `sheet.theme` / `topic.style`: la parte difficile è l'editor | Bassa |
+| Outliner (vista testo) | sì | **Fatto** (Fase 5): `export::to_outline`, finestra in sola lettura | Media |
+| Ricerca / filtro nell'albero | sì | **Fatto**: barra di ricerca + filtri per tipo nella colonna sinistra | Media |
+| Temi / custom theme | sì | Parziale (Fase 5): colore di ramo (`svg:fill`); l'editor di temi resta da fare | Bassa |
 | ZEN mode (tutte le rese) | parziale | Solo UI | Bassa |
 | Set Password | sì | **Fuori scope**: cifratura ZIP, rompe atomicità e validazione | — |
 
@@ -218,11 +218,11 @@ formato: si legge il modello in memoria.
 **Dove:** `export.rs` (Markdown/OPML) e `import.rs` (parser senza dipendenze),
 azioni nel menu ☰ in `gui.rs`, tutto in `spawn_blocking`.
 **Done:** export/import confrontati su mappe reali; nessuna dipendenza nuova.
-**Stato:** fatto per Markdown/OPML. L'**import crea una nuova sheet** e le
-equazioni `$…$` vengono renderizzate come native. L'**export SVG della mappa** e
-il **PNG senza watermark** richiedono il layout dei rami e passano alla Fase 6
-(anteprima grafica). Merge e split restano da fare (operazioni sul modello,
-nessun rischio di schema).
+**Stato:** **fatto**. Markdown/OPML (import che crea una nuova sheet, equazioni
+`$…$` native), **merge** di file `.xmind` (sheet accodate con id e riferimenti
+riassegnati, risorse e allegati copiati) e **split** di un ramo in una mappa
+autonoma validata. L'**export SVG della mappa** e il **PNG senza watermark**
+usano il layout della Fase 6 e restano da completare come export su file.
 
 ### Fase 3 — Struttura visibile
 **Feature:** Relationship, Boundary, Summary, callout e floating topic con
@@ -234,6 +234,11 @@ doppia rappresentazione va gestita con attenzione.
 `graph.rs`, rendering/editing relazioni in `gui.rs`.
 **Done:** relazioni e summary creati sopravvivono al round-trip e si vedono in
 XMind; nessun riferimento orfano dopo l'eliminazione di un topic.
+**Stato:** **fatto**. Struct tipizzate in `model.rs` (`Relationship`,
+`Boundary`, `Summary`), operazioni in `edit.rs` con riallineamento dei range e
+pulizia dei riferimenti orfani, sezione «Struttura» nel pannello del blocco
+(collega a un altro blocco, cornice e sommario sui sotto-blocchi). Il callout e
+il riposizionamento dei floating topic restano fuori da questa fase.
 
 ### Fase 4 — Media
 **Feature:** Attachment (allegare file esistenti), poi Audio Notes solo in
@@ -246,6 +251,9 @@ registrazione/codec è probabile fuori scope.
 **Done:** allegato presente in `attachments/<id>.bin`, registrato nel manifest,
 link `xap:attachments/…` sul topic, apribile da XMind; le risorse orfane restano
 (scelta di sicurezza).
+**Stato:** **fatto** per gli allegati generici (`media.rs`, voce di menu «Allega
+un file…»). Le Audio Notes restano fuori scope in questa fase: il provider è
+confermato, ma servono codec/registrazione.
 
 ### Fase 5 — Produttività
 **Feature:** Task tracking (marker `task-*` + extension `org.xmind.ui.task`),
@@ -254,15 +262,37 @@ Outliner, ricerca/filtro, temi/stili e colored branch.
 inferiore rispetto alle fasi precedenti; il formato è ormai confermato.
 **Dove:** `gui.rs` (outliner, ricerca), `topic_meta.rs` (task), `theme.rs`
 (stili).
+**Stato:** **fatto** per task (`task.rs`: priorità, avanzamento, date; estensione
+scritta con `dependencies` preservate), outliner in sola lettura, ricerca/filtro
+(già presenti) e colore del ramo (`svg:fill`). L'editor dei temi e il rich text
+restano da fare.
 
-### Fase 6 (futura) — Anteprima grafica della mappa
+### Fase 6 — Anteprima grafica della mappa
 **Idea:** accanto all'outliner testuale, una vista grafica della mappa — blocchi,
 rami, marker, relazioni — disegnata da un canvas GTK (`DrawingArea` /
 `Snapshot`) a partire dal modello in memoria, **senza webview**. Riusa i DTO già
 esistenti; il costo vero è il layout dei rami e la resa del testo.
 **Perché dopo:** è una feature di presentazione, non di formato: non sblocca
-nulla in XMind e ha complessità di layout alta. Va affrontata quando le fasi di
-contenuto (1–2) e struttura (3) hanno reso il modello completo.
+nulla in XMind e ha complessità di layout alta.
+**Stato:** **fatto** in versione base: `layout.rs` calcola il tidy tree
+(orizzontale) senza GTK, `gui.rs` disegna rettangoli/connettori con cairo e
+sovrappone `Label` per il testo, colore del ramo incluso. Restano marker,
+relazioni/archi curvi e l'export SVG su file.
+
+### Fase 7 — Vista mappa ad albero (la feature centrale)
+**Idea:** promuovere la resa grafica a **vista primaria** dell'app: albero
+orizzontale stile XMind (radice a sinistra, rami a destra), sempre aggiornato,
+con selezione sincronizzata all'editor testuale, collapse/expand e pan/zoom.
+L'editing **resta testuale**: la mappa orienta e seleziona, non edita.
+**Perché ora:** è la feature che dà all'app la sua identità; la Fase 6 ne ha già
+posto le basi (layout puro + canvas cairo).
+**Dove:** `layout.rs` (input dai DTO, `NodeMetrics`, collapse, bounds), nuovo
+`map_view.rs` (canvas GTK/cairo + Pango), `gui.rs` (Stack Mappa/Testo,
+switcher, sincronia selezione, `refresh`).
+**Stato:** **completata**. Dettagli in
+[`MAP-VIEW.md`](MAP-VIEW.md). Decisioni: layout alimentato dai DTO, equazioni
+renderizzate con cache, interazione v1 = selezione + collapse + zoom, nessuna
+webview e nessuna dipendenza nuova reale.
 
 ### Fuori scope (per scelta)
 Cloud/account/collaborazione/AI; Set Password (cifratura ZIP); sticker e
@@ -313,5 +343,16 @@ l'arrivo di nuove feature:
    sono confermati dal binario XMind 26.03.04129. Resta la sola conferma dei
    lock Free, da fare in UI quando serve.
 3. **Fase 1 — topic ricco**: fatta (note, etichette, marker, link).
-4. **Fasi successive**: ognuna su branch dedicato (`feat/<slug>`), con MR verso
-   `main`, test e verifica in XMind prima dell'unione.
+4. **Fase 2 — interoperabilità**: fatta (export/import Markdown/OPML, merge,
+   split).
+5. **Fase 3 — struttura**: fatta (relazioni, boundary, summary).
+6. **Fase 4 — media**: fatta la parte allegati; Audio Notes fuori scope.
+7. **Fase 5 — produttività**: fatto task, outliner, ricerca/filtro, colore del
+   ramo; temi/rich text da fare.
+8. **Fase 6 — anteprima grafica**: fatta in versione base; export SVG su file e
+   resa di marker/relazioni da completare.
+9. **Fase 7 — vista mappa ad albero**: completata! Piano in
+   [`MAP-VIEW.md`](MAP-VIEW.md). Layout ad albero puro (`layout.rs`), vista interattiva
+   con pan/zoom/collapse (`map_view.rs`) e integrazione primaria in UI (`gui.rs`).
+10. **Ogni fase**: branch dedicato (`feat/<slug>`), MR verso `main`, test e
+    verifica in XMind prima dell'unione.

@@ -69,6 +69,14 @@ pub struct AddTopicResultDto {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MergeResultDto {
+    pub added_sheets: usize,
+    pub added_topics: usize,
+    pub workbook: WorkbookDto,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PreviewDto {
     pub svg: String,
     pub width: f64,
@@ -655,6 +663,242 @@ impl AppController {
         wb.content.push(sheet);
         wb.commit();
         Ok(wb.to_dto())
+    }
+
+    pub fn add_topic_relationship(
+        &mut self,
+        end1_id: &str,
+        end2_id: &str,
+        title: Option<String>,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let s1 = model::sheet_index_of(&wb.content, end1_id);
+            let s2 = model::sheet_index_of(&wb.content, end2_id);
+            match (s1, s2) {
+                (Some(i1), Some(i2)) if i1 == i2 => {
+                    edit::add_relationship(&mut wb.content[i1], end1_id, end2_id, title.as_deref());
+                    wb.commit();
+                    Ok(wb.to_dto())
+                }
+                _ => Err(ErrorPayload::new(
+                    CODE_TOPIC_NOT_FOUND,
+                    "I blocchi non appartengono alla stessa sheet.",
+                )),
+            }
+        })
+    }
+
+    pub fn remove_topic_relationship(
+        &mut self,
+        _topic_id: &str,
+        rel_id: &str,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            for sheet in &mut wb.content {
+                if edit::remove_relationship(sheet, rel_id) {
+                    wb.commit();
+                    return Ok(wb.to_dto());
+                }
+            }
+            Err(ErrorPayload::new(
+                CODE_TOPIC_NOT_FOUND,
+                "Relazione non trovata.",
+            ))
+        })
+    }
+
+    pub fn add_topic_boundary(&mut self, topic_id: &str) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            let count = topic.group("attached").map(|v| v.len()).unwrap_or(0);
+            let end = count.saturating_sub(1);
+            edit::add_boundary(topic, 0, end, None);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn remove_topic_boundary(
+        &mut self,
+        topic_id: &str,
+        boundary_id: &str,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            if !edit::remove_boundary(topic, boundary_id) {
+                return Err(ErrorPayload::new(
+                    CODE_TOPIC_NOT_FOUND,
+                    "Cornice non trovata.",
+                ));
+            }
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn add_topic_summary(&mut self, topic_id: &str) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            let count = topic.group("attached").map(|v| v.len()).unwrap_or(0);
+            let end = count.saturating_sub(1);
+            edit::add_summary(topic, 0, end, "Sommario");
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn remove_topic_summary(
+        &mut self,
+        topic_id: &str,
+        summary_id: &str,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            if !edit::remove_summary(topic, summary_id) {
+                return Err(ErrorPayload::new(
+                    CODE_TOPIC_NOT_FOUND,
+                    "Sommario non trovato.",
+                ));
+            }
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn set_topic_task(
+        &mut self,
+        topic_id: &str,
+        priority: Option<i64>,
+        progress: Option<i64>,
+        start: Option<String>,
+        due: Option<String>,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            let data = crate::task::TaskData {
+                priority,
+                progress,
+                start_date: start,
+                due_date: due,
+            };
+            crate::task::write(topic, &data);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn clear_topic_task(&mut self, topic_id: &str) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            crate::task::clear(topic);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn set_topic_color(
+        &mut self,
+        topic_id: &str,
+        color: Option<&str>,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            model::set_fill_color(topic, color);
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn merge_workbook(&mut self, path: &str) -> Result<MergeResultDto, ErrorPayload> {
+        let path = path.strip_prefix("file://").unwrap_or(path);
+        let other = OpenWorkbook::open(&PathBuf::from(path))?;
+        self.with_wb(|wb| {
+            let resources = crate::merge::resources_to_copy(
+                &other.content,
+                &other.archive.resources,
+                &wb.archive.resources,
+            );
+            let (added_sheets, added_topics) =
+                crate::merge::merge_sheets(&mut wb.content, other.content)?;
+            for (key, bytes) in resources {
+                wb.archive.resources.insert(key, bytes);
+            }
+            wb.commit();
+            Ok(MergeResultDto {
+                added_sheets,
+                added_topics,
+                workbook: wb.to_dto(),
+            })
+        })
+    }
+
+    pub fn split_topic(&mut self, topic_id: &str, out_path: &str) -> Result<String, ErrorPayload> {
+        let out_path = out_path.strip_prefix("file://").unwrap_or(out_path);
+        let target = PathBuf::from(out_path);
+        self.with_wb(|wb| {
+            let topic = model::find_topic(&wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            let title = topic.title_str();
+            let standalone_sheet = crate::merge::standalone_sheet(
+                topic,
+                if title.is_empty() { "Mappa" } else { title },
+            );
+            let bytes = crate::merge::build_standalone_bytes(
+                standalone_sheet,
+                wb.archive.resources.clone(),
+                wb.archive
+                    .entries
+                    .iter()
+                    .filter(|(k, _)| k.starts_with("attachments/"))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                None,
+            )?;
+            std::fs::write(&target, bytes)
+                .map_err(|e| ErrorPayload::new(crate::error::CODE_IO, format!("{e:#}")))?;
+            Ok(target.display().to_string())
+        })
+    }
+
+    pub fn attach_file_to_topic(
+        &mut self,
+        topic_id: &str,
+        path: &str,
+    ) -> Result<WorkbookDto, ErrorPayload> {
+        let path = path.strip_prefix("file://").unwrap_or(path);
+        let source = PathBuf::from(path);
+        self.with_wb(|wb| {
+            let topic = model::find_topic_mut(&mut wb.content, topic_id)
+                .ok_or_else(|| ErrorPayload::new(CODE_TOPIC_NOT_FOUND, "Blocco non trovato."))?;
+            crate::media::attach_file(topic, &source, &mut wb.archive.entries)?;
+            wb.commit();
+            Ok(wb.to_dto())
+        })
+    }
+
+    pub fn outline_text(&self) -> Option<String> {
+        self.wb
+            .as_ref()
+            .map(|wb| crate::export::to_outline(&wb.content))
+    }
+
+    pub fn map_layout(&self) -> Option<crate::layout::Layout> {
+        self.wb.as_ref().map(|wb| {
+            let dto = wb.to_dto();
+            crate::layout::layout(
+                &dto.sheets,
+                &std::collections::HashSet::new(),
+                &crate::layout::EstimatedMetrics,
+                crate::layout::LayoutOpts::default(),
+            )
+        })
     }
 }
 

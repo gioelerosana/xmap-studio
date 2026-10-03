@@ -11,6 +11,7 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 | [`TESTING.md`](TESTING.md) | Strategia di test, comandi, test su mappa reale |
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
 | [`PRODUCT.md`](PRODUCT.md) | Posizionamento, feature precluse a XMind Free, roadmap |
+| [`MAP-VIEW.md`](MAP-VIEW.md) | Piano della vista mappa ad albero (Fase 7) |
 
 Per le regole di lavoro destinate agli agenti (e ai contributor) vedi
 [`AGENTS.md`](../AGENTS.md) nella radice.

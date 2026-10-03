@@ -101,6 +101,10 @@ struct Ui {
     store: gio::ListStore,
     selection: gtk::SingleSelection,
     summary: gtk::Label,
+    main_view_stack: gtk::Stack,
+    map_view: crate::map_view::MapView,
+    view_toggle_map: gtk::ToggleButton,
+    view_toggle_text: gtk::ToggleButton,
     editor_stack: gtk::Stack,
     topic_title: gtk::Label,
     crumb: gtk::Label,
@@ -209,6 +213,9 @@ fn build_ui(app: &adw::Application) {
     sec_io.append(Some("Esporta OPML…"), Some("win.export-opml"));
     sec_io.append(Some("Importa Markdown/OPML…"), Some("win.import-outline"));
     menu.append_section(None, &sec_io);
+    let sec_view = gio::Menu::new();
+    sec_view.append(Some("Visualizza mappa (Ctrl+M)"), Some("win.map-preview"));
+    menu.append_section(None, &sec_view);
     let sec_topic = gio::Menu::new();
     sec_topic.append(Some("Esporta SVG"), Some("win.export-svg"));
     sec_topic.append(Some("Esporta PNG"), Some("win.export-png"));
@@ -672,9 +679,65 @@ fn build_ui(app: &adw::Application) {
     editor_stack.add_named(&editor_scroll, Some("editor"));
     editor_stack.set_visible_child_name("empty");
 
+    // ------------------------------------------------------------ vista mappa
+    let view_toggle_map = gtk::ToggleButton::builder()
+        .label("Mappa")
+        .icon_name("view-grid-symbolic")
+        .active(true)
+        .tooltip_text("Visualizza la mappa ad albero (Ctrl+M)")
+        .build();
+    let view_toggle_text = gtk::ToggleButton::builder()
+        .label("Dettagli")
+        .icon_name("document-properties-symbolic")
+        .group(&view_toggle_map)
+        .tooltip_text("Visualizza editor e dettagli del blocco")
+        .build();
+    let view_switcher = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    view_switcher.add_css_class("linked");
+    view_switcher.append(&view_toggle_map);
+    view_switcher.append(&view_toggle_text);
+    header.pack_end(&view_switcher);
+
+    let store_for_map = store.clone();
+    let selection_for_map = selection.clone();
+    let map_view = crate::map_view::MapView::new(move |id| {
+        let n = store_for_map.n_items();
+        for i in 0..n {
+            if let Some(obj) = store_for_map
+                .item(i)
+                .and_then(|o| o.downcast::<gtk::StringObject>().ok())
+            {
+                if obj.string() == id {
+                    selection_for_map.set_selected(i);
+                    break;
+                }
+            }
+        }
+    });
+    map_view.set_dark(dark);
+
+    let main_view_stack = gtk::Stack::new();
+    main_view_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+    main_view_stack.add_named(map_view.widget(), Some("map"));
+    main_view_stack.add_named(&editor_stack, Some("text"));
+    main_view_stack.set_visible_child_name("map");
+
+    {
+        let stack = main_view_stack.clone();
+        let map_v = map_view.clone();
+        view_toggle_map.connect_toggled(move |btn| {
+            if btn.is_active() {
+                stack.set_visible_child_name("map");
+                map_v.queue_draw();
+            } else {
+                stack.set_visible_child_name("text");
+            }
+        });
+    }
+
     let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
     paned.set_start_child(Some(&left));
-    paned.set_end_child(Some(&editor_stack));
+    paned.set_end_child(Some(&main_view_stack));
     paned.set_position(360);
     paned.set_resize_start_child(false);
     paned.set_shrink_start_child(false);
@@ -718,6 +781,10 @@ fn build_ui(app: &adw::Application) {
         store,
         selection: selection.clone(),
         summary,
+        main_view_stack,
+        map_view,
+        view_toggle_map,
+        view_toggle_text,
         editor_stack,
         topic_title,
         crumb,
@@ -766,7 +833,9 @@ fn build_ui(app: &adw::Application) {
                 .selected_item()
                 .and_then(|o| o.downcast::<gtk::StringObject>().ok())
                 .map(|s| s.string().to_string());
-            *state.selected.borrow_mut() = id;
+            *state.selected.borrow_mut() = id.clone();
+            ui.map_view.set_selected(id.as_deref());
+            ui.map_view.scroll_to_selected();
             update_editor(&ui, &state);
             schedule_preview(&ui, &state);
         });
@@ -992,6 +1061,13 @@ fn build_ui(app: &adw::Application) {
         let state = state.clone();
         add_action(app, &win, "import-outline", &[], move || {
             do_import_outline(&ui, &state)
+        });
+    }
+    {
+        let win = ui.window.clone();
+        let ui = ui.clone();
+        add_action(app, &win, "map-preview", &["<Control>m"], move || {
+            show_map_preview(&ui)
         });
     }
     {
@@ -1265,6 +1341,11 @@ fn refresh(ui: &Rc<Ui>, state: &Rc<State>) {
         let controller = state.controller.lock().unwrap();
         (controller.workbook(), controller.status())
     };
+    if let Some(w) = wb.as_ref() {
+        ui.map_view.set_workbook(&w.sheets, 0);
+        let sel = state.selected.borrow().clone();
+        ui.map_view.set_selected(sel.as_deref());
+    }
     rebuild_list(ui, state, wb.as_ref());
     update_editor(ui, state);
     update_status(ui, &status);
@@ -1541,6 +1622,9 @@ fn update_status(ui: &Rc<Ui>, status: &StatusDto) {
     ui.save_btn.set_sensitive(status.has_workbook);
     ui.undo_btn.set_sensitive(status.can_undo);
     ui.redo_btn.set_sensitive(status.can_redo);
+    set_action_enabled(ui, "map-preview", status.has_workbook);
+    ui.view_toggle_map.set_sensitive(status.has_workbook);
+    ui.view_toggle_text.set_sensitive(status.has_workbook);
 }
 
 // -------------------------------------------------------------------- preview
@@ -2135,6 +2219,7 @@ fn open_path(ui: &Rc<Ui>, state: &Rc<State>, path: PathBuf) {
             Ok(_) => {
                 *state.selected.borrow_mut() = None;
                 refresh(&ui, &state);
+                ui.map_view.fit_to_view();
                 toast(&ui, "File aperto");
             }
             Err(e) => show_error(&ui, "Apertura non riuscita", &e.message),
@@ -2388,6 +2473,7 @@ fn toggle_theme(ui: &Rc<Ui>, state: &Rc<State>) {
         adw::ColorScheme::ForceLight
     });
     state.dark.set(dark);
+    ui.map_view.set_dark(dark);
     if dark {
         ui.preview_box.add_css_class("eq-preview-dark");
         ui.preview_box.remove_css_class("eq-preview-light");
@@ -2396,6 +2482,12 @@ fn toggle_theme(ui: &Rc<Ui>, state: &Rc<State>) {
         ui.preview_box.add_css_class("eq-preview-light");
     }
     schedule_preview(ui, state);
+}
+
+fn show_map_preview(ui: &Ui) {
+    ui.view_toggle_map.set_active(true);
+    ui.main_view_stack.set_visible_child_name("map");
+    ui.map_view.fit_to_view();
 }
 
 fn show_about(ui: &Ui) {
@@ -2450,6 +2542,10 @@ mod tests {
             href: None,
             path: Vec::new(),
             child_count: 0,
+            task: None,
+            fill_color: None,
+            boundaries: Vec::new(),
+            summaries: Vec::new(),
         }
     }
 

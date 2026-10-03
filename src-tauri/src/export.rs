@@ -41,6 +41,60 @@ pub fn to_markdown(sheets: &[Sheet]) -> String {
     out
 }
 
+/// Vista **outliner**: elenco testuale indentato dei blocchi, con equazioni,
+/// note ed etichette. È la resa in sola lettura dell'albero per la UI.
+pub fn to_outline(sheets: &[Sheet]) -> String {
+    let mut out = String::new();
+    for sheet in sheets {
+        let root = sheet.root_topic.as_ref();
+        let heading = root
+            .map(Topic::title_str)
+            .filter(|t| !t.is_empty())
+            .or_else(|| {
+                let t = sheet.title_str();
+                (!t.is_empty()).then_some(t)
+            })
+            .unwrap_or("Mappa");
+        out.push_str(heading);
+        out.push('\n');
+        if let Some(root) = root {
+            write_preamble(root, &mut out);
+            for group in CHILD_GROUPS {
+                if let Some(children) = root.group(group) {
+                    for child in children {
+                        write_outline_topic(child, 1, &mut out);
+                    }
+                }
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn write_outline_topic(topic: &Topic, depth: usize, out: &mut String) {
+    let indent = "  ".repeat(depth);
+    out.push_str(&indent);
+    out.push_str("• ");
+    out.push_str(&topic_text(topic));
+    out.push('\n');
+    if let Some(notes) = topic.notes_text() {
+        for line in notes.lines() {
+            out.push_str(&indent);
+            out.push_str("    ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    for group in CHILD_GROUPS {
+        if let Some(children) = topic.group(group) {
+            for child in children {
+                write_outline_topic(child, depth + 1, out);
+            }
+        }
+    }
+}
+
 /// Note/equazione/etichette della radice, che non compare come bullet.
 fn write_preamble(topic: &Topic, out: &mut String) {
     if let Some(notes) = topic.notes_text() {

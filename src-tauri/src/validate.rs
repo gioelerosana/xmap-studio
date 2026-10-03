@@ -139,6 +139,25 @@ pub fn refresh_manifest(
     }
 }
 
+/// Registra nel manifest le entry generiche (es. `attachments/…`), senza
+/// toccare quelle esistenti. Le risorse hanno già `refresh_manifest`.
+pub fn register_entries(manifest: &mut Value, names: impl Iterator<Item = String>) {
+    if !manifest.is_object() {
+        *manifest = serde_json::json!({});
+    }
+    let obj = manifest.as_object_mut().unwrap();
+    let entries = obj
+        .entry("file-entries")
+        .or_insert_with(|| serde_json::json!({}));
+    if !entries.is_object() {
+        *entries = serde_json::json!({});
+    }
+    let entries = entries.as_object_mut().unwrap();
+    for name in names {
+        entries.entry(name).or_insert_with(|| serde_json::json!({}));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +217,14 @@ mod tests {
         let manifest = r#"{"file-entries":{"content.json":{},"metadata.json":{}}}"#;
         let bytes = archive_with("{not json", manifest, &[]);
         assert!(validate_archive_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn register_entries_adds_attachments_without_touching_others() {
+        let mut m = serde_json::json!({"file-entries":{"content.json":{}}});
+        register_entries(&mut m, vec!["attachments/a.bin".to_string()].into_iter());
+        assert!(m["file-entries"].get("attachments/a.bin").is_some());
+        assert!(m["file-entries"].get("content.json").is_some());
     }
 
     #[test]
