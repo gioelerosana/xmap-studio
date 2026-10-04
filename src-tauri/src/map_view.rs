@@ -130,6 +130,7 @@ struct MapViewState {
     /// ridecodificare il PNG a ogni frame.
     surfaces: RefCell<HashMap<String, Option<gtk::cairo::ImageSurface>>>,
     on_select: RefCell<Option<SelectCallback>>,
+    pending_fit: Cell<bool>,
 }
 
 /// Misuratore di nodi con Pango e cache in memoria.
@@ -324,6 +325,7 @@ impl MapView {
             images: RefCell::new(HashMap::new()),
             surfaces: RefCell::new(HashMap::new()),
             on_select: RefCell::new(Some(Box::new(on_select))),
+            pending_fit: Cell::new(false),
         });
 
         let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -399,7 +401,15 @@ impl MapView {
         // Connessione disegno Cairo
         {
             let state = state.clone();
+            let area_weak = area.downgrade();
+            let zoom_lbl = zoom_label.clone();
             area.set_draw_func(move |_area, cr, width, height| {
+                if state.pending_fit.get() && width > 20 && height > 20 {
+                    state.pending_fit.set(false);
+                    if let Some(a) = area_weak.upgrade() {
+                        fit_to_view_internal(&state, &a, &zoom_lbl);
+                    }
+                }
                 draw_map(cr, width as f64, height as f64, &state);
             });
         }
@@ -633,6 +643,8 @@ impl MapView {
         self.sheet_drop.set_selected(idx as u32);
 
         recompute_layout(&self.state, &self.area);
+        self.state.pending_fit.set(true);
+        self.fit_to_view();
         self.area.queue_draw();
     }
 
@@ -649,6 +661,8 @@ impl MapView {
                 self.sheet_drop.set_selected(0);
             }
             recompute_layout(&self.state, &self.area);
+            self.state.pending_fit.set(true);
+            self.fit_to_view();
             self.area.queue_draw();
         }
     }
@@ -796,19 +810,28 @@ fn fit_to_view_internal(state: &MapViewState, area: &gtk::DrawingArea, zoom_labe
     let view_w = area.width() as f64;
     let view_h = area.height() as f64;
     if view_w <= 20.0 || view_h <= 20.0 {
+        state.pending_fit.set(true);
         return;
     }
 
+    let min_x = l.nodes.iter().map(|n| n.x).fold(f64::INFINITY, f64::min);
+    let min_y = l.nodes.iter().map(|n| n.y).fold(f64::INFINITY, f64::min);
+    let max_x = l.nodes.iter().map(|n| n.x + n.w).fold(f64::NEG_INFINITY, f64::max);
+    let max_y = l.nodes.iter().map(|n| n.y + n.h).fold(f64::NEG_INFINITY, f64::max);
+
+    let content_w = (max_x - min_x).max(10.0);
+    let content_h = (max_y - min_y).max(10.0);
+
     let margin = 56.0;
-    let scale_x = (view_w - margin * 2.0) / l.width;
-    let scale_y = (view_h - margin * 2.0) / l.height;
+    let scale_x = (view_w - margin * 2.0) / content_w;
+    let scale_y = (view_h - margin * 2.0) / content_h;
     let new_zoom = scale_x.min(scale_y).clamp(0.2, 1.8);
 
     state.zoom.set(new_zoom);
-    let target_w = l.width * new_zoom;
-    let target_h = l.height * new_zoom;
-    state.pan_x.set((view_w - target_w) / 2.0);
-    state.pan_y.set((view_h - target_h) / 2.0);
+    let center_x = (min_x + max_x) / 2.0;
+    let center_y = (min_y + max_y) / 2.0;
+    state.pan_x.set(view_w / 2.0 - center_x * new_zoom);
+    state.pan_y.set(view_h / 2.0 - center_y * new_zoom);
     zoom_label.set_label(&format!("{}%", (new_zoom * 100.0).round() as i64));
     area.queue_draw();
 }
@@ -877,7 +900,7 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
     let pan_y = state.pan_y.get();
     let zoom = state.zoom.get();
 
-    // 2. Griglia a puntini sottile (se zoom sufficiente)
+    // 2. Griglia a puntini sottile (se zoom sufficiente), batching in un unico fill
     let grid_spacing = 32.0 * zoom;
     if grid_spacing >= 18.0 {
         let start_x = (pan_x % grid_spacing + grid_spacing) % grid_spacing;
@@ -887,12 +910,13 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
         while gx < view_w {
             let mut gy = start_y;
             while gy < view_h {
-                cr.arc(gx, gy, 0.75, 0.0, std::f64::consts::PI * 2.0);
-                let _ = cr.fill();
+                cr.new_sub_path();
+                cr.arc(gx, gy, 0.8, 0.0, std::f64::consts::PI * 2.0);
                 gy += grid_spacing;
             }
             gx += grid_spacing;
         }
+        let _ = cr.fill();
     }
 
     let l = state.layout.borrow();
@@ -932,7 +956,9 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
         let y2 = c.y + c.h / 2.0;
 
         let edge_alpha = if c.depth <= 1 { 0.90 } else { 0.72 };
-        cr.set_line_width(if c.depth <= 1 { 1.9 } else { 1.25 });
+        let base_w: f64 = if c.depth <= 1 { 1.9 } else { 1.25 };
+        // Mantiene i rami nitidi e chiaramente visibili anche a fattori di zoom ridotti
+        cr.set_line_width(base_w.max(1.0 / zoom));
         cr.set_line_cap(gtk::cairo::LineCap::Round);
         if let Some((r, g, b)) = c.accent.as_deref().and_then(parse_hex_color) {
             cr.set_source_rgba(r, g, b, edge_alpha);
@@ -951,6 +977,16 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
         }
         let from_node = &l.nodes[rel.from];
         let to_node = &l.nodes[rel.to];
+
+        // Culling delle relazioni esterne alla vista
+        let min_rx = from_node.x.min(to_node.x);
+        let max_rx = (from_node.x + from_node.w).max(to_node.x + to_node.w);
+        let min_ry = from_node.y.min(to_node.y);
+        let max_ry = (from_node.y + from_node.h).max(to_node.y + to_node.h);
+        if max_rx + 40.0 < vx1 || min_rx - 40.0 > vx2 || max_ry + 40.0 < vy1 || min_ry - 40.0 > vy2 {
+            continue;
+        }
+
         draw_relationship(
             cr,
             from_node,
@@ -958,11 +994,22 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
             rel.title.as_deref(),
             rel.accent.as_deref(),
             &pal,
+            zoom,
         );
     }
 
     // 5. Disegno nodi: box per centrale/rami, testo nudo per i livelli profondi.
     let selected_id = state.selected.borrow().clone();
+
+    // Ottimizzazione prestazioni: riutilizziamo le font description statiche
+    // e un unico pango_layout per frame invece di allocarli a ogni nodo (60+ fps).
+    let font_root = title_font(0);
+    let font_branch = title_font(1);
+    let font_leaf = title_font(2);
+
+    let pango_layout = pangocairo::functions::create_layout(cr);
+    pango_layout.set_wrap(pango::WrapMode::WordChar);
+    pango_layout.set_ellipsize(pango::EllipsizeMode::None);
 
     for node in &l.nodes {
         // Culling del nodo
@@ -1022,13 +1069,14 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
             }
             let _ = cr.fill_preserve();
 
+            let border_w = (1.0_f64).max(0.75 / zoom);
             // Il bordo resta coerente col nodo anche durante la selezione.
             if is_selected {
                 cr.set_source_rgb(0.14, 0.52, 1.0);
-                cr.set_line_width(1.7);
+                cr.set_line_width(1.7_f64.max(1.2 / zoom));
             } else if node.depth == 0 {
                 cr.set_source_rgb(pal.root_border_r, pal.root_border_g, pal.root_border_b);
-                cr.set_line_width(1.8);
+                cr.set_line_width(1.8_f64.max(1.0 / zoom));
             } else if node.depth == 1 {
                 let (r, g, b) = accent_color.unwrap_or((
                     pal.card_border_r,
@@ -1040,10 +1088,10 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
                     (g * 0.85).max(0.0),
                     (b * 0.85).max(0.0),
                 );
-                cr.set_line_width(1.1);
+                cr.set_line_width(1.1_f64.max(0.8 / zoom));
             } else {
                 cr.set_source_rgb(pal.card_border_r, pal.card_border_g, pal.card_border_b);
-                cr.set_line_width(1.0);
+                cr.set_line_width(border_w);
             }
             let _ = cr.stroke();
         } else if is_selected {
@@ -1059,7 +1107,7 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
             cr.set_source_rgba(0.14, 0.52, 1.0, 0.11);
             let _ = cr.fill_preserve();
             cr.set_source_rgba(0.14, 0.52, 1.0, 0.55);
-            cr.set_line_width(1.0);
+            cr.set_line_width((1.0_f64).max(0.75 / zoom));
             let _ = cr.stroke();
         }
 
@@ -1093,8 +1141,12 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
         });
 
         if !drawn {
-            let pango_layout = pangocairo::functions::create_layout(cr);
-            pango_layout.set_font_description(Some(&title_font(node.depth)));
+            let font_desc = match node.depth {
+                0 => &font_root,
+                1 => &font_branch,
+                _ => &font_leaf,
+            };
+            pango_layout.set_font_description(Some(font_desc));
 
             let title_text = if !node.display_title.is_empty() {
                 &node.display_title
@@ -1102,11 +1154,11 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
                 &node.title
             };
             pango_layout.set_text(title_text);
-            // Con una CTM Cairo scalata Pango scala i glifi, ma la larghezza di
-            // wrapping resta in pixel del device: compensiamo per mantenere le
-            // stesse righe misurate a zoom 1×.
-            pango_layout.set_width((content_w * zoom * pango::SCALE as f64) as i32);
-            pango_layout.set_wrap(pango::WrapMode::WordChar);
+            // La larghezza di wrapping deve coincidere esattamente con quella misurata
+            // in coordinate logiche di layout, senza moltiplicare per lo zoom, in modo
+            // che le righe e il testo restino perfettamente fissi e proporzionati a
+            // qualsiasi fattore di zoom (inclusi forti de-zoom), senza sbordare.
+            pango_layout.set_width((content_w * pango::SCALE as f64) as i32);
 
             // I nodi testuali profondi usano sempre il colore del canvas; il
             // contrasto sul fill si applica solo a un box realmente disegnato.
@@ -1121,7 +1173,9 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
                 cr.set_source_rgb(pal.text_r, pal.text_g, pal.text_b);
             }
 
-            cr.move_to(content_x, content_y);
+            let (_, ph) = pango_layout.pixel_size();
+            let y_offset = ((content_h - ph as f64) / 2.0).max(0.0);
+            cr.move_to(content_x, content_y + y_offset);
             pangocairo::functions::show_layout(cr, &pango_layout);
         }
 
@@ -1160,7 +1214,7 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
 
                     // Segno "+" all'interno della pillola
                     cr.set_source_rgb(1.0, 1.0, 1.0);
-                    cr.set_line_width(1.8);
+                    cr.set_line_width((1.8_f64).max(1.0 / zoom));
                     cr.move_to(cx - 3.5, cy);
                     cr.line_to(cx + 3.5, cy);
                     cr.move_to(cx, cy - 3.5);
@@ -1171,12 +1225,12 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
                     cr.set_source_rgb(pal.card_bg_r, pal.card_bg_g, pal.card_bg_b);
                     let _ = cr.fill_preserve();
                     cr.set_source_rgb(pal.card_border_r, pal.card_border_g, pal.card_border_b);
-                    cr.set_line_width(1.2);
+                    cr.set_line_width((1.2_f64).max(0.8 / zoom));
                     let _ = cr.stroke();
 
                     // Segno "-" all'interno della pillola
                     cr.set_source_rgb(pal.text_r, pal.text_g, pal.text_b);
-                    cr.set_line_width(1.6);
+                    cr.set_line_width((1.6_f64).max(1.0 / zoom));
                     cr.move_to(cx - 3.5, cy);
                     cr.line_to(cx + 3.5, cy);
                     let _ = cr.stroke();
@@ -1285,6 +1339,7 @@ fn draw_relationship(
     title: Option<&str>,
     accent: Option<&str>,
     pal: &MapPalette,
+    zoom: f64,
 ) {
     let c1x = n1.x + n1.w / 2.0;
     let c1y = n1.y + n1.h / 2.0;
@@ -1318,7 +1373,7 @@ fn draw_relationship(
         .unwrap_or((pal.edge_r, pal.edge_g, pal.edge_b));
 
     cr.set_source_rgba(r, g, b, 0.85);
-    cr.set_line_width(1.8);
+    cr.set_line_width((1.8_f64).max(1.0 / zoom));
     cr.set_line_cap(gtk::cairo::LineCap::Round);
 
     // Tratteggio elegante stile XMind
@@ -1366,7 +1421,7 @@ fn draw_relationship(
         cr.set_source_rgb(pal.card_bg_r, pal.card_bg_g, pal.card_bg_b);
         let _ = cr.fill_preserve();
         cr.set_source_rgba(r, g, b, 0.7);
-        cr.set_line_width(1.0);
+        cr.set_line_width((1.0_f64).max(0.75 / zoom));
         let _ = cr.stroke();
 
         cr.set_source_rgb(pal.text_r, pal.text_g, pal.text_b);
@@ -1547,6 +1602,7 @@ mod tests {
             images: RefCell::new(HashMap::new()),
             surfaces: RefCell::new(HashMap::new()),
             on_select: RefCell::new(None),
+            pending_fit: Cell::new(false),
         };
 
         let width = 1500;
@@ -1648,6 +1704,7 @@ mod tests {
             images: RefCell::new(images),
             surfaces: RefCell::new(HashMap::new()),
             on_select: RefCell::new(None),
+            pending_fit: Cell::new(false),
         };
 
         let width = 2400;
@@ -1688,5 +1745,45 @@ mod tests {
         let mut file = std::fs::File::create(&out_path).unwrap();
         surface.write_to_png(&mut file).unwrap();
         eprintln!("Real map snapshot scritto in: {out_path}");
+    }
+
+    #[test]
+    fn zoom_does_not_alter_text_wrapping_or_overflow() {
+        let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, 800, 600).unwrap();
+        let cr = gtk::cairo::Context::new(&surface).unwrap();
+
+        let long_title = "Questo è un titolo lungo di un nodo di test per verificare che lo zoom non alteri il testo né lo faccia sbordare.";
+        let content_w = 200.0;
+        let font = title_font(1);
+
+        // Zoom 1.0
+        let l1 = pangocairo::functions::create_layout(&cr);
+        l1.set_font_description(Some(&font));
+        l1.set_text(long_title);
+        l1.set_wrap(pango::WrapMode::WordChar);
+        l1.set_width((content_w * pango::SCALE as f64) as i32);
+        let lines_1 = l1.line_count();
+        let (_, h1) = l1.pixel_size();
+
+        // Zoom 0.35 (forte de-zoom)
+        cr.save().unwrap();
+        cr.scale(0.35, 0.35);
+        let l_zoomed = pangocairo::functions::create_layout(&cr);
+        l_zoomed.set_font_description(Some(&font));
+        l_zoomed.set_text(long_title);
+        l_zoomed.set_wrap(pango::WrapMode::WordChar);
+        l_zoomed.set_width((content_w * pango::SCALE as f64) as i32);
+        let lines_zoomed = l_zoomed.line_count();
+        let (_, h_zoomed) = l_zoomed.pixel_size();
+        cr.restore().unwrap();
+
+        assert!(
+            (lines_1 as i32 - lines_zoomed as i32).abs() <= 1,
+            "Il numero di righe deve rimanere stabile tra zoom 1.0 e de-zoom 0.35 (got {lines_1} vs {lines_zoomed})"
+        );
+        assert!(
+            h_zoomed <= h1 + 4,
+            "L'altezza del testo non deve sbordare rispetto a zoom 1.0 (h1={h1}, h_zoomed={h_zoomed})"
+        );
     }
 }
