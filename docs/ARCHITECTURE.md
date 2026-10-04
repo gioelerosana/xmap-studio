@@ -52,8 +52,8 @@ Tutto vive in `src-tauri/src/`.
 | `merge.rs` | unione di `.xmind` (id riassegnati) e divisione di un ramo in mappa autonoma | `merge.rs:24`, `merge.rs:141`, `merge.rs:170` |
 | `media.rs` | allegati: entry `attachments/<id>.bin` + link `xap:attachments/…` | `media.rs:22`, `media.rs:37` |
 | `task.rs` | extension `org.xmind.ui.task` (priorità, avanzamento, date) | `task.rs:39`, `task.rs:60` |
-| `layout.rs` | layout ad albero orizzontale puro guidato dai DTO con collapse e misure flessibili | `layout.rs:1` |
-| `map_view.rs` | vista interattiva della mappa ad albero (GTK4 + Cairo + Pango) con pan, zoom e collapse | `map_view.rs:1` |
+| `layout.rs` | layout a Logic Chart orizzontale (radice in alto a sinistra) puro, guidato dai DTO, con collapse, colori di ramo e misure flessibili | `layout.rs:1` |
+| `map_view.rs` | vista interattiva della mappa ad albero (GTK4 + Cairo + Pango) con pan, zoom, collapse, rendering di immagini/equazioni e colori per ramo | `map_view.rs:1` |
 | `markers.rs` | catalogo marker verificato dal binario XMind | `markers.rs:1` |
 | `mathjax.rs` | scoperta ed esecuzione del renderer Node | `mathjax.rs:30`, `mathjax.rs:90` |
 | `raster.rs` | SVG → PNG con resvg/tiny-skia | `raster.rs:10` |
@@ -67,7 +67,7 @@ Moduli fuori da `src-tauri/src/`:
 
 - `src-tauri/examples/inject.rs` — CLI per generare file di prova.
 - `src-tauri/tests/e2e_real_map.rs` — test end-to-end su mappa reale.
-- `xtask/src/main.rs` — task di build (`cargo xtask appimage`).
+- `xtask/src/main.rs` — task di build (`cargo xtask appimage`, `cargo xtask install`).
 
 ## Flusso dati
 
@@ -85,6 +85,12 @@ controller.open(path)
 `content.json` viene deserializzato in `Vec<Sheet>`: i campi noti sono tipizzati,
 tutto il resto finisce in `#[serde(flatten)] extra` e viene riserializzato
 identico. Vedi `model.rs:69`.
+
+Apertura dal file manager: l'app è registrata su `application/xmind`
+(`HANDLES_OPEN`). Il doppio clic o "Apri con…" passa il percorso via `Exec=… %f`
+del `.desktop`, GApplication emette `open` (`gui.rs:165`) e ogni file
+ricevuto ottiene una finestra indipendente con `controller.open`; così
+un'apertura esterna non sovrascrive modifiche non salvate in un'altra finestra.
 
 ### Applicazione di un'equazione
 
@@ -178,17 +184,28 @@ controller.attach_file_to_topic(topic_id, path)
 - Colore del ramo: `model::set_fill_color` tocca `style.properties["svg:fill"]`
   senza perdere le altre proprietà di stile.
 
-### Anteprima grafica (Fase 6)
+### Vista mappa (Fase 6/7)
 
 ```
-gui::show_map_preview
-  → controller.map_layout → layout::layout   (posizioni e collegamenti, no GTK)
-  → gtk::Fixed + DrawingArea (cairo: rettangoli e curve) + Label sovrapposte
+gui::refresh
+  → controller.workbook()                     (DTO: sheets/topics)
+  → controller.resource_bytes(src) per i topic con image_src (PNG equazioni/immagini)
+  → map_view.set_images(bytes) → cache + superfici Cairo decodificate
+  → map_view.set_workbook(sheets)
+       → layout::layout_single_sheet → Layout { nodes, edges, bounds }  (no GTK)
+       → DrawingArea.set_draw_func: cairo (card, curve, PNG) + Pango (testo)
 ```
 
-Nessuna webview: il layout è calcolato e testato a parte in `layout.rs`.
+Il layout è a **Logic Chart orizzontale** (radice in alto a sinistra, rami di
+primo livello in colonna, sottoalberi verso destra) come XMind: i rami di primo
+livello sono box colorati, i livelli profondi sono testo nudo. I colori dei rami
+arrivano dal `svg:fill` esplicito o, in mancanza, dalla palette "Colored Branch"
+del tema Snowbrush (`layout::BRANCH_COLORS`); i connettori sono a gomito col bus
+verticale condiviso tra fratelli. Le equazioni e le immagini semplici sono
+disegnate come PNG decodificati (`cairo::ImageSurface`), non come segnaposto di
+testo. Il layout resta puro e testato a parte in `layout.rs`.
 
-### Anteprima
+### Anteprima della formula (editor)
 
 ```
 gui::schedule_preview  (debounce ~220 ms)

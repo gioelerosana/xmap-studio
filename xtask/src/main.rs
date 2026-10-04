@@ -1,8 +1,10 @@
-//! Task di build in Rust (`cargo xtask appimage`).
+//! Task di build in Rust (`cargo xtask appimage`, `cargo xtask install`).
 //!
-//! Costruisce il binario di release, assembla un AppDir (binario + icona +
-//! .desktop) e produce una AppImage con `appimagetool`, scaricato una volta in
-//! cache. Nessuno script esterno da lanciare a mano.
+//! `appimage` costruisce il binario di release, assembla un AppDir (binario +
+//! icona + `.desktop` + tipo MIME) e produce una AppImage con `appimagetool`,
+//! scaricato una volta in cache. `install` registra invece binario, `.desktop`
+//! e tipo MIME in `~/.local/share` per provare l'associazione `*.xmind` senza
+//! rifare l'AppImage. Nessuno script esterno da lanciare a mano.
 
 use std::env;
 use std::fs;
@@ -17,8 +19,9 @@ const APPIMAGE_TOOL_URL: &str =
 fn main() {
     match env::args().nth(1).as_deref() {
         Some("appimage") => appimage(),
+        Some("install") => install(),
         _ => {
-            eprintln!("uso: cargo xtask appimage");
+            eprintln!("uso: cargo xtask appimage | cargo xtask install");
             std::process::exit(2);
         }
     }
@@ -51,11 +54,13 @@ fn appimage() {
 
     let bin_dir = appdir.join("usr/bin");
     let apps_dir = appdir.join("usr/share/applications");
+    let mime_dir = appdir.join("usr/share/mime/packages");
     let icon256 = appdir.join(format!("usr/share/icons/hicolor/256x256/apps/{APP_ID}.png"));
     let icon512 = appdir.join(format!("usr/share/icons/hicolor/512x512/apps/{APP_ID}.png"));
     for dir in [
         bin_dir.as_path(),
         apps_dir.as_path(),
+        mime_dir.as_path(),
         icon256.parent().unwrap(),
         icon512.parent().unwrap(),
     ] {
@@ -71,22 +76,13 @@ fn appimage() {
     )
     .unwrap();
     fs::copy(root.join("assets/icon-256.png"), appdir.join(".DirIcon")).unwrap();
+    fs::copy(mime_source(&root), mime_dir.join(format!("{APP_ID}.xml"))).expect("copia tipo MIME");
 
     let apprun = appdir.join("AppRun");
     let _ = fs::remove_file(&apprun);
     std::os::unix::fs::symlink(format!("usr/bin/{BIN}"), &apprun).expect("AppRun");
 
-    let desktop = format!(
-        "[Desktop Entry]\n\
-         Type=Application\n\
-         Name=XMap Studio\n\
-         Comment=Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato\n\
-         Exec={BIN}\n\
-         Icon={APP_ID}\n\
-         Categories=Office;\n\
-         Terminal=false\n\
-         StartupWMClass={APP_ID}\n"
-    );
+    let desktop = desktop_entry(&format!("{BIN} %f"));
     fs::write(apps_dir.join(format!("{APP_ID}.desktop")), &desktop).unwrap();
     fs::write(appdir.join(format!("{APP_ID}.desktop")), &desktop).unwrap();
 
@@ -114,6 +110,76 @@ fn appimage() {
         "\nAppImage pronta: {}\n  {:.1} MB",
         output.display(),
         size as f64 / 1_048_576.0
+    );
+}
+
+/// `.desktop` condiviso tra AppDir e installazione locale. `exec` include già
+/// il segnaposto `%f` per i file aperti dal file manager.
+fn desktop_entry(exec: &str) -> String {
+    format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name=XMap Studio\n\
+         Comment=Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato\n\
+         Exec={exec}\n\
+         Icon={APP_ID}\n\
+         Categories=Office;\n\
+         MimeType=application/xmind;\n\
+         Terminal=false\n\
+         StartupWMClass={APP_ID}\n"
+    )
+}
+
+fn mime_source(root: &Path) -> PathBuf {
+    root.join(format!("assets/{APP_ID}.xml"))
+}
+
+/// Registra binario, `.desktop` e tipo MIME in `~/.local/share` per provare
+/// l'apertura dei `*.xmind` dal file manager senza produrre l'AppImage.
+///
+/// Non imposta l'app come predefinita per `application/xmind`: la scelta resta
+/// dell'utente. Il comando da eseguire viene stampato a fine installazione.
+fn install() {
+    let root = root();
+    println!("==> cargo build --release -p {BIN}");
+    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let ok = Command::new(cargo)
+        .args(["build", "--release", "-p", BIN])
+        .current_dir(&root)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    assert!(ok, "build di release fallita");
+
+    let data = env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    let apps_dir = data.join("applications");
+    let mime_dir = data.join("mime/packages");
+    fs::create_dir_all(&apps_dir).expect("cartella applications");
+    fs::create_dir_all(&mime_dir).expect("cartella mime/packages");
+
+    let bin_path = root.join("target/release").join(BIN);
+    let exec = format!("\"{}\" %f", bin_path.display());
+    fs::write(
+        apps_dir.join(format!("{APP_ID}.desktop")),
+        desktop_entry(&exec),
+    )
+    .expect("scrivo .desktop");
+    fs::copy(mime_source(&root), mime_dir.join(format!("{APP_ID}.xml"))).expect("scrivo tipo MIME");
+
+    for (cmd, args) in [
+        ("update-mime-database", vec![data.join("mime")]),
+        ("update-desktop-database", vec![apps_dir.clone()]),
+    ] {
+        let _ = Command::new(cmd).args(&args).status();
+    }
+
+    println!(
+        "\nRegistrato:\n  {}\n  {}\n\nPer aprirla come predefinita per i .xmind:\n  xdg-mime default {APP_ID}.desktop application/xmind\n(oppure tasto destro → Apri con…)",
+        apps_dir.join(format!("{APP_ID}.desktop")).display(),
+        mime_dir.join(format!("{APP_ID}.xml")).display(),
     );
 }
 

@@ -145,6 +145,15 @@ impl AppController {
         self.wb.as_ref().map(OpenWorkbook::to_dto)
     }
 
+    /// Byte di una risorsa dell'archivio aperto dato il riferimento salvato nel
+    /// content (`xap:resources/<nome>`). Read-only e senza GTK: la conversione a
+    /// texture/immagine resta nel layer UI.
+    pub fn resource_bytes(&self, src: &str) -> Option<Vec<u8>> {
+        let key = src.strip_prefix("xap:").unwrap_or(src);
+        let wb = self.wb.as_ref()?;
+        wb.archive.resources.get(key).cloned()
+    }
+
     /// Titolo della mappa aperta, per precompilare i nomi dei file esportati:
     /// titolo del topic radice, poi titolo della sheet, poi nome del file.
     pub fn map_title(&self) -> Option<String> {

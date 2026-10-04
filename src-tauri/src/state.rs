@@ -106,6 +106,9 @@ pub struct TopicView {
     pub kind: &'static str,
     pub latex: Option<String>,
     pub image_src: Option<String>,
+    /// Dimensioni logiche dichiarate da XMind per l'immagine (px), se presenti.
+    pub image_w: Option<f64>,
+    pub image_h: Option<f64>,
     /// Testo delle note (`plain`), vuoto se assenti.
     pub notes: String,
     /// `"icon"`, `"block"` o `None` (predefinito di XMind).
@@ -414,6 +417,8 @@ fn visit(
         kind: kind_of(topic),
         latex: topic.latex().map(str::to_string),
         image_src: topic.image_src().map(str::to_string),
+        image_w: topic.image_size_px().map(|(w, _)| w),
+        image_h: topic.image_size_px().map(|(_, h)| h),
         notes: topic.notes_text().map(str::to_string).unwrap_or_default(),
         notes_display: topic.notes_display.clone(),
         labels: topic.labels_list().to_vec(),

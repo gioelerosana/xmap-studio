@@ -40,57 +40,73 @@ struct MapPalette {
     text_r: f64,
     text_g: f64,
     text_b: f64,
+    /// Bordo del topic centrale: più marcato per staccarlo dai figli.
+    root_border_r: f64,
+    root_border_g: f64,
+    root_border_b: f64,
 }
 
 impl MapPalette {
     fn dark() -> Self {
         Self {
-            bg_r: 0.12,
-            bg_g: 0.12,
-            bg_b: 0.12,
-            grid_r: 0.28,
-            grid_g: 0.28,
-            grid_b: 0.28,
-            grid_alpha: 0.45,
-            edge_r: 0.38,
-            edge_g: 0.38,
-            edge_b: 0.38,
-            card_bg_r: 0.17,
-            card_bg_g: 0.17,
-            card_bg_b: 0.17,
-            card_border_r: 0.28,
-            card_border_g: 0.28,
-            card_border_b: 0.28,
-            text_r: 0.92,
-            text_g: 0.92,
-            text_b: 0.92,
+            bg_r: 0.082,
+            bg_g: 0.094,
+            bg_b: 0.125,
+            grid_r: 0.345,
+            grid_g: 0.380,
+            grid_b: 0.443,
+            grid_alpha: 0.20,
+            edge_r: 0.451,
+            edge_g: 0.494,
+            edge_b: 0.561,
+            card_bg_r: 0.133,
+            card_bg_g: 0.153,
+            card_bg_b: 0.192,
+            card_border_r: 0.231,
+            card_border_g: 0.263,
+            card_border_b: 0.314,
+            text_r: 0.914,
+            text_g: 0.929,
+            text_b: 0.953,
+            root_border_r: 0.663,
+            root_border_g: 0.749,
+            root_border_b: 0.910,
         }
     }
 
     fn light() -> Self {
         Self {
-            bg_r: 0.96,
-            bg_g: 0.97,
-            bg_b: 0.98,
-            grid_r: 0.82,
-            grid_g: 0.84,
-            grid_b: 0.86,
-            grid_alpha: 0.55,
-            edge_r: 0.72,
-            edge_g: 0.75,
-            edge_b: 0.78,
+            bg_r: 0.973,
+            bg_g: 0.976,
+            bg_b: 0.988,
+            grid_r: 0.722,
+            grid_g: 0.757,
+            grid_b: 0.812,
+            grid_alpha: 0.22,
+            edge_r: 0.604,
+            edge_g: 0.647,
+            edge_b: 0.710,
             card_bg_r: 1.0,
             card_bg_g: 1.0,
             card_bg_b: 1.0,
-            card_border_r: 0.82,
-            card_border_g: 0.84,
-            card_border_b: 0.86,
-            text_r: 0.12,
-            text_g: 0.12,
-            text_b: 0.12,
+            card_border_r: 0.804,
+            card_border_g: 0.827,
+            card_border_b: 0.871,
+            text_r: 0.125,
+            text_g: 0.141,
+            text_b: 0.173,
+            root_border_r: 0.180,
+            root_border_g: 0.204,
+            root_border_b: 0.251,
         }
     }
 }
+
+/// Larghezza massima del contenuto testuale prima di andare a capo.
+const TEXT_MAX_W: f64 = 260.0;
+/// Dimensioni massime dell'immagine/equazione disegnata dentro una card.
+const IMG_MAX_W: f64 = 260.0;
+const IMG_MAX_H: f64 = 180.0;
 
 /// Stato interno della vista mappa.
 type SelectCallback = Box<dyn Fn(&str)>;
@@ -107,6 +123,12 @@ struct MapViewState {
     drag_start_pan: Cell<(f64, f64)>,
     dark: Cell<bool>,
     metrics_cache: RefCell<HashMap<String, (f64, f64)>>,
+    /// Byte grezzi delle immagini/equazioni per `image_src` (forniti dalla UI,
+    /// che è l'unica a poter leggere l'archivio).
+    images: RefCell<HashMap<String, Vec<u8>>>,
+    /// Cache delle superfici Cairo decodificate (immagini/equazioni), per non
+    /// ridecodificare il PNG a ogni frame.
+    surfaces: RefCell<HashMap<String, Option<gtk::cairo::ImageSurface>>>,
     on_select: RefCell<Option<SelectCallback>>,
 }
 
@@ -114,6 +136,78 @@ struct MapViewState {
 struct CanvasMetrics<'a> {
     pango_ctx: pango::Context,
     cache: &'a RefCell<HashMap<String, (f64, f64)>>,
+    images: &'a RefCell<HashMap<String, Vec<u8>>>,
+    surfaces: &'a RefCell<HashMap<String, Option<gtk::cairo::ImageSurface>>>,
+}
+
+/// Font del titolo in base alla profondità: il topic centrale è più grande.
+fn title_font(depth: usize) -> pango::FontDescription {
+    let mut font = pango::FontDescription::new();
+    font.set_family("Sans");
+    let (size, weight) = if depth == 0 {
+        (16.0, pango::Weight::Semibold)
+    } else if depth == 1 {
+        (13.0, pango::Weight::Semibold)
+    } else {
+        (11.5, pango::Weight::Normal)
+    };
+    font.set_weight(weight);
+    font.set_size((size * pango::SCALE as f64) as i32);
+    font
+}
+
+/// Padding e dimensioni minime coerenti fra misura e disegno.
+fn node_insets(depth: usize, boxed: bool) -> (f64, f64, f64, f64) {
+    if depth == 0 {
+        (18.0, 12.0, 132.0, 46.0)
+    } else if depth == 1 {
+        (14.0, 9.0, 116.0, 38.0)
+    } else if boxed {
+        (10.0, 7.0, 72.0, 32.0)
+    } else {
+        (6.0, 3.0, 0.0, 21.0)
+    }
+}
+
+fn mix_rgb(a: (f64, f64, f64), b: (f64, f64, f64), amount: f64) -> (f64, f64, f64) {
+    let amount = amount.clamp(0.0, 1.0);
+    (
+        a.0 * amount + b.0 * (1.0 - amount),
+        a.1 * amount + b.1 * (1.0 - amount),
+        a.2 * amount + b.2 * (1.0 - amount),
+    )
+}
+
+/// Decodifica un PNG in una superficie Cairo, con cache per non ripetere il
+/// lavoro a ogni frame. `None` (e memorizzato) se i byte non sono un PNG valido.
+fn surface_for(
+    src: &str,
+    images: &RefCell<HashMap<String, Vec<u8>>>,
+    surfaces: &RefCell<HashMap<String, Option<gtk::cairo::ImageSurface>>>,
+) -> Option<gtk::cairo::ImageSurface> {
+    if !surfaces.borrow().contains_key(src) {
+        let decoded = images.borrow().get(src).and_then(|bytes| {
+            gtk::cairo::ImageSurface::create_from_png(&mut bytes.as_slice()).ok()
+        });
+        surfaces.borrow_mut().insert(src.to_string(), decoded);
+    }
+    surfaces.borrow().get(src).and_then(|s| s.clone())
+}
+
+/// Porta `(w, h)` dentro i limiti `(max_w, max_h)` conservando le proporzioni.
+/// Non ingrandisce mai: un'immagine più piccola resta alla sua dimensione.
+fn fit_size(w: f64, h: f64, max_w: f64, max_h: f64) -> (f64, f64) {
+    let w = w.max(1.0);
+    let h = h.max(1.0);
+    let scale = (max_w / w).min(max_h / h).min(1.0);
+    (w * scale, h * scale)
+}
+
+/// Vero se il nodo va disegnato come box (topic centrale, ramo di primo livello,
+/// oppure nodo con un fill esplicito o un'immagine). Gli altri livelli sono testo
+/// nudo, come nelle Logic Chart di XMind.
+fn node_is_boxed(node: &MapNode) -> bool {
+    node.depth <= 1 || node.fill_color.is_some() || node.image_src.is_some()
 }
 
 impl<'a> NodeMetrics for CanvasMetrics<'a> {
@@ -123,36 +217,66 @@ impl<'a> NodeMetrics for CanvasMetrics<'a> {
         } else {
             &node.title
         };
+        let boxed = node_is_boxed(node);
         let key = format!(
-            "{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{:?}:{:?}:{}",
             node.id,
             text,
+            node.depth,
             node.markers.len(),
             node.labels.len(),
-            node.has_notes
+            node.image_src.as_deref().unwrap_or(""),
+            boxed,
+            node.image_w,
+            node.image_h,
+            node.has_notes,
         );
         if let Some(&size) = self.cache.borrow().get(&key) {
             return size;
         }
 
-        let pango_layout = pango::Layout::new(&self.pango_ctx);
-        let mut font = pango::FontDescription::from_string("Sans 11");
-        if node.depth == 0 {
-            font.set_weight(pango::Weight::Bold);
+        // Equazioni e immagini si dimensionano sull'immagine, non sul testo.
+        if let Some(src) = node.image_src.as_deref() {
+            // Le dimensioni logiche dichiarate nel file sono la fonte primaria;
+            // se mancano si usa la dimensione intrinseca del PNG.
+            let intrinsic = node.image_w.zip(node.image_h).or_else(|| {
+                surface_for(src, self.images, self.surfaces)
+                    .map(|s| (s.width() as f64, s.height() as f64))
+            });
+            if let Some((iw, ih)) = intrinsic {
+                let (dw, dh) = fit_size(iw, ih, IMG_MAX_W, IMG_MAX_H);
+                let (pad_x, pad_y, min_w, min_h) = node_insets(node.depth, true);
+                let w = (dw + pad_x * 2.0).max(min_w);
+                let h = (dh + pad_y * 2.0).max(min_h);
+                let size = (w, h);
+                self.cache.borrow_mut().insert(key, size);
+                return size;
+            }
         }
-        pango_layout.set_font_description(Some(&font));
-        pango_layout.set_text(text);
-        pango_layout.set_width((200.0 * pango::SCALE as f64) as i32);
-        pango_layout.set_wrap(pango::WrapMode::WordChar);
-        pango_layout.set_ellipsize(pango::EllipsizeMode::End);
 
-        let (pixel_w, pixel_h) = pango_layout.pixel_size();
-        let mut w = (pixel_w as f64 + 28.0).clamp(110.0, 260.0);
-        let mut h = (pixel_h as f64 + 18.0).max(36.0);
+        let layout = pango::Layout::new(&self.pango_ctx);
+        layout.set_font_description(Some(&title_font(node.depth)));
+        layout.set_text(text);
+        layout.set_wrap(pango::WrapMode::WordChar);
 
+        // Prima passata alla larghezza massima per conoscere la larghezza reale
+        // del testo; poi si ri-impagina alla larghezza effettiva scelta, così
+        // misura e disegno coincidono riga per riga.
+        layout.set_width((TEXT_MAX_W * pango::SCALE as f64) as i32);
+        let (pw, _ph_at_max) = layout.pixel_size();
+        let (pad_x, pad_y, min_w, min_h) = node_insets(node.depth, boxed);
+        let min_content = (min_w - pad_x * 2.0).max(0.0);
+        let content_w = (pw as f64).clamp(min_content, TEXT_MAX_W);
+        layout.set_width((content_w * pango::SCALE as f64) as i32);
+        let (_pw2, ph) = layout.pixel_size();
+
+        let mut w = content_w + pad_x * 2.0;
+        let mut h = (ph as f64 + pad_y * 2.0).max(min_h);
         if !node.markers.is_empty() || !node.labels.is_empty() || node.has_notes {
-            h += 16.0;
-            w = w.max(130.0);
+            h += if boxed { 16.0 } else { 14.0 };
+            if boxed {
+                w = w.max(min_w);
+            }
         }
 
         let size = (w, h);
@@ -187,6 +311,8 @@ impl MapView {
             drag_start_pan: Cell::new((40.0, 40.0)),
             dark: Cell::new(false),
             metrics_cache: RefCell::new(HashMap::new()),
+            images: RefCell::new(HashMap::new()),
+            surfaces: RefCell::new(HashMap::new()),
             on_select: RefCell::new(Some(Box::new(on_select))),
         });
 
@@ -263,8 +389,8 @@ impl MapView {
         // Connessione disegno Cairo
         {
             let state = state.clone();
-            area.set_draw_func(move |area, cr, width, height| {
-                draw_map(area, cr, width as f64, height as f64, &state);
+            area.set_draw_func(move |_area, cr, width, height| {
+                draw_map(cr, width as f64, height as f64, &state);
             });
         }
 
@@ -463,9 +589,17 @@ impl MapView {
     }
 
     /// Aggiorna il modello del workbook visualizzato nella mappa.
-    pub fn set_workbook(&self, sheets: &[SheetDto], active_sheet: usize) {
+    ///
+    /// `active_sheet` a `None` mantiene il foglio corrente (limitato al numero di
+    /// fogli disponibili): un refresh non deve riportare la vista al primo foglio.
+    pub fn set_workbook(&self, sheets: &[SheetDto], active_sheet: Option<usize>) {
         *self.state.sheets.borrow_mut() = sheets.to_vec();
-        self.state.active_sheet.set(active_sheet);
+        self.state.metrics_cache.borrow_mut().clear();
+        let current = self.state.active_sheet.get();
+        let idx = active_sheet
+            .unwrap_or(current)
+            .min(sheets.len().saturating_sub(1));
+        self.state.active_sheet.set(idx);
 
         // Aggiorna elenco sheet nel dropdown
         let mut titles = Vec::new();
@@ -486,10 +620,60 @@ impl MapView {
             self.sheet_store.n_items(),
             &titles.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
         );
-        self.sheet_drop.set_selected(active_sheet as u32);
+        self.sheet_drop.set_selected(idx as u32);
 
         recompute_layout(&self.state, &self.area);
         self.area.queue_draw();
+    }
+
+    /// Il foglio attualmente visualizzato.
+    pub fn active_sheet(&self) -> usize {
+        self.state.active_sheet.get()
+    }
+
+    /// Torna al primo foglio (usato all'apertura di un nuovo file).
+    pub fn reset_sheet(&self) {
+        if self.state.active_sheet.get() != 0 {
+            self.state.active_sheet.set(0);
+            if self.state.sheets.borrow().len() > 1 {
+                self.sheet_drop.set_selected(0);
+            }
+            recompute_layout(&self.state, &self.area);
+            self.area.queue_draw();
+        }
+    }
+
+    /// Fornisce i byte delle immagini/equazioni (per `image_src`) da disegnare
+    /// nei blocchi. Le superfici decodificate vengono invalidate solo per le
+    /// immagini realmente cambiate.
+    pub fn set_images(&self, images: HashMap<String, Vec<u8>>) {
+        let mut changed = false;
+        {
+            let mut cur = self.state.images.borrow_mut();
+            let mut surf = self.state.surfaces.borrow_mut();
+            for (key, bytes) in &images {
+                if cur.get(key) != Some(bytes) {
+                    surf.remove(key);
+                    cur.insert(key.clone(), bytes.clone());
+                    changed = true;
+                }
+            }
+            let stale: Vec<String> = cur
+                .keys()
+                .filter(|k| !images.contains_key(*k))
+                .cloned()
+                .collect();
+            for key in stale {
+                cur.remove(&key);
+                surf.remove(&key);
+                changed = true;
+            }
+        }
+        if changed {
+            self.state.metrics_cache.borrow_mut().clear();
+            recompute_layout(&self.state, &self.area);
+            self.area.queue_draw();
+        }
     }
 
     /// Seleziona un nodo nella mappa e ne aggiorna l'evidenziazione.
@@ -534,6 +718,8 @@ fn recompute_layout(state: &MapViewState, area: &gtk::DrawingArea) {
     let metrics = CanvasMetrics {
         pango_ctx: area.pango_context(),
         cache: &state.metrics_cache,
+        images: &state.images,
+        surfaces: &state.surfaces,
     };
     let new_layout =
         layout::layout_single_sheet(sheet, &collapsed, &metrics, layout::LayoutOpts::default());
@@ -603,10 +789,10 @@ fn fit_to_view_internal(state: &MapViewState, area: &gtk::DrawingArea, zoom_labe
         return;
     }
 
-    let margin = 48.0;
+    let margin = 56.0;
     let scale_x = (view_w - margin * 2.0) / l.width;
     let scale_y = (view_h - margin * 2.0) / l.height;
-    let new_zoom = scale_x.min(scale_y).clamp(0.2, 1.4);
+    let new_zoom = scale_x.min(scale_y).clamp(0.2, 1.8);
 
     state.zoom.set(new_zoom);
     let target_w = l.width * new_zoom;
@@ -665,13 +851,7 @@ fn is_color_bright(r: f64, g: f64, b: f64) -> bool {
 }
 
 /// Funzione di disegno dell'intera mappa su Cairo.
-fn draw_map(
-    _area: &gtk::DrawingArea,
-    cr: &gtk::cairo::Context,
-    view_w: f64,
-    view_h: f64,
-    state: &MapViewState,
-) {
+fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewState) {
     let dark = state.dark.get();
     let pal = if dark {
         MapPalette::dark()
@@ -688,8 +868,8 @@ fn draw_map(
     let zoom = state.zoom.get();
 
     // 2. Griglia a puntini sottile (se zoom sufficiente)
-    let grid_spacing = 28.0 * zoom;
-    if grid_spacing >= 12.0 {
+    let grid_spacing = 32.0 * zoom;
+    if grid_spacing >= 18.0 {
         let start_x = (pan_x % grid_spacing + grid_spacing) % grid_spacing;
         let start_y = (pan_y % grid_spacing + grid_spacing) % grid_spacing;
         cr.set_source_rgba(pal.grid_r, pal.grid_g, pal.grid_b, pal.grid_alpha);
@@ -697,7 +877,7 @@ fn draw_map(
         while gx < view_w {
             let mut gy = start_y;
             while gy < view_h {
-                cr.arc(gx, gy, 1.2, 0.0, std::f64::consts::PI * 2.0);
+                cr.arc(gx, gy, 0.75, 0.0, std::f64::consts::PI * 2.0);
                 let _ = cr.fill();
                 gy += grid_spacing;
             }
@@ -721,7 +901,8 @@ fn draw_map(
     let vx2 = (view_w - pan_x) / zoom;
     let vy2 = (view_h - pan_y) / zoom;
 
-    // 4. Disegno collegamenti (Edge)
+    // 4. Collegamenti: dal lato destro del genitore al lato sinistro del figlio,
+    //    a gomito arrotondato e col colore del ramo (stile Logic Chart XMind).
     for edge in &l.edges {
         let p = &l.nodes[edge.parent];
         let c = &l.nodes[edge.child];
@@ -735,121 +916,212 @@ fn draw_map(
             continue;
         }
 
-        let p1 = (p.x + p.w, p.y + p.h / 2.0);
-        let p2 = (c.x, c.y + c.h / 2.0);
-        let mid_x = (p1.0 + p2.0) / 2.0;
+        let x1 = p.x + p.w;
+        let y1 = p.y + p.h / 2.0;
+        let x2 = c.x;
+        let y2 = c.y + c.h / 2.0;
 
-        cr.set_line_width(2.0);
-        if let Some((r, g, b)) = c.fill.as_deref().and_then(parse_hex_color) {
-            cr.set_source_rgba(r, g, b, 0.85);
+        let edge_alpha = if c.depth <= 1 { 0.90 } else { 0.72 };
+        cr.set_line_width(if c.depth <= 1 { 1.9 } else { 1.25 });
+        cr.set_line_cap(gtk::cairo::LineCap::Round);
+        if let Some((r, g, b)) = c.accent.as_deref().and_then(parse_hex_color) {
+            cr.set_source_rgba(r, g, b, edge_alpha);
         } else {
-            cr.set_source_rgb(pal.edge_r, pal.edge_g, pal.edge_b);
+            cr.set_source_rgba(pal.edge_r, pal.edge_g, pal.edge_b, 0.70);
         }
 
-        cr.move_to(p1.0, p1.1);
-        cr.curve_to(mid_x, p1.1, mid_x, p2.1, p2.0, p2.1);
+        elbow(cr, x1, y1, x2, y2, 18.0);
         let _ = cr.stroke();
     }
 
-    // 5. Disegno nodi (Cards)
+    // 5. Disegno nodi: box per centrale/rami, testo nudo per i livelli profondi.
     let selected_id = state.selected.borrow().clone();
 
     for node in &l.nodes {
         // Culling del nodo
-        if node.x + node.w + 24.0 < vx1 || node.x > vx2 || node.y + node.h < vy1 || node.y > vy2 {
+        if node.x + node.w + 24.0 < vx1
+            || node.x > vx2
+            || node.y + node.h + 24.0 < vy1
+            || node.y > vy2
+        {
             continue;
         }
 
         let is_selected = selected_id.as_deref() == Some(&node.id);
-        let radius = 7.0;
-
-        // Bordo / Sfondo del nodo
-        rounded_rect(cr, node.x, node.y, node.w, node.h, radius);
-
+        let is_media = node.image_src.is_some();
+        let boxed = node.depth <= 1 || node.fill.is_some() || is_media;
         let custom_color = node.fill.as_deref().and_then(parse_hex_color);
-        if let Some((r, g, b)) = custom_color {
-            cr.set_source_rgb(r, g, b);
+        let accent_color = node.accent.as_deref().and_then(parse_hex_color);
+        // Il colore saturo resta sui connettori; il primo livello usa una tinta
+        // pastello. Immagini ed equazioni vivono invece su card neutre.
+        let box_fill = if is_media {
+            Some((pal.card_bg_r, pal.card_bg_g, pal.card_bg_b))
+        } else if let Some(color) = custom_color {
+            Some(color)
+        } else if node.depth == 1 {
+            accent_color.map(|accent| {
+                let base = (pal.card_bg_r, pal.card_bg_g, pal.card_bg_b);
+                mix_rgb(accent, base, if dark { 0.42 } else { 0.38 })
+            })
         } else {
-            cr.set_source_rgb(pal.card_bg_r, pal.card_bg_g, pal.card_bg_b);
-        }
-        let _ = cr.fill_preserve();
-
-        // Contorno
-        if is_selected {
-            // Evidenziazione blocco selezionato con contorno blu vivo
-            cr.set_source_rgb(0.21, 0.52, 0.89);
-            cr.set_line_width(2.8);
-        } else if let Some((r, g, b)) = custom_color {
-            // Contorno leggermente più scuro del colore del ramo
-            cr.set_source_rgb((r * 0.8).max(0.0), (g * 0.8).max(0.0), (b * 0.8).max(0.0));
-            cr.set_line_width(1.4);
-        } else {
-            cr.set_source_rgb(pal.card_border_r, pal.card_border_g, pal.card_border_b);
-            cr.set_line_width(1.2);
-        }
-        let _ = cr.stroke();
-
-        // Testo del nodo con Pango
-        let pango_layout = pangocairo::functions::create_layout(cr);
-        let mut font = pango::FontDescription::from_string("Sans 11");
-        if node.depth == 0 {
-            font.set_weight(pango::Weight::Bold);
-        }
-        pango_layout.set_font_description(Some(&font));
-
-        let title_text = if !node.display_title.is_empty() {
-            &node.display_title
-        } else {
-            &node.title
+            None
         };
-        pango_layout.set_text(title_text);
-        let max_text_w = (node.w - 24.0).max(60.0);
-        pango_layout.set_width((max_text_w * pango::SCALE as f64) as i32);
-        pango_layout.set_wrap(pango::WrapMode::WordChar);
-        pango_layout.set_ellipsize(pango::EllipsizeMode::End);
 
-        // Scelta del colore del testo in base al contrasto
-        if let Some((r, g, b)) = custom_color {
-            if is_color_bright(r, g, b) {
-                cr.set_source_rgb(0.1, 0.1, 0.1);
+        if boxed {
+            let radius = if node.depth == 0 {
+                10.0
+            } else if node.depth == 1 {
+                8.0
             } else {
-                cr.set_source_rgb(0.96, 0.96, 0.96);
+                6.0
+            };
+            if is_selected {
+                rounded_rect(
+                    cr,
+                    node.x - 3.0,
+                    node.y - 3.0,
+                    node.w + 6.0,
+                    node.h + 6.0,
+                    radius + 3.0,
+                );
+                cr.set_source_rgba(0.14, 0.52, 1.0, 0.14);
+                let _ = cr.fill();
             }
-        } else {
-            cr.set_source_rgb(pal.text_r, pal.text_g, pal.text_b);
+            rounded_rect(cr, node.x, node.y, node.w, node.h, radius);
+            if let Some((r, g, b)) = box_fill {
+                cr.set_source_rgb(r, g, b);
+            } else {
+                cr.set_source_rgb(pal.card_bg_r, pal.card_bg_g, pal.card_bg_b);
+            }
+            let _ = cr.fill_preserve();
+
+            // Il bordo resta coerente col nodo anche durante la selezione.
+            if is_selected {
+                cr.set_source_rgb(0.14, 0.52, 1.0);
+                cr.set_line_width(1.7);
+            } else if node.depth == 0 {
+                cr.set_source_rgb(pal.root_border_r, pal.root_border_g, pal.root_border_b);
+                cr.set_line_width(1.8);
+            } else if node.depth == 1 {
+                let (r, g, b) = accent_color.unwrap_or((
+                    pal.card_border_r,
+                    pal.card_border_g,
+                    pal.card_border_b,
+                ));
+                cr.set_source_rgb(
+                    (r * 0.85).max(0.0),
+                    (g * 0.85).max(0.0),
+                    (b * 0.85).max(0.0),
+                );
+                cr.set_line_width(1.1);
+            } else {
+                cr.set_source_rgb(pal.card_border_r, pal.card_border_g, pal.card_border_b);
+                cr.set_line_width(1.0);
+            }
+            let _ = cr.stroke();
+        } else if is_selected {
+            // I nodi testuali non hanno box: li si evidenzia con uno sfondo soft.
+            rounded_rect(
+                cr,
+                node.x - 4.0,
+                node.y - 2.0,
+                node.w + 8.0,
+                node.h + 4.0,
+                5.0,
+            );
+            cr.set_source_rgba(0.14, 0.52, 1.0, 0.11);
+            let _ = cr.fill_preserve();
+            cr.set_source_rgba(0.14, 0.52, 1.0, 0.55);
+            cr.set_line_width(1.0);
+            let _ = cr.stroke();
         }
 
-        cr.move_to(node.x + 12.0, node.y + 8.0);
-        pangocairo::functions::show_layout(cr, &pango_layout);
+        // Contenuto: immagine/equazione se disponibile, altrimenti testo.
+        let (pad_x, pad_y, _, _) = node_insets(node.depth, boxed);
+        let content_x = node.x + pad_x;
+        let content_y = node.y + pad_y;
+        let content_w = (node.w - pad_x * 2.0).max(20.0);
+        let content_h = (node.h - pad_y * 2.0).max(10.0);
 
-        // Badge inferiori (indicatori di note, etichette e marker)
-        let mut badge_x = node.x + 12.0;
-        let badge_y = node.y + node.h - 14.0;
+        let drawn = node.image_src.as_deref().is_some_and(|src| {
+            let Some(surface) = surface_for(src, &state.images, &state.surfaces) else {
+                return false;
+            };
+            draw_image(
+                cr,
+                content_x,
+                content_y,
+                content_w,
+                content_h,
+                node.image_w.zip(node.image_h),
+                &surface,
+            );
+            true
+        });
 
-        if node.has_notes {
-            draw_note_badge(cr, badge_x, badge_y);
-            badge_x += 16.0;
+        if !drawn {
+            let pango_layout = pangocairo::functions::create_layout(cr);
+            pango_layout.set_font_description(Some(&title_font(node.depth)));
+
+            let title_text = if !node.display_title.is_empty() {
+                &node.display_title
+            } else {
+                &node.title
+            };
+            pango_layout.set_text(title_text);
+            // Con una CTM Cairo scalata Pango scala i glifi, ma la larghezza di
+            // wrapping resta in pixel del device: compensiamo per mantenere le
+            // stesse righe misurate a zoom 1×.
+            pango_layout.set_width((content_w * zoom * pango::SCALE as f64) as i32);
+            pango_layout.set_wrap(pango::WrapMode::WordChar);
+
+            // I nodi testuali profondi usano sempre il colore del canvas; il
+            // contrasto sul fill si applica solo a un box realmente disegnato.
+            if boxed && custom_color.is_some() {
+                let (r, g, b) = box_fill.unwrap_or((pal.card_bg_r, pal.card_bg_g, pal.card_bg_b));
+                if is_color_bright(r, g, b) {
+                    cr.set_source_rgb(0.12, 0.12, 0.12);
+                } else {
+                    cr.set_source_rgb(0.98, 0.98, 0.98);
+                }
+            } else {
+                cr.set_source_rgb(pal.text_r, pal.text_g, pal.text_b);
+            }
+
+            cr.move_to(content_x, content_y);
+            pangocairo::functions::show_layout(cr, &pango_layout);
         }
 
-        for marker in node.markers.iter().take(2) {
-            draw_marker_badge(cr, badge_x, badge_y, marker);
-            badge_x += 20.0;
+        // Badge inferiori solo per i box (i nodi testuali restano puliti).
+        if boxed {
+            let mut badge_x = node.x + pad_x;
+            let badge_y = node.y + node.h - 12.0;
+
+            if node.has_notes {
+                draw_note_badge(cr, badge_x, badge_y);
+                badge_x += 16.0;
+            }
+
+            for marker in node.markers.iter().take(2) {
+                draw_marker_badge(cr, badge_x, badge_y, marker);
+                badge_x += 20.0;
+            }
+
+            for label in node.labels.iter().take(2) {
+                draw_label_badge(cr, badge_x, badge_y, label);
+                badge_x += 32.0;
+            }
         }
 
-        for label in node.labels.iter().take(2) {
-            draw_label_badge(cr, badge_x, badge_y, label);
-            badge_x += 32.0;
-        }
-
-        // Indicatore di collasso / espansione (pillola tonda a destra del nodo)
+        // Indicatore di collasso / espansione (pillola tonda a destra del blocco)
         if node.child_count > 0 {
             if let Some((bx, by, bw, bh)) = node.collapse_indicator_rect() {
                 let cx = bx + bw / 2.0;
                 let cy = by + bh / 2.0;
                 let r = bw / 2.0;
 
-                cr.arc(cx, cy, r, 0.0, std::f64::consts::PI * 2.0);
                 if node.collapsed {
+                    cr.arc(cx, cy, r, 0.0, std::f64::consts::PI * 2.0);
                     cr.set_source_rgb(0.21, 0.52, 0.89);
                     let _ = cr.fill();
 
@@ -861,7 +1133,8 @@ fn draw_map(
                     cr.move_to(cx, cy - 3.5);
                     cr.line_to(cx, cy + 3.5);
                     let _ = cr.stroke();
-                } else {
+                } else if is_selected {
+                    cr.arc(cx, cy, r, 0.0, std::f64::consts::PI * 2.0);
                     cr.set_source_rgb(pal.card_bg_r, pal.card_bg_g, pal.card_bg_b);
                     let _ = cr.fill_preserve();
                     cr.set_source_rgb(pal.card_border_r, pal.card_border_g, pal.card_border_b);
@@ -874,11 +1147,90 @@ fn draw_map(
                     cr.move_to(cx - 3.5, cy);
                     cr.line_to(cx + 3.5, cy);
                     let _ = cr.stroke();
+                } else {
+                    cr.arc(cx, cy, 2.25, 0.0, std::f64::consts::PI * 2.0);
+                    if let Some((r, g, b)) = accent_color {
+                        cr.set_source_rgba(r, g, b, 0.72);
+                    } else {
+                        cr.set_source_rgba(pal.edge_r, pal.edge_g, pal.edge_b, 0.72);
+                    }
+                    let _ = cr.fill();
                 }
             }
         }
     }
 
+    let _ = cr.restore();
+}
+
+/// Traccia un connettore a gomito con bus verticale condiviso tra fratelli:
+/// esce dal lato destro del genitore, corre in verticale lungo il bus e rientra
+/// nel lato sinistro del figlio. I segmenti verticali dei fratelli coincidono e
+/// formano il "tronco" tipico delle Logic Chart di XMind.
+fn elbow(cr: &gtk::cairo::Context, x1: f64, y1: f64, x2: f64, y2: f64, stub: f64) {
+    if (y2 - y1).abs() < 0.5 {
+        cr.move_to(x1, y1);
+        cr.line_to(x2, y2);
+        return;
+    }
+    let bus_x = x1 + stub.min((x2 - x1).abs() * 0.6);
+    let dir = if y2 > y1 { 1.0 } else { -1.0 };
+    let rr = 6.0_f64
+        .min((bus_x - x1).abs())
+        .min((y2 - y1).abs() * 0.5)
+        .max(0.0);
+
+    cr.move_to(x1, y1);
+    cr.line_to(bus_x - rr, y1);
+    cr.curve_to(
+        bus_x - rr * 0.45,
+        y1,
+        bus_x,
+        y1 + dir * rr * 0.45,
+        bus_x,
+        y1 + dir * rr,
+    );
+    cr.line_to(bus_x, y2 - dir * rr);
+    cr.curve_to(
+        bus_x,
+        y2 - dir * rr * 0.45,
+        bus_x + rr * 0.45,
+        y2,
+        bus_x + rr,
+        y2,
+    );
+    cr.line_to(x2, y2);
+}
+
+/// Disegna un'immagine (equazione o foto) centrata e ridimensionata nell'area.
+fn draw_image(
+    cr: &gtk::cairo::Context,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    logical_size: Option<(f64, f64)>,
+    surface: &gtk::cairo::ImageSurface,
+) {
+    let sw = surface.width() as f64;
+    let sh = surface.height() as f64;
+    if sw <= 0.0 || sh <= 0.0 {
+        return;
+    }
+    let (desired_w, desired_h) = logical_size.unwrap_or((sw, sh));
+    let (dw, dh) = fit_size(desired_w, desired_h, w, h);
+    let scale_x = dw / sw;
+    let scale_y = dh / sh;
+    let dx = x + (w - dw) / 2.0;
+    let dy = y + (h - dh) / 2.0;
+
+    let _ = cr.save();
+    cr.translate(dx, dy);
+    cr.scale(scale_x, scale_y);
+    if cr.set_source_surface(surface, 0.0, 0.0).is_ok() {
+        cr.source().set_filter(gtk::cairo::Filter::Best);
+    }
+    let _ = cr.paint();
     let _ = cr.restore();
 }
 
@@ -912,4 +1264,174 @@ fn draw_label_badge(cr: &gtk::cairo::Context, x: f64, y: f64, _label: &str) {
     rounded_rect(cr, x, y - 7.0, 24.0, 9.0, 2.5);
     cr.set_source_rgba(0.4, 0.4, 0.4, 0.3);
     let _ = cr.fill();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="currentColor"/></svg>"#;
+
+    #[test]
+    fn decodes_png_and_caches_surface() {
+        let png = crate::raster::svg_to_png(SVG, 40.0, 20.0, 1.0, "#000000").unwrap();
+        let images = RefCell::new(HashMap::from([("xap:resources/x.png".to_string(), png)]));
+        let surfaces = RefCell::new(HashMap::new());
+
+        let surface = surface_for("xap:resources/x.png", &images, &surfaces);
+        assert!(surface.is_some(), "il PNG deve decodificarsi");
+        assert!(surfaces.borrow().contains_key("xap:resources/x.png"));
+
+        // Una sorgente sconosciuta non deve andare in panico e resta `None`.
+        assert!(surface_for("xap:resources/missing.png", &images, &surfaces).is_none());
+    }
+
+    #[test]
+    fn fit_size_preserves_aspect_ratio() {
+        let (w, h) = fit_size(100.0, 50.0, 80.0, 80.0);
+        assert!((w - 80.0).abs() < 0.01 && (h - 40.0).abs() < 0.01);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn topic(
+        id: &str,
+        parent: Option<&str>,
+        depth: usize,
+        title: &str,
+        fill: Option<&str>,
+    ) -> crate::state::TopicView {
+        crate::state::TopicView {
+            id: id.into(),
+            sheet_index: 0,
+            parent_id: parent.map(str::to_string),
+            depth,
+            group: "attached".into(),
+            title: title.into(),
+            display_title: title.into(),
+            kind: "text",
+            latex: None,
+            image_src: None,
+            image_w: None,
+            image_h: None,
+            notes: String::new(),
+            notes_display: None,
+            labels: Vec::new(),
+            markers: Vec::new(),
+            href: None,
+            path: Vec::new(),
+            child_count: 0,
+            boundaries: Vec::new(),
+            summaries: Vec::new(),
+            task: None,
+            fill_color: fill.map(str::to_string),
+        }
+    }
+
+    /// Snapshot headless della mappa, utile per la verifica visiva locale.
+    /// Si attiva solo con `XMAP_SNAPSHOT=<percorso.png>`.
+    #[test]
+    fn headless_snapshot() {
+        let Ok(path) = std::env::var("XMAP_SNAPSHOT") else {
+            eprintln!("skip: XMAP_SNAPSHOT non impostato");
+            return;
+        };
+
+        let topics = vec![
+            topic("root", None, 0, "Funzioni", None),
+            topic("b1", Some("root"), 1, "Definizione", None),
+            topic(
+                "d1",
+                Some("b1"),
+                2,
+                "f ⊆ A × B ⟺ ∀a ∈ A, ∃! b ∈ B, b = f(a)",
+                None,
+            ),
+            topic("d2", Some("b1"), 2, "dati", None),
+            topic("d2a", Some("d2"), 3, "A' ⊆ A", None),
+            topic("d2b", Some("d2"), 3, "B' ⊆ B", None),
+            topic("b2", Some("root"), 1, "Proprietà", None),
+            topic("p1", Some("b2"), 2, "Suriettiva", None),
+            topic("p2", Some("b2"), 2, "Iniettiva", None),
+            topic("p3", Some("b2"), 2, "Biettiva", None),
+            topic("b3", Some("root"), 1, "Funzione inversa", None),
+            topic("f1", Some("b3"), 2, "f possiede inversa destra g", None),
+            topic(
+                "f2",
+                Some("b3"),
+                2,
+                "In generale g e h non sono uniche",
+                None,
+            ),
+            topic("b4", Some("root"), 1, "Teorema di fattorizzazione", None),
+            topic("t1", Some("b4"), 2, "ker f", None),
+            topic("t2", Some("b4"), 2, "date", None),
+            topic("b5", Some("root"), 1, "Cardinalità", None),
+        ];
+        let sheet = SheetDto {
+            index: 0,
+            id: Some("s1".into()),
+            title: "Funzioni".into(),
+            topics,
+            relationships: Vec::new(),
+        };
+
+        let state = MapViewState {
+            sheets: RefCell::new(vec![sheet.clone()]),
+            active_sheet: Cell::new(0),
+            collapsed: RefCell::new(HashSet::new()),
+            selected: RefCell::new(Some("b2".to_string())),
+            layout: RefCell::new(Layout::default()),
+            pan_x: Cell::new(20.0),
+            pan_y: Cell::new(20.0),
+            zoom: Cell::new(1.0),
+            drag_start_pan: Cell::new((20.0, 20.0)),
+            dark: Cell::new(false),
+            metrics_cache: RefCell::new(HashMap::new()),
+            images: RefCell::new(HashMap::new()),
+            surfaces: RefCell::new(HashMap::new()),
+            on_select: RefCell::new(None),
+        };
+
+        let width = 1500;
+        let height = 1200;
+        let surface =
+            gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, width, height).unwrap();
+        let cr = gtk::cairo::Context::new(&surface).unwrap();
+        let pango_ctx = pangocairo::functions::create_context(&cr);
+
+        {
+            let collapsed = state.collapsed.borrow();
+            let metrics = CanvasMetrics {
+                pango_ctx,
+                cache: &state.metrics_cache,
+                images: &state.images,
+                surfaces: &state.surfaces,
+            };
+            let l = layout::layout_single_sheet(
+                &sheet,
+                &collapsed,
+                &metrics,
+                layout::LayoutOpts::default(),
+            );
+            *state.layout.borrow_mut() = l;
+        }
+
+        // Replica il comportamento di "Adatta" della UI: lo snapshot deve
+        // mostrare la mappa alla scala d'uso reale, non persa nel canvas.
+        {
+            let l = state.layout.borrow();
+            let margin = 64.0;
+            let scale_x = (width as f64 - margin * 2.0) / l.width;
+            let scale_y = (height as f64 - margin * 2.0) / l.height;
+            let zoom = scale_x.min(scale_y).clamp(0.2, 1.8);
+            state.zoom.set(zoom);
+            state.pan_x.set((width as f64 - l.width * zoom) / 2.0);
+            state.pan_y.set((height as f64 - l.height * zoom) / 2.0);
+        }
+
+        draw_map(&cr, width as f64, height as f64, &state);
+        let mut file = std::fs::File::create(&path).unwrap();
+        surface.write_to_png(&mut file).unwrap();
+        eprintln!("snapshot scritto in: {path}");
+    }
 }

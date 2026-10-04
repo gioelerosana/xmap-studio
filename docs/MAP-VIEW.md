@@ -1,10 +1,12 @@
 # Vista mappa ad albero (Fase 7)
 
 > Documento di progetto per la feature più importante dell'app: la
-> visualizzazione interna della mappa come albero orizzontale (radice a
-> sinistra, rami verso destra) in stile XMind. **L'editing resta testuale**:
-> la mappa serve a orientarsi, selezionare, collassare/espandere e zoomare.
-> Nessuna webview; il backend resta senza GTK.
+> visualizzazione interna della mappa come **Logic Chart orizzontale** in stile
+> XMind (topic centrale in alto a sinistra, rami di primo livello in colonna,
+> sottoalberi verso destra), con i rami colorati e le immagini/equazioni
+> renderizzate. **L'editing resta testuale**: la mappa serve a orientarsi,
+> selezionare, collassare/espandere e zoomare. Nessuna webview; il backend
+> resta senza GTK.
 
 Si appoggia alla base già presente della Fase 6 (`layout.rs` e
 `show_map_preview`) e la promuove da anteprima modale a vista primaria.
@@ -73,8 +75,9 @@ Principi:
   (`sheet.root_topic` è già il primo nodo in pre-ordine, `state.rs:450`);
 - nodo: `id`, `display_title`/`latex`, `kind`, `fill_color`, `labels`,
   `markers`, `child_count`, `group`;
-- **colore del ramo ereditato**: il `fill_color` di un nodo scende ai
-  discendenti finché uno non ne ridefinisce uno proprio;
+- **colore del ramo ereditato**: `fill_color` resta locale al topic che lo
+  dichiara; l'accento cromatico del ramo scende invece ai discendenti e colora
+  connettori e topic principali senza trasformare ogni nodo in una card;
 - `collapsed: HashSet<String>` (in `State`) decide se un sottoalbero si salta;
 - i gruppi `summary`/`callout`/`detached` sono individuati dal campo `group`
   (`TopicView.group`): in v1 vengono resi come rami secondari o esclusi.

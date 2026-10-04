@@ -2,9 +2,12 @@
 //!
 //! Input: DTO della mappa (`SheetDto` / `TopicView`).
 //! Produce la posizione dei blocchi e i collegamenti da disegnare.
-//! L'algoritmo è un tidy tree sinistro→destro con altezze e larghezze variabili
-//! (fornite tramite il trait `NodeMetrics`), supporto al collasso di sotto-alberi,
-//! colore del ramo ereditato e bounds per adattare la vista al canvas.
+//! L'algoritmo è un tidy tree **orizzontale** in stile "Logic Chart" di XMind:
+//! il topic centrale sta in alto a sinistra, i rami di primo livello scendono in
+//! colonna e i loro sottoalberi si sviluppano verso destra (genitore centrato
+//! verticalmente sui figli). Larghezze e altezze sono variabili (fornite tramite
+//! il trait `NodeMetrics`). Supporta il collasso di sotto-alberi, il colore del
+//! ramo (esplicito o dalla palette XMind) e i bounds per adattare la vista.
 
 use std::collections::{HashMap, HashSet};
 
@@ -12,6 +15,13 @@ use crate::state::{SheetDto, TopicView};
 
 pub const DEFAULT_NODE_W: f64 = 180.0;
 pub const DEFAULT_NODE_H: f64 = 36.0;
+
+/// Palette "Colored Branch" del tema Snowbrush di XMind: un colore per ramo di
+/// primo livello, ereditato dai discendenti. Serve a rendere i rami distinguibili
+/// anche quando il file non porta un `svg:fill` esplicito.
+pub const BRANCH_COLORS: [&str; 6] = [
+    "#E65D5D", "#E9863F", "#C99A12", "#79A83B", "#1599B5", "#7953A9",
+];
 
 /// Un nodo dell'albero pronto per il calcolo del layout e la misurazione.
 #[derive(Debug, Clone)]
@@ -22,6 +32,12 @@ pub struct MapNode {
     pub kind: &'static str,
     pub latex: Option<String>,
     pub fill_color: Option<String>,
+    /// Colore del ramo per i collegamenti: `fill_color` se esplicito, altrimenti
+    /// il colore della palette assegnato al ramo di primo livello.
+    pub accent: Option<String>,
+    pub image_src: Option<String>,
+    pub image_w: Option<f64>,
+    pub image_h: Option<f64>,
     pub labels: Vec<String>,
     pub markers: Vec<String>,
     pub has_notes: bool,
@@ -47,6 +63,10 @@ pub struct LayoutNode {
     pub kind: &'static str,
     pub latex: Option<String>,
     pub fill: Option<String>,
+    pub accent: Option<String>,
+    pub image_src: Option<String>,
+    pub image_w: Option<f64>,
+    pub image_h: Option<f64>,
     pub labels: Vec<String>,
     pub markers: Vec<String>,
     pub has_notes: bool,
@@ -62,8 +82,8 @@ impl LayoutNode {
     /// Presente solo se il nodo ha figli. (x, y, w, h).
     pub fn collapse_indicator_rect(&self) -> Option<(f64, f64, f64, f64)> {
         if self.child_count > 0 {
-            let r = 8.0;
-            let cx = self.x + self.w + 10.0;
+            let r = 6.0;
+            let cx = self.x + self.w + 8.0;
             let cy = self.y + self.h / 2.0;
             Some((cx - r, cy - r, r * 2.0, r * 2.0))
         } else {
@@ -104,7 +124,7 @@ impl Layout {
     pub fn collapse_handle_at(&self, x: f64, y: f64) -> Option<usize> {
         self.nodes.iter().position(|n| {
             if let Some((bx, by, bw, bh)) = n.collapse_indicator_rect() {
-                x >= bx - 4.0 && x <= bx + bw + 4.0 && y >= by - 4.0 && y <= by + bh + 4.0
+                x >= bx - 6.0 && x <= bx + bw + 6.0 && y >= by - 6.0 && y <= by + bh + 6.0
             } else {
                 false
             }
@@ -177,8 +197,11 @@ impl NodeMetrics for EstimatedMetrics {
 
 #[derive(Debug, Clone, Copy)]
 pub struct LayoutOpts {
+    /// Spazio orizzontale fra il blocco e il suo primo livello di figli.
     pub h_gap: f64,
+    /// Spazio verticale fra blocchi fratelli (in colonna).
     pub v_gap: f64,
+    /// Spazio fra gli alberi radice di fogli diversi.
     pub sheet_gap: f64,
 }
 
@@ -186,13 +209,14 @@ impl Default for LayoutOpts {
     fn default() -> Self {
         Self {
             h_gap: 56.0,
-            v_gap: 14.0,
-            sheet_gap: 60.0,
+            v_gap: 19.0,
+            sheet_gap: 80.0,
         }
     }
 }
 
-/// Ricostruisce l'albero `MapNode` dai DTO di una sheet, ereditando il colore di ramo.
+/// Ricostruisce l'albero `MapNode` dai DTO di una sheet, ereditando il colore di
+/// ramo (esplicito o dalla palette Snowbrush per i rami di primo livello).
 pub fn build_sheet_trees(sheet: &SheetDto) -> Vec<MapNode> {
     let mut children_map: HashMap<String, Vec<&TopicView>> = HashMap::new();
     let mut roots: Vec<&TopicView> = Vec::new();
@@ -218,14 +242,30 @@ pub fn build_sheet_trees(sheet: &SheetDto) -> Vec<MapNode> {
 fn build_node_recursive(
     topic: &TopicView,
     children_map: &HashMap<String, Vec<&TopicView>>,
-    inherited_fill: Option<&str>,
+    branch_accent: Option<&str>,
 ) -> MapNode {
-    let fill = topic.fill_color.as_deref().or(inherited_fill);
+    let explicit_fill = topic.fill_color.as_deref();
+    // Il fill appartiene solo al topic che lo dichiara; ciò che si eredita è il
+    // colore del ramo, usato da connettori e decorazioni.
+    let accent = explicit_fill
+        .map(str::to_string)
+        .or_else(|| branch_accent.map(str::to_string));
     let children: Vec<MapNode> = children_map
         .get(&topic.id)
         .map(|list| {
             list.iter()
-                .map(|c| build_node_recursive(c, children_map, fill))
+                .enumerate()
+                .map(|(i, c)| {
+                    // Il fill esplicito del figlio definisce da solo il suo ramo;
+                    // i figli del topic centrale prendono la palette per ramo; gli
+                    // altri ereditano l'accento del ramo corrente.
+                    let child_branch = if topic.depth == 0 && c.fill_color.is_none() {
+                        Some(BRANCH_COLORS[i % BRANCH_COLORS.len()])
+                    } else {
+                        accent.as_deref()
+                    };
+                    build_node_recursive(c, children_map, child_branch)
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -237,7 +277,11 @@ fn build_node_recursive(
         display_title: topic.display_title.clone(),
         kind: topic.kind,
         latex: topic.latex.clone(),
-        fill_color: fill.map(str::to_string),
+        fill_color: explicit_fill.map(str::to_string),
+        accent,
+        image_src: topic.image_src.clone(),
+        image_w: topic.image_w,
+        image_h: topic.image_h,
         labels: topic.labels.clone(),
         markers: topic.markers.clone(),
         has_notes: !topic.notes.is_empty(),
@@ -252,6 +296,10 @@ fn build_node_recursive(
 }
 
 /// Costruisce il layout dell'intera sequenza di sheet.
+///
+/// Stile "Logic Chart" di XMind: il topic centrale (radice) sta in alto a
+/// sinistra; i rami di primo livello scendono in colonna e i loro sottoalberi si
+/// sviluppano verso destra, con il genitore centrato sui figli.
 pub fn layout(
     sheets: &[SheetDto],
     collapsed: &HashSet<String>,
@@ -264,18 +312,66 @@ pub fn layout(
     for sheet in sheets {
         let trees = build_sheet_trees(sheet);
         for tree in &trees {
-            let tree_height = measure_subtree(tree, collapsed, metrics, &opts);
-            place_tree(tree, 20.0, top, None, collapsed, metrics, &opts, &mut out);
-            top += tree_height + opts.sheet_gap;
+            let mut sizes = HashMap::new();
+            compute_sizes(tree, collapsed, metrics, &opts, &mut sizes);
+            let (root_w, root_h) = metrics.measure(tree);
+            let root_collapsed = collapsed.contains(&tree.id) || tree.children.is_empty();
+
+            let children_h: f64 = if root_collapsed {
+                0.0
+            } else {
+                tree.children
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        let ch = sizes.get(&c.id).map(|s| s.1).unwrap_or(0.0);
+                        ch + if i > 0 { opts.v_gap } else { 0.0 }
+                    })
+                    .sum()
+            };
+            let row_h = if root_collapsed {
+                root_h
+            } else {
+                root_h + opts.v_gap + children_h
+            };
+
+            // La radice è ancorata in alto, non centrata sui figli.
+            let root_index = push_layout_node(
+                &mut out,
+                tree,
+                20.0,
+                top,
+                root_w,
+                root_h,
+                collapsed.contains(&tree.id),
+            );
+
+            if !root_collapsed {
+                let child_x = 20.0 + root_w + opts.h_gap;
+                let mut cur = top + root_h + opts.v_gap;
+                for child in &tree.children {
+                    let ch = sizes.get(&child.id).map(|s| s.1).unwrap_or(0.0);
+                    place_subtree(
+                        child,
+                        child_x,
+                        cur,
+                        Some(root_index),
+                        collapsed,
+                        metrics,
+                        &opts,
+                        &sizes,
+                        &mut out,
+                    );
+                    cur += ch + opts.v_gap;
+                }
+            }
+
+            top += row_h + opts.sheet_gap;
         }
     }
 
     if !out.nodes.is_empty() {
-        let max_x = out
-            .nodes
-            .iter()
-            .map(|n| n.x + n.w + if n.child_count > 0 { 24.0 } else { 0.0 })
-            .fold(0.0, f64::max);
+        let max_x = out.nodes.iter().map(|n| n.x + n.w).fold(0.0, f64::max);
         let max_y = out.nodes.iter().map(|n| n.y + n.h).fold(0.0, f64::max);
         out.width = max_x + 20.0;
         out.height = max_y + 20.0;
@@ -294,51 +390,32 @@ pub fn layout_single_sheet(
     layout(std::slice::from_ref(sheet), collapsed, metrics, opts)
 }
 
-fn measure_subtree(
-    node: &MapNode,
-    collapsed: &HashSet<String>,
-    metrics: &dyn NodeMetrics,
-    opts: &LayoutOpts,
-) -> f64 {
-    let (_w, h) = metrics.measure(node);
-    if collapsed.contains(&node.id) || node.children.is_empty() {
-        return h;
-    }
-    let total: f64 = node
-        .children
-        .iter()
-        .map(|c| measure_subtree(c, collapsed, metrics, opts))
-        .sum();
-    let gaps = opts.v_gap * (node.children.len().saturating_sub(1)) as f64;
-    (total + gaps).max(h)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn place_tree(
+/// Aggiunge un nodo al layout e ne ritorna l'indice.
+fn push_layout_node(
+    out: &mut Layout,
     node: &MapNode,
     x: f64,
-    top: f64,
-    parent: Option<usize>,
-    collapsed: &HashSet<String>,
-    metrics: &dyn NodeMetrics,
-    opts: &LayoutOpts,
-    out: &mut Layout,
-) -> f64 {
+    y: f64,
+    w: f64,
+    h: f64,
+    is_collapsed: bool,
+) -> usize {
     let index = out.nodes.len();
-    let (w, h) = metrics.measure(node);
-    let is_collapsed = collapsed.contains(&node.id);
-
     out.nodes.push(LayoutNode {
         id: node.id.clone(),
         title: node.title.clone(),
         display_title: node.display_title.clone(),
         x,
-        y: 0.0, // centrato sotto
+        y,
         w,
         h,
         kind: node.kind,
         latex: node.latex.clone(),
         fill: node.fill_color.clone(),
+        accent: node.accent.clone(),
+        image_src: node.image_src.clone(),
+        image_w: node.image_w,
+        image_h: node.image_h,
         labels: node.labels.clone(),
         markers: node.markers.clone(),
         has_notes: node.has_notes,
@@ -348,6 +425,58 @@ fn place_tree(
         depth: node.depth,
         sheet_index: node.sheet_index,
     });
+    index
+}
+
+/// Prima passata: dimensioni (larghezza × altezza) di ogni sotto-albero. In
+/// orizzontale la larghezza è il blocco più il sottoalbero più largo; l'altezza
+/// è la somma in colonna dei sottoalberi dei figli (o l'altezza del blocco).
+fn compute_sizes(
+    node: &MapNode,
+    collapsed: &HashSet<String>,
+    metrics: &dyn NodeMetrics,
+    opts: &LayoutOpts,
+    sizes: &mut HashMap<String, (f64, f64)>,
+) -> (f64, f64) {
+    let (w, h) = metrics.measure(node);
+    let size = if collapsed.contains(&node.id) || node.children.is_empty() {
+        (w, h)
+    } else {
+        let mut col_h: f64 = 0.0;
+        let mut max_cw: f64 = 0.0;
+        for (i, child) in node.children.iter().enumerate() {
+            let (cw, ch) = compute_sizes(child, collapsed, metrics, opts, sizes);
+            if i > 0 {
+                col_h += opts.v_gap;
+            }
+            col_h += ch;
+            max_cw = max_cw.max(cw);
+        }
+        (w + opts.h_gap + max_cw, h.max(col_h))
+    };
+    sizes.insert(node.id.clone(), size);
+    size
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_subtree(
+    node: &MapNode,
+    left: f64,
+    top: f64,
+    parent: Option<usize>,
+    collapsed: &HashSet<String>,
+    metrics: &dyn NodeMetrics,
+    opts: &LayoutOpts,
+    sizes: &HashMap<String, (f64, f64)>,
+    out: &mut Layout,
+) {
+    let (w, h) = metrics.measure(node);
+    let sub_h = sizes.get(&node.id).map(|s| s.1).unwrap_or(h);
+    let is_collapsed = collapsed.contains(&node.id);
+
+    // Il blocco è centrato verticalmente nella fascia del proprio sotto-albero.
+    let y = top + (sub_h - h) / 2.0;
+    let index = push_layout_node(out, node, left, y, w, h, is_collapsed);
 
     if let Some(parent_idx) = parent {
         out.edges.push(LayoutEdge {
@@ -358,34 +487,35 @@ fn place_tree(
     }
 
     if is_collapsed || node.children.is_empty() {
-        let center_y = top + h / 2.0;
-        out.nodes[index].y = top;
-        return center_y;
+        return;
     }
 
-    let child_x = x + w + opts.h_gap;
-    let mut child_top = top;
-    let mut centers = Vec::with_capacity(node.children.len());
+    let children_h: f64 = node
+        .children
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let ch = sizes.get(&c.id).map(|s| s.1).unwrap_or(0.0);
+            ch + if i > 0 { opts.v_gap } else { 0.0 }
+        })
+        .sum();
+    let mut cur = top + (sub_h - children_h) / 2.0;
+    let child_x = left + w + opts.h_gap;
     for child in &node.children {
-        let center = place_tree(
+        let ch = sizes.get(&child.id).map(|s| s.1).unwrap_or(0.0);
+        place_subtree(
             child,
             child_x,
-            child_top,
+            cur,
             Some(index),
             collapsed,
             metrics,
             opts,
+            sizes,
             out,
         );
-        centers.push(center);
-        child_top += measure_subtree(child, collapsed, metrics, opts) + opts.v_gap;
+        cur += ch + opts.v_gap;
     }
-
-    let first = centers.first().copied().unwrap_or(top + h / 2.0);
-    let last = centers.last().copied().unwrap_or(first);
-    let center = (first + last) / 2.0;
-    out.nodes[index].y = center - h / 2.0;
-    center
 }
 
 #[cfg(test)]
@@ -409,6 +539,8 @@ mod tests {
                     kind: "text",
                     latex: None,
                     image_src: None,
+                    image_w: None,
+                    image_h: None,
                     notes: String::new(),
                     notes_display: None,
                     labels: vec![],
@@ -432,6 +564,8 @@ mod tests {
                     kind: "text",
                     latex: None,
                     image_src: None,
+                    image_w: None,
+                    image_h: None,
                     notes: String::new(),
                     notes_display: None,
                     labels: vec![],
@@ -442,7 +576,7 @@ mod tests {
                     boundaries: vec![],
                     summaries: vec![],
                     task: None,
-                    fill_color: None, // eredita da root
+                    fill_color: None,
                 },
                 TopicView {
                     id: "a1".to_string(),
@@ -455,6 +589,8 @@ mod tests {
                     kind: "text",
                     latex: None,
                     image_src: None,
+                    image_w: None,
+                    image_h: None,
                     notes: String::new(),
                     notes_display: None,
                     labels: vec![],
@@ -465,7 +601,7 @@ mod tests {
                     boundaries: vec![],
                     summaries: vec![],
                     task: None,
-                    fill_color: None, // eredita da a (che eredita da root)
+                    fill_color: None,
                 },
                 TopicView {
                     id: "a2".to_string(),
@@ -478,6 +614,8 @@ mod tests {
                     kind: "text",
                     latex: None,
                     image_src: None,
+                    image_w: None,
+                    image_h: None,
                     notes: String::new(),
                     notes_display: None,
                     labels: vec![],
@@ -501,6 +639,8 @@ mod tests {
                     kind: "equation",
                     latex: Some("x^2 + y^2".to_string()),
                     image_src: None,
+                    image_w: None,
+                    image_h: None,
                     notes: "Nota su B".to_string(),
                     notes_display: None,
                     labels: vec!["tag1".to_string()],
@@ -533,7 +673,11 @@ mod tests {
 
         let root = &l.nodes[0];
         let a = l.nodes.iter().find(|n| n.id == "a").unwrap();
-        assert!(a.x > root.x);
+        assert!(a.x > root.x, "i figli si sviluppano a destra del genitore");
+        assert!(
+            (root.y - l.nodes.iter().map(|n| n.y).fold(f64::INFINITY, f64::min)).abs() < 0.5,
+            "la radice è ancorata in alto"
+        );
     }
 
     #[test]
@@ -545,11 +689,12 @@ mod tests {
             &FixedMetrics::default(),
             LayoutOpts::default(),
         );
-        let root = &l.nodes[0];
+        // "a" ha due figli (a1, a2): deve esserne centrato verticalmente.
         let a = l.nodes.iter().find(|n| n.id == "a").unwrap();
-        let b = l.nodes.iter().find(|n| n.id == "b").unwrap();
-        let children_center = (a.y + a.h / 2.0 + b.y + b.h / 2.0) / 2.0;
-        assert!((root.y + root.h / 2.0 - children_center).abs() < 0.01);
+        let a1 = l.nodes.iter().find(|n| n.id == "a1").unwrap();
+        let a2 = l.nodes.iter().find(|n| n.id == "a2").unwrap();
+        let children_center = (a1.y + a1.h / 2.0 + a2.y + a2.h / 2.0) / 2.0;
+        assert!((a.y + a.h / 2.0 - children_center).abs() < 0.5);
     }
 
     #[test]
@@ -593,7 +738,7 @@ mod tests {
     }
 
     #[test]
-    fn inherited_branch_color() {
+    fn explicit_fill_stays_local_and_branch_accent_is_inherited() {
         let sheet = sample_sheet();
         let l = layout(
             &[sheet],
@@ -605,10 +750,12 @@ mod tests {
         assert_eq!(root.fill.as_deref(), Some("#ff0000"));
 
         let a = l.nodes.iter().find(|n| n.id == "a").unwrap();
-        assert_eq!(a.fill.as_deref(), Some("#ff0000"), "a eredita da root");
+        assert_eq!(a.fill, None, "il fill della radice non scende sui figli");
+        assert_eq!(a.accent.as_deref(), Some(BRANCH_COLORS[0]));
 
         let a1 = l.nodes.iter().find(|n| n.id == "a1").unwrap();
-        assert_eq!(a1.fill.as_deref(), Some("#ff0000"), "a1 eredita da a");
+        assert_eq!(a1.fill, None);
+        assert_eq!(a1.accent.as_deref(), Some(BRANCH_COLORS[0]));
 
         let a2 = l.nodes.iter().find(|n| n.id == "a2").unwrap();
         assert_eq!(
@@ -618,7 +765,31 @@ mod tests {
         );
 
         let b = l.nodes.iter().find(|n| n.id == "b").unwrap();
-        assert_eq!(b.fill.as_deref(), Some("#ff0000"), "b eredita da root");
+        assert_eq!(b.fill, None);
+        assert_eq!(b.accent.as_deref(), Some(BRANCH_COLORS[1]));
+    }
+
+    #[test]
+    fn first_level_branches_get_palette_accent_without_fill() {
+        let mut sheet = sample_sheet();
+        // Nessun fill: i rami di primo livello prendono i colori della palette.
+        for t in &mut sheet.topics {
+            t.fill_color = None;
+        }
+        let l = layout(
+            &[sheet],
+            &HashSet::new(),
+            &FixedMetrics::default(),
+            LayoutOpts::default(),
+        );
+        let a = l.nodes.iter().find(|n| n.id == "a").unwrap();
+        let b = l.nodes.iter().find(|n| n.id == "b").unwrap();
+        assert_eq!(a.fill, None, "senza fill esplicito la card resta neutra");
+        assert_eq!(a.accent.as_deref(), Some(BRANCH_COLORS[0]));
+        assert_eq!(b.accent.as_deref(), Some(BRANCH_COLORS[1]));
+        // I discendenti ereditano l'accento del ramo.
+        let a1 = l.nodes.iter().find(|n| n.id == "a1").unwrap();
+        assert_eq!(a1.accent.as_deref(), Some(BRANCH_COLORS[0]));
     }
 
     #[test]

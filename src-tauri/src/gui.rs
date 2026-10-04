@@ -144,10 +144,36 @@ struct Ui {
 pub fn run() -> glib::ExitCode {
     let app = adw::Application::builder()
         .application_id(crate::APP_ID)
+        // `HANDLES_OPEN`: quando l'app viene lanciata con un file (doppio clic
+        // nel file manager, `Exec=… %f` del .desktop) GApplication emette
+        // `open` invece di `activate`, anche a istanza già avviata.
+        .flags(gio::ApplicationFlags::HANDLES_OPEN)
         .build();
     app.connect_startup(|_| load_css());
-    app.connect_activate(build_ui);
+    app.connect_activate(|app| {
+        build_ui(app);
+    });
+    app.connect_open(|app, files, _hint| open_files(app, files));
     app.run()
+}
+
+/// Apre i file ricevuti dal file manager (uno per finestra).
+///
+/// Ogni file ottiene una finestra indipendente: così un'apertura esterna non
+/// sovrascrive un lavoro con modifiche non salvate già presente in un'altra
+/// finestra (regola: mai distruggere dati dell'utente).
+fn open_files(app: &adw::Application, files: &[gio::File]) {
+    let paths: Vec<PathBuf> = files.iter().filter_map(|file| file.path()).collect();
+    if paths.is_empty() {
+        // Percorso non locale (es. risorsa remota): nessun file da caricare,
+        // ma almeno una finestra va mostrata.
+        build_ui(app);
+        return;
+    }
+    for path in paths {
+        let (ui, state) = build_ui(app);
+        open_path(&ui, &state, path);
+    }
 }
 
 fn load_css() {
@@ -162,7 +188,7 @@ fn load_css() {
     }
 }
 
-fn build_ui(app: &adw::Application) {
+fn build_ui(app: &adw::Application) -> (Rc<Ui>, Rc<State>) {
     let style_manager = adw::StyleManager::default();
     let dark = style_manager.is_dark();
 
@@ -1096,6 +1122,8 @@ fn build_ui(app: &adw::Application) {
             move |_| refresh(&ui, &state),
         );
     }
+
+    (ui, state)
 }
 
 fn add_action<F>(
@@ -1337,12 +1365,31 @@ fn toast(ui: &Ui, text: &str) {
 // -------------------------------------------------------------------- refresh
 
 fn refresh(ui: &Rc<Ui>, state: &Rc<State>) {
-    let (wb, status) = {
+    let (wb, images, status) = {
         let controller = state.controller.lock().unwrap();
-        (controller.workbook(), controller.status())
+        let wb = controller.workbook();
+        // Byte delle immagini/equazioni da mostrare nella mappa: la UI è l'unica
+        // a poter leggere l'archivio del controller.
+        let mut images: HashMap<String, Vec<u8>> = HashMap::new();
+        if let Some(w) = wb.as_ref() {
+            for sheet in &w.sheets {
+                for topic in &sheet.topics {
+                    if let Some(src) = topic.image_src.as_deref() {
+                        if images.contains_key(src) {
+                            continue;
+                        }
+                        if let Some(bytes) = controller.resource_bytes(src) {
+                            images.insert(src.to_string(), bytes);
+                        }
+                    }
+                }
+            }
+        }
+        (wb, images, controller.status())
     };
     if let Some(w) = wb.as_ref() {
-        ui.map_view.set_workbook(&w.sheets, 0);
+        ui.map_view.set_images(images);
+        ui.map_view.set_workbook(&w.sheets, None);
         let sel = state.selected.borrow().clone();
         ui.map_view.set_selected(sel.as_deref());
     }
@@ -2218,6 +2265,7 @@ fn open_path(ui: &Rc<Ui>, state: &Rc<State>, path: PathBuf) {
         move |result| match result {
             Ok(_) => {
                 *state.selected.borrow_mut() = None;
+                ui.map_view.reset_sheet();
                 refresh(&ui, &state);
                 ui.map_view.fit_to_view();
                 toast(&ui, "File aperto");
@@ -2535,6 +2583,8 @@ mod tests {
             kind,
             latex: None,
             image_src: None,
+            image_w: None,
+            image_h: None,
             notes: String::new(),
             notes_display: None,
             labels: Vec::new(),

@@ -141,6 +141,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 |---|---|---|---|
 | Outliner (vista testo) | sì | **Fatto** (Fase 5): `export::to_outline`, finestra in sola lettura | Media |
 | Ricerca / filtro nell'albero | sì | **Fatto**: barra di ricerca + filtri per tipo nella colonna sinistra | Media |
+| Apertura dal file manager | sì | **Fatto**: MIME `application/xmind` + `.desktop` con `Exec=… %f`, `HANDLES_OPEN`; una finestra per file | Media |
 | Temi / custom theme | sì | Parziale (Fase 5): colore di ramo (`svg:fill`); l'editor di temi resta da fare | Bassa |
 | ZEN mode (tutte le rese) | parziale | Solo UI | Bassa |
 | Set Password | sì | **Fuori scope**: cifratura ZIP, rompe atomicità e validazione | — |

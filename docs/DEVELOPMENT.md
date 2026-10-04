@@ -25,10 +25,32 @@ cargo run                 # avvio in sviluppo
 cargo build --release     # binario in target/release/xmap-studio
 cargo test                # test unitari + end-to-end
 cargo xtask appimage      # AppImage in dist/
+cargo xtask install       # registra .desktop + MIME application/xmind in ~/.local/share
 ```
 
 L'alias `cargo xtask` è definito in `.cargo/config.toml` e lancia il crate
 `xtask`.
+
+## Associazione dei file `.xmind`
+
+L'app dichiara il tipo MIME `application/xmind` (`assets/org.joel.xmap_studio.xml`)
+e il `.desktop` lo espone con `MimeType=application/xmind;` ed `Exec=… %f`. Il
+codice gestisce l'argomento file con `HANDLES_OPEN` (`gui.rs:144`): ogni file
+ricevuto apre una finestra indipendente.
+
+```bash
+cargo xtask install       # build di release + registrazione in ~/.local/share
+xdg-mime default org.joel.xmap_studio.desktop application/xmind   # rendila predefinita
+```
+
+`install` non cambia l'app predefinita: la scelta resta dell'utente (o di XMind).
+Dal file manager basta "Apri con… → XMap Studio". L'AppImage include lo stesso
+`.desktop` e il file MIME in `usr/share/`; l'integrazione desktop del sistema
+(AppManager, `appimaged`, …) li registra.
+
+Non servono i **desktop portal** di xdg-desktop-portal: quelli servono alle app
+in sandbox (Flatpak/Snap) per accedere a file fuori sandbox. XMap Studio è
+nativa/AppImage e usa il filesystem direttamente.
 
 ## Il renderer MathJax incorporato
 

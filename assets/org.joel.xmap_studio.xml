@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tipo MIME del formato XMind moderno (archivio ZIP con `content.json`).
+  Lo stesso tipo è registrato dal pacchetto ufficiale XMind (`application/xmind`,
+  glob `*.xmind`): `update-mime-database` unisce le due dichiarazioni, quindi
+  XMap Studio resta un handler valido anche se XMind non è installato.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/xmind">
+    <comment>Mappa XMind</comment>
+    <comment xml:lang="en">XMind map</comment>
+    <glob pattern="*.xmind" weight="5"/>
+    <sub-class-of type="application/zip"/>
+    <icon name="x-office-document"/>
+  </mime-type>
+</mime-info>

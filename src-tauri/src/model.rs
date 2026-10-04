@@ -297,6 +297,14 @@ impl Topic {
         self.image.as_ref()?.src.as_deref()
     }
 
+    /// Dimensioni logiche dichiarate per l'immagine (px), se entrambe presenti.
+    pub fn image_size_px(&self) -> Option<(f64, f64)> {
+        let img = self.image.as_ref()?;
+        let w = img.width.as_ref()?.as_f64()?;
+        let h = img.height.as_ref()?.as_f64()?;
+        Some((w, h))
+    }
+
     pub fn title_str(&self) -> &str {
         self.title.as_deref().unwrap_or("")
     }

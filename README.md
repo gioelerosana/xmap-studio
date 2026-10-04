@@ -18,7 +18,9 @@ Oggi sa:
 - **esportare** la mappa in **Markdown/OPML**, **importarla** e **unire o
   dividere** file `.xmind`, oltre a una vista **outliner** e a un'**anteprima
   grafica**;
-- salvare in modo sicuro (scrittura atomica, backup nascosti, validazione).
+- salvare in modo sicuro (scrittura atomica, backup nascosti, validazione);
+- **aprire i `.xmind` dal file manager** (doppio clic / "Apri con…"), grazie
+  all'associazione MIME `application/xmind`.
 
 Niente account, niente telemetria, niente webview. Apre, mostra, modifica, salva.
 
@@ -220,7 +222,18 @@ cargo run                 # avvio in sviluppo
 cargo build --release     # binario ottimizzato (target/release/xmap-studio)
 cargo test                # 30 unit + 2 end-to-end su mappa reale
 cargo xtask appimage      # AppImage con icona in dist/
+cargo xtask install       # registra .desktop + MIME application/xmind
 ```
+
+Per aprire i `.xmind` con XMap Studio dal file manager, dopo `cargo xtask
+install`:
+
+```bash
+xdg-mime default org.joel.xmap_studio.desktop application/xmind
+```
+
+(oppure tasto destro su un `.xmind` → *Apri con…*). L'app non si impone come
+predefinita: la scelta resta tua.
 
 `cargo xtask appimage` compila in release, assembla l'AppDir (binario + icona +
 `.desktop`) e produce:
