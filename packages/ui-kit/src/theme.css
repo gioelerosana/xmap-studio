@@ -1,0 +1,77 @@
+@layer base {
+  :root {
+    --adw-bg-color: #fafafa;
+    --adw-fg-color: #2e3436;
+    --adw-card-bg: #ffffff;
+    --adw-card-border: rgba(0, 0, 0, 0.08);
+    --adw-headerbar-bg: #ebebeb;
+    --adw-headerbar-border: rgba(0, 0, 0, 0.12);
+    --adw-accent-color: #3584e4;
+    --adw-accent-hover: #1c71d8;
+    --adw-accent-active: #1a5fb4;
+    --adw-destructive-color: #e01b24;
+    --adw-success-color: #33d17a;
+    --adw-warning-color: #e5a50a;
+    --adw-button-hover: rgba(0, 0, 0, 0.06);
+    --adw-button-active: rgba(0, 0, 0, 0.12);
+    --adw-focus-ring: rgba(53, 132, 228, 0.4);
+  }
+
+  .dark {
+    --adw-bg-color: #242424;
+    --adw-fg-color: #ffffff;
+    --adw-card-bg: #303030;
+    --adw-card-border: rgba(255, 255, 255, 0.08);
+    --adw-headerbar-bg: #303030;
+    --adw-headerbar-border: rgba(255, 255, 255, 0.12);
+    --adw-accent-color: #3584e4;
+    --adw-accent-hover: #1c71d8;
+    --adw-accent-active: #1a5fb4;
+    --adw-destructive-color: #e01b24;
+    --adw-success-color: #33d17a;
+    --adw-warning-color: #e5a50a;
+    --adw-button-hover: rgba(255, 255, 255, 0.08);
+    --adw-button-active: rgba(255, 255, 255, 0.14);
+    --adw-focus-ring: rgba(53, 132, 228, 0.5);
+  }
+}
+
+/* GNOME Window Controls */
+.gnome-window-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+  background-color: rgba(0, 0, 0, 0.06);
+  color: var(--adw-fg-color);
+}
+
+.dark .gnome-window-btn {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.gnome-window-btn:hover {
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
+.dark .gnome-window-btn:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+.gnome-window-btn-close:hover {
+  background-color: var(--adw-destructive-color) !important;
+  color: #ffffff !important;
+}
+
+/* Drag region per CSD Electron */
+.app-drag-region {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

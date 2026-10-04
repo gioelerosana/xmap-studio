@@ -1,0 +1,26 @@
+{
+  "name": "xmap-studio-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "pnpm --filter @xmap/web dev",
+    "build:web": "pnpm --filter @xmap/web build",
+    "dev:desktop": "pnpm --filter @xmap/desktop dev",
+    "build:desktop": "pnpm --filter @xmap/desktop build",
+    "build:core": "pnpm --filter @xmap/core build",
+    "build:ui": "pnpm --filter @xmap/ui-kit build",
+    "test": "pnpm --filter @xmap/core test",
+    "build": "pnpm --filter @xmap/core build && pnpm --filter @xmap/ui-kit build && pnpm --filter @xmap/web build && pnpm --filter @xmap/desktop build"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@resvg/resvg-js",
+      "electron"
+    ]
+  }
+}

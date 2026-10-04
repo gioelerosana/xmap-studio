@@ -1,8 +1,14 @@
 # Build Rust (copre anche src-tauri/target e xtask/target)
 target/
 
+# Node & PNPM
+node_modules/
+**/node_modules/
+.pnpm-store/
+
 # Artefatti di distribuzione
 dist/
+**/dist/
 *.AppImage
 
 # Renderer MathJax: rigenerato automaticamente da build.rs
