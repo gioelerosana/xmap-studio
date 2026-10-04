@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Companion desktop per XMind: equazioni LaTeX native ed editing avanzato"
 edition = "2021"
 rust-version = "1.77"
+default-run = "xmap-studio"
 
 [lib]
 name = "xmap_studio_lib"
@@ -26,6 +27,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 tempfile = "3"
 flate2 = "1"
 tar = "0.4"
+pangocairo = "0.22"
+cairo-rs = { version = "0.22", features = ["png"] }
 
 [build-dependencies]
 flate2 = "1"

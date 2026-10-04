@@ -73,7 +73,7 @@ sudo apt install libgtk-4-dev libadwaita-1-dev nodejs npm
 ```bash
 cargo run                 # avvio in sviluppo
 cargo build --release     # binario in target/release/
-cargo test                # 30 unit + 2 end-to-end (gli skip sono attesi)
+cargo test                # 90 unit + 7 end-to-end (gli skip sono attesi)
 cargo fmt                 # formattazione
 cargo clippy --all-targets
 cargo xtask appimage      # AppImage in dist/
@@ -197,9 +197,37 @@ cargo run --example inject -- \
   "Unione" 'A \cup B = B \iff A \subseteq B'
 ```
 
+### Verificare un campo di formato su XMind reale
+
+Non serve una licenza Pro né pilotare la GUI: il binario XMind installato
+contiene il serializer di `content.json` e i cataloghi (marker, strutture), e le
+mappe salvate sono su disco.
+
+1. **Bundle XMind**: `app.asar` in
+   `~/.local/share/flatpak/app/net.xmind.XMind/current/active/files/main/resources/`
+   (build verificata: `buildVersion 26.03.04129`; per installazioni non Flatpak
+   cercare `resources/app.asar` accanto all'eseguibile).
+2. **Cerca il campo/provider**:
+   `rg -a -o '.{80}NOME_CAMPO.{160}' .../app.asar`. Il serializer di un topic è
+   la funzione che destruttura `{id, classes, title, notes, labels, imageSource,
+   …, markers, structureClass}` e costruisce l'oggetto JSON (`j.notes`,
+   `j.markers`, `j.boundaries`, `j.summaries`, …). L'enum dei provider
+   (`AudioNotes:"org.xmind.ui.audionotes"`, `Equation`, `Numbering`, `Task`, …)
+   è la fonte autorevole: un provider non presente lì **non esiste**.
+3. **Incrocia con i file reali**: `~/.var/app/net.xmind.XMind/config/Xmind/Electron v3/vana/file-cache/**/*.xmind`
+   e i backup nel Trash. Estrai `content.json` con `unzip -p FILE.xmind content.json`
+   e controlla i campi osservati.
+4. **Aggiorna la doc**: `docs/PRODUCT.md` §3 (stato/campi/provider) e, se cambia
+   lo schema o una regola, `docs/XMIND-FORMAT.md`.
+
+Un campo si dice **Confermato** solo se compare nel serializer o in un file
+reale; il *lock* della versione Free, non deducibile offline, resta l'unico
+punto da verificare in UI.
+
 ### Aggiungere una regola di formato
 
-1. Leggi [`docs/XMIND-FORMAT.md`](docs/XMIND-FORMAT.md).
+1. Leggi [`docs/XMIND-FORMAT.md`](docs/XMIND-FORMAT.md) e verifica il campo
+   reale con la ricetta §"Verificare un campo di formato su XMind reale".
 2. Implementa la modifica minima in `model.rs` / `equation.rs` / `validate.rs`.
 3. Aggiungi un test che dimostri la regola.
 4. Aggiorna `docs/XMIND-FORMAT.md` e, se serve, il `README.md`.

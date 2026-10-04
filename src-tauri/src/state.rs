@@ -54,6 +54,43 @@ pub struct SheetDto {
     pub id: Option<String>,
     pub title: String,
     pub topics: Vec<TopicView>,
+    pub relationships: Vec<RelationshipView>,
+}
+
+/// Una relazione della sheet, ridotta all'essenziale per la UI.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipView {
+    pub id: String,
+    pub end1_id: String,
+    pub end2_id: String,
+    pub title: String,
+}
+
+/// Un boundary con il suo intervallo leggibile.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoundaryView {
+    pub id: String,
+    pub range: String,
+}
+
+/// Un sommario: id del topic di sommario e intervallo coperto.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryView {
+    pub id: String,
+    pub range: String,
+}
+
+/// Task del blocco, ridotto ai campi gestiti.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskView {
+    pub priority: Option<i64>,
+    pub progress: Option<i64>,
+    pub start_date: Option<String>,
+    pub due_date: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -69,8 +106,27 @@ pub struct TopicView {
     pub kind: &'static str,
     pub latex: Option<String>,
     pub image_src: Option<String>,
+    /// Dimensioni logiche dichiarate da XMind per l'immagine (px), se presenti.
+    pub image_w: Option<f64>,
+    pub image_h: Option<f64>,
+    /// Testo delle note (`plain`), vuoto se assenti.
+    pub notes: String,
+    /// `"icon"`, `"block"` o `None` (predefinito di XMind).
+    pub notes_display: Option<String>,
+    pub labels: Vec<String>,
+    pub markers: Vec<String>,
+    pub href: Option<String>,
     pub path: Vec<String>,
     pub child_count: usize,
+    pub boundaries: Vec<BoundaryView>,
+    pub summaries: Vec<SummaryView>,
+    pub task: Option<TaskView>,
+    /// Posizione esplicita dichiarata per topic liberi (`position: { x, y }`).
+    pub position: Option<(f64, f64)>,
+    /// Larghezza custom del topic (`customWidth`), se impostata in XMind.
+    pub custom_width: Option<f64>,
+    /// Colore di riempimento del ramo (`svg:fill`), se impostato.
+    pub fill_color: Option<String>,
 }
 
 impl OpenWorkbook {
@@ -156,9 +212,18 @@ impl OpenWorkbook {
             .entries
             .shift_remove("Thumbnails/thumbnail.png");
 
-        // 3) manifest: registra tutte le risorse + content/metadata
+        // 3) manifest: registra tutte le risorse + content/metadata, più gli
+        //    allegati (entry `attachments/…`, che non sono risorse).
         let resource_names: Vec<String> = self.archive.resources.keys().cloned().collect();
         validate::refresh_manifest(&mut self.manifest, resource_names.into_iter(), true);
+        let attachments: Vec<String> = self
+            .archive
+            .entries
+            .keys()
+            .filter(|k| k.starts_with("attachments/"))
+            .cloned()
+            .collect();
+        validate::register_entries(&mut self.manifest, attachments.into_iter());
         let manifest_bytes = serde_json::to_vec(&self.manifest).map_err(|e| {
             ErrorPayload::new(CODE_FORMAT, format!("serializzazione manifest: {e}"))
         })?;
@@ -274,11 +339,22 @@ impl OpenWorkbook {
                     &mut topics,
                 );
             }
+            let relationships = sheet
+                .relationships_list()
+                .iter()
+                .map(|r| RelationshipView {
+                    id: r.id.clone().unwrap_or_default(),
+                    end1_id: r.end1_id.clone().unwrap_or_default(),
+                    end2_id: r.end2_id.clone().unwrap_or_default(),
+                    title: r.title.clone().unwrap_or_default(),
+                })
+                .collect();
             out.push(SheetDto {
                 index,
                 id: sheet.id.clone(),
                 title: sheet_title,
                 topics,
+                relationships,
             });
         }
         out
@@ -344,9 +420,41 @@ fn visit(
         display_title: display_title(topic),
         kind: kind_of(topic),
         latex: topic.latex().map(str::to_string),
-        image_src: topic.image_src().map(str::to_string),
+        image_src: topic.image_src().map(str::to_string).or_else(|| topic.latex().map(|l| format!("latex:{}", l))),
+        image_w: topic.image_size_px().map(|(w, _)| w),
+        image_h: topic.image_size_px().map(|(_, h)| h),
+        notes: topic.notes_text().map(str::to_string).unwrap_or_default(),
+        notes_display: topic.notes_display.clone(),
+        labels: topic.labels_list().to_vec(),
+        markers: topic.marker_ids().map(str::to_string).collect(),
+        href: topic.href_str().map(str::to_string),
         path,
         child_count: topic.child_count(),
+        boundaries: topic
+            .boundaries_list()
+            .iter()
+            .map(|b| BoundaryView {
+                id: b.id.clone().unwrap_or_default(),
+                range: b.range.clone().unwrap_or_default(),
+            })
+            .collect(),
+        summaries: topic
+            .summaries_list()
+            .iter()
+            .map(|s| SummaryView {
+                id: s.topic_id.clone().unwrap_or_default(),
+                range: s.range.clone().unwrap_or_default(),
+            })
+            .collect(),
+        task: crate::task::read(topic).map(|t| TaskView {
+            priority: t.priority,
+            progress: t.progress,
+            start_date: t.start_date,
+            due_date: t.due_date,
+        }),
+        position: topic.position(),
+        custom_width: topic.custom_width(),
+        fill_color: topic.fill_color().map(str::to_string),
     });
 
     ancestors.push(display_title(topic));

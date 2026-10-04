@@ -49,6 +49,68 @@ pub struct Sheet {
     pub extensions: Option<Vec<Extension>>,
     #[serde(default, skip_serializing_if = "is_none")]
     pub theme: Option<Value>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub relationships: Option<Vec<Relationship>>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Una relazione tra due topic. Vive a livello **sheet** e riferisce i due capi
+/// per id (`end1Id` = sorgente, `end2Id` = destinazione).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Relationship {
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub class: Option<String>,
+    #[serde(rename = "end1Id", default, skip_serializing_if = "is_none")]
+    pub end1_id: Option<String>,
+    #[serde(rename = "end2Id", default, skip_serializing_if = "is_none")]
+    pub end2_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "attributedTitle", default, skip_serializing_if = "is_none")]
+    pub attributed_title: Option<Value>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Un boundary (cornice) attorno a un intervallo di figli del topic che lo
+/// possiede. `range` è `"(start,end)"` con indici inclusivi sui figli
+/// `attached`, oppure `"master"` quando copre l'intero ramo.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Boundary {
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub class: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub range: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "attributedTitle", default, skip_serializing_if = "is_none")]
+    pub attributed_title: Option<Value>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Il descrittore di un summary, sul topic **genitore**. La doppia
+/// rappresentazione è obbligatoria: il topic reale del sommario sta in
+/// `children.summary` con lo stesso id di `topic_id`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Summary {
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub class: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub range: Option<String>,
+    #[serde(rename = "topicId", default, skip_serializing_if = "is_none")]
+    pub topic_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "attributedTitle", default, skip_serializing_if = "is_none")]
+    pub attributed_title: Option<Value>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -66,9 +128,21 @@ pub struct Topic {
     #[serde(default, skip_serializing_if = "is_none")]
     pub image: Option<Image>,
     #[serde(default, skip_serializing_if = "is_none")]
+    pub notes: Option<Notes>,
+    #[serde(rename = "notesDisplay", default, skip_serializing_if = "is_none")]
+    pub notes_display: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub labels: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub markers: Option<Vec<Marker>>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "is_none")]
     pub extensions: Option<Vec<Extension>>,
     #[serde(default, skip_serializing_if = "is_none")]
-    pub summaries: Option<Value>,
+    pub summaries: Option<Vec<Summary>>,
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub boundaries: Option<Vec<Boundary>>,
     #[serde(rename = "titleUnedited", default, skip_serializing_if = "is_none")]
     pub title_unedited: Option<bool>,
     #[serde(rename = "structureClass", default, skip_serializing_if = "is_none")]
@@ -105,6 +179,39 @@ pub struct Image {
     pub height: Option<serde_json::Number>,
     #[serde(rename = "isMathJaxImage", default, skip_serializing_if = "is_none")]
     pub is_mathjax_image: Option<bool>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Una metà di `notes`: XMind scrive `plain` (testo) e `realHTML` (XHTML).
+/// Entrambe hanno la forma `{ "content": "…" }`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NotesPart {
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub content: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Note di un topic. XMind scrive **entrambe** le rappresentazioni; scriverne
+/// una sola può desincronizzare la UI. La forma su disco è:
+/// `{ "plain": { "content": … }, "realHTML": { "content": … } }`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Notes {
+    #[serde(default, skip_serializing_if = "is_none")]
+    pub plain: Option<NotesPart>,
+    #[serde(rename = "realHTML", default, skip_serializing_if = "is_none")]
+    pub real_html: Option<NotesPart>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Un marker (icona) applicato a un topic: su disco `{ "markerId": "…" }`.
+/// Il catalogo degli id validi è in `crate::markers`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Marker {
+    #[serde(rename = "markerId", default, skip_serializing_if = "is_none")]
+    pub marker_id: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -190,8 +297,89 @@ impl Topic {
         self.image.as_ref()?.src.as_deref()
     }
 
+    /// Dimensioni logiche dichiarate per l'immagine (px), se entrambe presenti.
+    pub fn image_size_px(&self) -> Option<(f64, f64)> {
+        let img = self.image.as_ref()?;
+        let w = img.width.as_ref()?.as_f64()?;
+        let h = img.height.as_ref()?.as_f64()?;
+        Some((w, h))
+    }
+
     pub fn title_str(&self) -> &str {
         self.title.as_deref().unwrap_or("")
+    }
+
+    /// Testo delle note: preferisce `plain`, ripiega su `realHTML`. `None` se
+    /// assenti o vuote. Il fallback non viene ripulito dall'HTML: serve solo a
+    /// mostrare qualcosa nell'editor, che riscrive entrambe le metà.
+    pub fn notes_text(&self) -> Option<&str> {
+        let notes = self.notes.as_ref()?;
+        let text = notes
+            .plain
+            .as_ref()
+            .and_then(|p| p.content.as_deref())
+            .or_else(|| notes.real_html.as_ref().and_then(|p| p.content.as_deref()))?;
+        (!text.is_empty()).then_some(text)
+    }
+
+    pub fn labels_list(&self) -> &[String] {
+        self.labels.as_deref().unwrap_or(&[])
+    }
+
+    pub fn marker_ids(&self) -> impl Iterator<Item = &str> {
+        self.markers
+            .iter()
+            .flatten()
+            .filter_map(|m| m.marker_id.as_deref())
+    }
+
+    pub fn href_str(&self) -> Option<&str> {
+        self.href.as_deref().filter(|h| !h.is_empty())
+    }
+
+    pub fn summaries_list(&self) -> &[Summary] {
+        self.summaries.as_deref().unwrap_or(&[])
+    }
+
+    pub fn boundaries_list(&self) -> &[Boundary] {
+        self.boundaries.as_deref().unwrap_or(&[])
+    }
+
+    /// Estensione con il provider indicato, se presente.
+    pub fn extension(&self, provider: &str) -> Option<&Extension> {
+        self.extensions
+            .as_ref()?
+            .iter()
+            .find(|e| e.provider.as_deref() == Some(provider))
+    }
+
+    /// Colore di riempimento del ramo (`style.properties["svg:fill"]`).
+    pub fn fill_color(&self) -> Option<&str> {
+        self.extra
+            .get("style")?
+            .get("properties")?
+            .get("svg:fill")?
+            .as_str()
+    }
+
+    /// Posizione esplicita dichiarata per topic liberi (`position: { x, y }`).
+    pub fn position(&self) -> Option<(f64, f64)> {
+        let pos = self.extra.get("position")?.as_object()?;
+        let x = pos.get("x")?.as_f64()?;
+        let y = pos.get("y")?.as_f64()?;
+        Some((x, y))
+    }
+
+    /// Larghezza custom del topic (`customWidth`), se impostata dall'utente in XMind.
+    pub fn custom_width(&self) -> Option<f64> {
+        self.extra
+            .get("customWidth")
+            .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+    }
+
+    /// Numero di figli `attached` (gli indici usati da boundary/summary).
+    pub fn attached_count(&self) -> usize {
+        self.group("attached").map(Vec::len).unwrap_or(0)
     }
 }
 
@@ -199,6 +387,24 @@ impl Sheet {
     pub fn title_str(&self) -> &str {
         self.title.as_deref().unwrap_or("")
     }
+
+    pub fn relationships_list(&self) -> &[Relationship] {
+        self.relationships.as_deref().unwrap_or(&[])
+    }
+}
+
+/// Interpreta `"(start,end)"` (indici inclusivi) in una coppia ordinata.
+pub fn parse_range(range: &str) -> Option<(usize, usize)> {
+    let inner = range.strip_prefix('(')?.strip_suffix(')')?;
+    let (a, b) = inner.split_once(',')?;
+    let start = a.trim().parse::<usize>().ok()?;
+    let end = b.trim().parse::<usize>().ok()?;
+    Some((start.min(end), start.max(end)))
+}
+
+/// Formatta una coppia di indici come range di XMind.
+pub fn format_range(start: usize, end: usize) -> String {
+    format!("({},{})", start.min(end), start.max(end))
 }
 
 /// Dimensione font del titolo del topic in px CSS, se dichiarata.
@@ -269,6 +475,21 @@ pub fn find_topic<'a>(sheets: &'a [Sheet], id: &str) -> Option<&'a Topic> {
     None
 }
 
+/// Indice della sheet che contiene il topic `id`.
+pub fn sheet_index_of(sheets: &[Sheet], id: &str) -> Option<usize> {
+    sheets.iter().position(|sheet| {
+        sheet
+            .root_topic
+            .as_ref()
+            .map(|root| {
+                let mut all = Vec::new();
+                walk_topic(root, &mut all);
+                all.iter().any(|t| t.id.as_deref() == Some(id))
+            })
+            .unwrap_or(false)
+    })
+}
+
 pub fn find_topic_mut<'a>(sheets: &'a mut [Sheet], id: &str) -> Option<&'a mut Topic> {
     for sheet in sheets.iter_mut() {
         if let Some(root) = sheet.root_topic.as_mut() {
@@ -309,6 +530,63 @@ fn descend<'a>(topic: &'a mut Topic, path: &[(usize, usize)], i: usize) -> &'a m
     let (gi, ci) = path[i];
     let children = topic.group_mut(CHILD_GROUPS[gi]).unwrap();
     descend(&mut children[ci], path, i + 1)
+}
+
+/// Imposta (o rimuove) il colore di riempimento del ramo. Crea/rimuove i
+/// contenitori `style`/`properties` solo quando serve, senza toccare le altre
+/// proprietà di stile già presenti.
+pub fn set_fill_color(topic: &mut Topic, color: Option<&str>) {
+    let color = color.map(str::trim).filter(|c| !c.is_empty());
+    if color.is_none() {
+        let empty = if let Some(props) = topic
+            .extra
+            .get_mut("style")
+            .and_then(|s| s.get_mut("properties"))
+            .and_then(|p| p.as_object_mut())
+        {
+            props.remove("svg:fill");
+            props.is_empty()
+        } else {
+            false
+        };
+        if empty {
+            remove_empty_style(topic);
+        }
+        return;
+    }
+    let style = topic
+        .extra
+        .entry("style".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !style.is_object() {
+        *style = Value::Object(Map::new());
+    }
+    let props = style
+        .as_object_mut()
+        .unwrap()
+        .entry("properties".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !props.is_object() {
+        *props = Value::Object(Map::new());
+    }
+    props.as_object_mut().unwrap().insert(
+        "svg:fill".to_string(),
+        Value::String(color.unwrap().to_string()),
+    );
+}
+
+/// Elimina `style` se è rimasto senza proprietà.
+fn remove_empty_style(topic: &mut Topic) {
+    let empty = topic
+        .extra
+        .get("style")
+        .and_then(|s| s.get("properties"))
+        .and_then(|p| p.as_object())
+        .map(|p| p.is_empty())
+        .unwrap_or(false);
+    if empty {
+        topic.extra.remove("style");
+    }
 }
 
 /// Raccoglie tutti i riferimenti `xap:resources/<nome>` presenti in un valore
@@ -443,6 +721,132 @@ mod tests {
         assert!(find_topic(&typed, "t1").unwrap().is_equation());
         assert!(!find_topic(&typed, "t1").unwrap().is_plain_image());
         assert!(find_topic(&typed, "t2").unwrap().latex().is_none());
+    }
+
+    const RICH: &str = r##"[
+      {
+        "id": "s",
+        "rootTopic": {
+          "id": "r",
+          "title": "x",
+          "notes": {
+            "plain": {"content": "riga1\nriga2", "extraNote": 1},
+            "realHTML": {"content": "<p>riga1</p>", "x": 2}
+          },
+          "notesDisplay": "block",
+          "labels": ["alfa", "beta"],
+          "markers": [{"markerId": "priority-1", "extraMarker": 3}, {"markerId": "flag-red"}],
+          "href": "https://example.org",
+          "unknownMeta": {"z": 9}
+        }
+      }
+    ]"##;
+
+    #[test]
+    fn round_trip_preserves_rich_topic_fields() {
+        let original = parse(RICH);
+        let typed: Vec<Sheet> = serde_json::from_value(original.clone()).unwrap();
+        let reserialized = serde_json::to_value(&typed).unwrap();
+        assert_eq!(original, reserialized, "note/label/marker/href alterati");
+    }
+
+    #[test]
+    fn rich_topic_helpers() {
+        let typed: Vec<Sheet> = serde_json::from_str(RICH).unwrap();
+        let root = typed[0].root_topic.as_ref().unwrap();
+        assert_eq!(root.notes_text(), Some("riga1\nriga2"));
+        assert_eq!(root.labels_list(), ["alfa", "beta"]);
+        assert_eq!(
+            root.marker_ids().collect::<Vec<_>>(),
+            vec!["priority-1", "flag-red"]
+        );
+        assert_eq!(root.href_str(), Some("https://example.org"));
+    }
+
+    #[test]
+    fn notes_fall_back_to_real_html_and_empty_is_none() {
+        let mut root: Topic = serde_json::from_value(json!({
+            "id": "r",
+            "notes": {"realHTML": {"content": "<p>solo html</p>"}}
+        }))
+        .unwrap();
+        assert_eq!(root.notes_text(), Some("<p>solo html</p>"));
+
+        root.notes = Some(Notes {
+            plain: Some(NotesPart {
+                content: Some(String::new()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert_eq!(root.notes_text(), None);
+    }
+
+    const STRUCTURE: &str = r##"[
+      {
+        "id": "s",
+        "relationships": [
+          {"id": "r1", "class": "relationship", "end1Id": "a", "end2Id": "b",
+           "title": "collega", "controlPoints": {"0": {"x": 1, "y": 2}}, "weirdRel": 1}
+        ],
+        "rootTopic": {
+          "id": "root",
+          "title": "x",
+          "children": {
+            "attached": [{"id": "a", "title": "A"}, {"id": "b", "title": "B"}],
+            "summary": [{"id": "sumtopic", "title": "sommario"}]
+          },
+          "boundaries": [
+            {"id": "bd1", "class": "boundary", "range": "(0,1)", "title": "gruppo", "extraBd": 2}
+          ],
+          "summaries": [
+            {"id": "sm1", "class": "summary", "range": "(0,0)", "topicId": "sumtopic"}
+          ]
+        }
+      }
+    ]"##;
+
+    #[test]
+    fn round_trip_preserves_structure_fields() {
+        let original = parse(STRUCTURE);
+        let typed: Vec<Sheet> = serde_json::from_value(original.clone()).unwrap();
+        let reserialized = serde_json::to_value(&typed).unwrap();
+        assert_eq!(
+            original, reserialized,
+            "relationship/boundary/summary alterati"
+        );
+    }
+
+    #[test]
+    fn structure_helpers_expose_lists() {
+        let typed: Vec<Sheet> = serde_json::from_str(STRUCTURE).unwrap();
+        assert_eq!(typed[0].relationships_list().len(), 1);
+        let root = typed[0].root_topic.as_ref().unwrap();
+        assert_eq!(root.boundaries_list().len(), 1);
+        assert_eq!(root.summaries_list().len(), 1);
+        assert_eq!(root.attached_count(), 2);
+        assert_eq!(parse_range("(0,2)"), Some((0, 2)));
+        assert_eq!(parse_range("master"), None);
+        assert_eq!(format_range(2, 0), "(0,2)");
+    }
+
+    #[test]
+    fn fill_color_is_set_and_removed_without_losing_style() {
+        let mut t: Topic = serde_json::from_value(json!({
+            "id": "t",
+            "style": {"id": "s", "properties": {"fo:font-size": "14pt"}}
+        }))
+        .unwrap();
+        set_fill_color(&mut t, Some("#ff0000"));
+        assert_eq!(t.fill_color(), Some("#ff0000"));
+        // la proprietà di stile preesistente resta
+        assert_eq!(
+            t.extra["style"]["properties"]["fo:font-size"],
+            json!("14pt")
+        );
+        set_fill_color(&mut t, None);
+        assert_eq!(t.fill_color(), None);
+        assert!(t.extra["style"]["properties"].get("fo:font-size").is_some());
     }
 
     #[test]

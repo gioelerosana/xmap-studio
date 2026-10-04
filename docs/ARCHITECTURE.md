@@ -46,7 +46,15 @@ Tutto vive in `src-tauri/src/`.
 | `model.rs` | modello tipizzato di `content.json`, traversal, `extra` preservato | `model.rs:69` |
 | `archive.rs` | lettura/scrittura ZIP, hashing, scrittura atomica, backup nascosti con retention | `archive.rs:59`, `archive.rs:209` |
 | `equation.rs` | applica/rimuove un'equazione su un topic | `equation.rs:61`, `equation.rs:135` |
-| `edit.rs` | rinomina, aggiunge, elimina e sposta topic (struttura) | `edit.rs:59`, `edit.rs:66`, `edit.rs:158` |
+| `edit.rs` | rinomina, aggiunge, elimina e sposta topic; note/etichette/marker/link | `edit.rs:59`, `edit.rs:66`, `edit.rs:158` |
+| `export.rs` | intera mappa in Markdown / OPML / outliner (solo modello, nessuno schema) | `export.rs:13`, `export.rs:119`, `export.rs:44` |
+| `import.rs` | parse Markdown/OPML in albero e conversione in `Topic` | `import.rs:24`, `import.rs:82`, `import.rs:295` |
+| `merge.rs` | unione di `.xmind` (id riassegnati) e divisione di un ramo in mappa autonoma | `merge.rs:24`, `merge.rs:141`, `merge.rs:170` |
+| `media.rs` | allegati: entry `attachments/<id>.bin` + link `xap:attachments/…` | `media.rs:22`, `media.rs:37` |
+| `task.rs` | extension `org.xmind.ui.task` (priorità, avanzamento, date) | `task.rs:39`, `task.rs:60` |
+| `layout.rs` | layout a Logic Chart orizzontale (radice in alto a sinistra) puro, guidato dai DTO, con collapse, colori di ramo e misure flessibili | `layout.rs:1` |
+| `map_view.rs` | vista interattiva della mappa ad albero (GTK4 + Cairo + Pango) con pan, zoom, collapse, rendering di immagini/equazioni e colori per ramo | `map_view.rs:1` |
+| `markers.rs` | catalogo marker verificato dal binario XMind | `markers.rs:1` |
 | `mathjax.rs` | scoperta ed esecuzione del renderer Node | `mathjax.rs:30`, `mathjax.rs:90` |
 | `raster.rs` | SVG → PNG con resvg/tiny-skia | `raster.rs:10` |
 | `renderer_assets.rs` | estrazione del renderer incorporato in cache | `renderer_assets.rs:15` |
@@ -59,7 +67,7 @@ Moduli fuori da `src-tauri/src/`:
 
 - `src-tauri/examples/inject.rs` — CLI per generare file di prova.
 - `src-tauri/tests/e2e_real_map.rs` — test end-to-end su mappa reale.
-- `xtask/src/main.rs` — task di build (`cargo xtask appimage`).
+- `xtask/src/main.rs` — task di build (`cargo xtask appimage`, `cargo xtask install`).
 
 ## Flusso dati
 
@@ -77,6 +85,12 @@ controller.open(path)
 `content.json` viene deserializzato in `Vec<Sheet>`: i campi noti sono tipizzati,
 tutto il resto finisce in `#[serde(flatten)] extra` e viene riserializzato
 identico. Vedi `model.rs:69`.
+
+Apertura dal file manager: l'app è registrata su `application/xmind`
+(`HANDLES_OPEN`). Il doppio clic o "Apri con…" passa il percorso via `Exec=… %f`
+del `.desktop`, GApplication emette `open` (`gui.rs:165`) e ogni file
+ricevuto ottiene una finestra indipendente con `controller.open`; così
+un'apertura esterna non sovrascrive modifiche non salvate in un'altra finestra.
 
 ### Applicazione di un'equazione
 
@@ -116,7 +130,82 @@ controller.save(force)
 Lo ZIP viene riaperto e validato in memoria prima di sovrascrivere qualsiasi
 cosa. Se la validazione fallisce, il file dell'utente non viene toccato.
 
-### Anteprima
+### Export / import testuale
+
+```
+controller.export_outline(format, path)
+  → export::to_markdown / to_opml        (solo modello in memoria)
+  → std::fs::write (file NUOVO dell'utente, non il .xmind)
+
+controller.import_outline(format, path)
+  → import::parse → OutlineNode          (parser senza dipendenze)
+  → import::node_to_topic + renderer     (le `$…$` diventano equazioni native)
+  → nuova Sheet in wb.content + commit   (nessuna scrittura finché non salvi)
+```
+
+### Unione e divisione (Fase 2)
+
+```
+controller.merge_workbook(path)
+  → OpenWorkbook::open del secondo file
+  → merge::merge_sheets: remap_ids (id + xmind:#id/topicId/end1Id/end2Id)
+  → copia risorse (content-addressed) e allegati mancanti
+  → sheet accodate + commit              (nessuna scrittura finché non salvi)
+
+controller.split_topic(topic_id, out_path)
+  → merge::standalone_sheet              (il ramo diventa rootTopic)
+  → solo risorse/allegati referenziati dal ramo
+  → merge::build_standalone_bytes        (content+metadata+manifest, validato)
+  → archive::atomic_write                (unica scrittura su disco)
+```
+
+### Struttura (Fase 3)
+
+Relazioni (a livello sheet), boundary e sommari (sui figli del topic) sono
+tipizzati in `model.rs` e manipolati da `edit.rs`. `controller.add_topic_*` e
+`controller.remove_topic_*` espongono le operazioni; `edit::remove_topic`
+riallinea gli intervalli `(start,end)` e rimuove relazioni/descrittori orfani.
+Il sommario è scritto in **doppia rappresentazione** (descrittore + topic in
+`children.summary`).
+
+### Allegati (Fase 4)
+
+```
+controller.attach_file_to_topic(topic_id, path)
+  → media::attach_file: entry `attachments/<uuid>.bin` in archive.entries
+  → edit::set_href("xap:attachments/<uuid>.bin") + titolo = nome file
+  → al salvataggio build_bytes registra l'entry nel manifest
+```
+
+### Produttività (Fase 5)
+
+- Task: `task.rs` legge/scrive l'extension `org.xmind.ui.task` preservando
+  `dependencies`; l'outliner è `export::to_outline` in sola lettura.
+- Colore del ramo: `model::set_fill_color` tocca `style.properties["svg:fill"]`
+  senza perdere le altre proprietà di stile.
+
+### Vista mappa (Fase 6/7)
+
+```
+gui::refresh
+  → controller.workbook()                     (DTO: sheets/topics)
+  → controller.resource_bytes(src) per i topic con image_src (PNG equazioni/immagini)
+  → map_view.set_images(bytes) → cache + superfici Cairo decodificate
+  → map_view.set_workbook(sheets)
+       → layout::layout_single_sheet → Layout { nodes, edges, bounds }  (no GTK)
+       → DrawingArea.set_draw_func: cairo (card, curve, PNG) + Pango (testo)
+```
+
+Il layout è a **Logic Chart orizzontale** (radice in alto a sinistra, rami di
+primo livello in colonna, sottoalberi verso destra) come XMind: i rami di primo
+livello sono box colorati, i livelli profondi sono testo nudo. I colori dei rami
+arrivano dal `svg:fill` esplicito o, in mancanza, dalla palette "Colored Branch"
+del tema Snowbrush (`layout::BRANCH_COLORS`); i connettori sono a gomito col bus
+verticale condiviso tra fratelli. Le equazioni e le immagini semplici sono
+disegnate come PNG decodificati (`cairo::ImageSurface`), non come segnaposto di
+testo. Il layout resta puro e testato a parte in `layout.rs`.
+
+### Anteprima della formula (editor)
 
 ```
 gui::schedule_preview  (debounce ~220 ms)
