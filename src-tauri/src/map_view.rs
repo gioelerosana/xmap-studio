@@ -103,10 +103,10 @@ impl MapPalette {
 }
 
 /// Larghezza massima del contenuto testuale prima di andare a capo.
-const TEXT_MAX_W: f64 = 260.0;
+const TEXT_MAX_W: f64 = 400.0;
 /// Dimensioni massime dell'immagine/equazione disegnata dentro una card.
-const IMG_MAX_W: f64 = 260.0;
-const IMG_MAX_H: f64 = 180.0;
+const IMG_MAX_W: f64 = 400.0;
+const IMG_MAX_H: f64 = 260.0;
 
 /// Stato interno della vista mappa.
 type SelectCallback = Box<dyn Fn(&str)>;
@@ -218,8 +218,9 @@ impl<'a> NodeMetrics for CanvasMetrics<'a> {
             &node.title
         };
         let boxed = node_is_boxed(node);
+        let max_text_w = node.custom_width.unwrap_or(TEXT_MAX_W);
         let key = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{:?}:{:?}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{:?}:{:?}:{}:{:?}",
             node.id,
             text,
             node.depth,
@@ -230,6 +231,7 @@ impl<'a> NodeMetrics for CanvasMetrics<'a> {
             node.image_w,
             node.image_h,
             node.has_notes,
+            node.custom_width,
         );
         if let Some(&size) = self.cache.borrow().get(&key) {
             return size;
@@ -244,10 +246,18 @@ impl<'a> NodeMetrics for CanvasMetrics<'a> {
                     .map(|s| (s.width() as f64, s.height() as f64))
             });
             if let Some((iw, ih)) = intrinsic {
-                let (dw, dh) = fit_size(iw, ih, IMG_MAX_W, IMG_MAX_H);
+                let (max_w, max_h) = if node.kind == "equation" || node.latex.is_some() {
+                    (650.0, 250.0)
+                } else {
+                    (IMG_MAX_W, IMG_MAX_H)
+                };
+                let (dw, dh) = fit_size(iw, ih, max_w, max_h);
                 let (pad_x, pad_y, min_w, min_h) = node_insets(node.depth, true);
                 let w = (dw + pad_x * 2.0).max(min_w);
-                let h = (dh + pad_y * 2.0).max(min_h);
+                let mut h = (dh + pad_y * 2.0).max(min_h);
+                if !node.markers.is_empty() || !node.labels.is_empty() || node.has_notes {
+                    h += 18.0;
+                }
                 let size = (w, h);
                 self.cache.borrow_mut().insert(key, size);
                 return size;
@@ -262,11 +272,11 @@ impl<'a> NodeMetrics for CanvasMetrics<'a> {
         // Prima passata alla larghezza massima per conoscere la larghezza reale
         // del testo; poi si ri-impagina alla larghezza effettiva scelta, così
         // misura e disegno coincidono riga per riga.
-        layout.set_width((TEXT_MAX_W * pango::SCALE as f64) as i32);
+        layout.set_width((max_text_w * pango::SCALE as f64) as i32);
         let (pw, _ph_at_max) = layout.pixel_size();
         let (pad_x, pad_y, min_w, min_h) = node_insets(node.depth, boxed);
         let min_content = (min_w - pad_x * 2.0).max(0.0);
-        let content_w = (pw as f64).clamp(min_content, TEXT_MAX_W);
+        let content_w = (pw as f64).clamp(min_content, max_text_w);
         layout.set_width((content_w * pango::SCALE as f64) as i32);
         let (_pw2, ph) = layout.pixel_size();
 
@@ -934,6 +944,23 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
         let _ = cr.stroke();
     }
 
+    // 4b. Relazioni / Collegamenti XMind (curve tratteggiate con freccia e titolo)
+    for rel in &l.relationships {
+        if rel.from >= l.nodes.len() || rel.to >= l.nodes.len() {
+            continue;
+        }
+        let from_node = &l.nodes[rel.from];
+        let to_node = &l.nodes[rel.to];
+        draw_relationship(
+            cr,
+            from_node,
+            to_node,
+            rel.title.as_deref(),
+            rel.accent.as_deref(),
+            &pal,
+        );
+    }
+
     // 5. Disegno nodi: box per centrale/rami, testo nudo per i livelli profondi.
     let selected_id = state.selected.borrow().clone();
 
@@ -1041,12 +1068,16 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
         let content_x = node.x + pad_x;
         let content_y = node.y + pad_y;
         let content_w = (node.w - pad_x * 2.0).max(20.0);
-        let content_h = (node.h - pad_y * 2.0).max(10.0);
+        let has_badges = !node.markers.is_empty() || !node.labels.is_empty() || node.has_notes;
+        let badge_reserve = if has_badges { 16.0 } else { 0.0 };
+        let content_h = (node.h - pad_y * 2.0 - badge_reserve).max(10.0);
 
         let drawn = node.image_src.as_deref().is_some_and(|src| {
             let Some(surface) = surface_for(src, &state.images, &state.surfaces) else {
                 return false;
             };
+            let is_equation = node.kind == "equation" || node.latex.is_some();
+            let text_color = (pal.text_r, pal.text_g, pal.text_b);
             draw_image(
                 cr,
                 content_x,
@@ -1055,6 +1086,8 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
                 content_h,
                 node.image_w.zip(node.image_h),
                 &surface,
+                is_equation,
+                text_color,
             );
             true
         });
@@ -1211,6 +1244,8 @@ fn draw_image(
     h: f64,
     logical_size: Option<(f64, f64)>,
     surface: &gtk::cairo::ImageSurface,
+    is_equation: bool,
+    text_color: (f64, f64, f64),
 ) {
     let sw = surface.width() as f64;
     let sh = surface.height() as f64;
@@ -1227,10 +1262,118 @@ fn draw_image(
     let _ = cr.save();
     cr.translate(dx, dy);
     cr.scale(scale_x, scale_y);
-    if cr.set_source_surface(surface, 0.0, 0.0).is_ok() {
-        cr.source().set_filter(gtk::cairo::Filter::Best);
+    if is_equation {
+        // Per le equazioni MathJax rasterizzate come inchiostro nero su alfa trasparente:
+        // usiamo la superficie come maschera per colorare i glifi col colore testo del tema,
+        // garantendo contrasto impeccabile sia in tema chiaro che scuro.
+        cr.set_source_rgb(text_color.0, text_color.1, text_color.2);
+        let _ = cr.mask_surface(surface, 0.0, 0.0);
+    } else {
+        if cr.set_source_surface(surface, 0.0, 0.0).is_ok() {
+            cr.source().set_filter(gtk::cairo::Filter::Best);
+        }
+        let _ = cr.paint();
     }
-    let _ = cr.paint();
+    let _ = cr.restore();
+}
+
+/// Disegna un collegamento/relazione tra due nodi (curva Bézier con tratteggio, freccia e titolo).
+fn draw_relationship(
+    cr: &gtk::cairo::Context,
+    n1: &crate::layout::LayoutNode,
+    n2: &crate::layout::LayoutNode,
+    title: Option<&str>,
+    accent: Option<&str>,
+    pal: &MapPalette,
+) {
+    let c1x = n1.x + n1.w / 2.0;
+    let c1y = n1.y + n1.h / 2.0;
+    let c2x = n2.x + n2.w / 2.0;
+    let c2y = n2.y + n2.h / 2.0;
+
+    let (sx, sy, ex, ey) = if c2x >= n1.x + n1.w {
+        // Target a destra
+        (n1.x + n1.w, c1y, n2.x, c2y)
+    } else if c2x + n2.w <= n1.x {
+        // Target a sinistra
+        (n1.x, c1y, n2.x + n2.w, c2y)
+    } else if c2y > c1y {
+        // Target sotto
+        (c1x, n1.y + n1.h, c2x, n2.y)
+    } else {
+        // Target sopra
+        (c1x, n1.y, c2x, n2.y + n2.h)
+    };
+
+    let dx = (ex - sx).abs() * 0.45;
+    let cp1x = if ex >= sx { sx + dx.max(30.0) } else { sx - dx.max(30.0) };
+    let cp1y = sy;
+    let cp2x = if ex >= sx { ex - dx.max(30.0) } else { ex + dx.max(30.0) };
+    let cp2y = ey;
+
+    let _ = cr.save();
+
+    let (r, g, b) = accent
+        .and_then(parse_hex_color)
+        .unwrap_or((pal.edge_r, pal.edge_g, pal.edge_b));
+
+    cr.set_source_rgba(r, g, b, 0.85);
+    cr.set_line_width(1.8);
+    cr.set_line_cap(gtk::cairo::LineCap::Round);
+
+    // Tratteggio elegante stile XMind
+    cr.set_dash(&[6.0, 4.0], 0.0);
+    cr.move_to(sx, sy);
+    cr.curve_to(cp1x, cp1y, cp2x, cp2y, ex, ey);
+    let _ = cr.stroke();
+
+    // Freccia al termine del collegamento (rivolta verso ex, ey)
+    cr.set_dash(&[], 0.0);
+    let angle = (ey - cp2y).atan2(ex - cp2x);
+    let arrow_len = 10.0;
+    let arrow_w = 4.5;
+    cr.move_to(ex, ey);
+    cr.line_to(
+        ex - arrow_len * angle.cos() + arrow_w * angle.sin(),
+        ey - arrow_len * angle.sin() - arrow_w * angle.cos(),
+    );
+    cr.line_to(
+        ex - arrow_len * angle.cos() - arrow_w * angle.sin(),
+        ey - arrow_len * angle.sin() + arrow_w * angle.cos(),
+    );
+    cr.close_path();
+    let _ = cr.fill();
+
+    // Etichetta del collegamento (titolo), se presente
+    if let Some(t) = title.filter(|s| !s.trim().is_empty()) {
+        let mx = 0.125 * sx + 0.375 * cp1x + 0.375 * cp2x + 0.125 * ex;
+        let my = 0.125 * sy + 0.375 * cp1y + 0.375 * cp2y + 0.125 * ey;
+
+        let layout = pangocairo::functions::create_layout(cr);
+        let mut desc = pango::FontDescription::new();
+        desc.set_family("sans-serif");
+        desc.set_size((9.0 * pango::SCALE as f64) as i32);
+        layout.set_font_description(Some(&desc));
+        layout.set_text(t);
+
+        let (tw, th) = layout.pixel_size();
+        let pw = tw as f64 + 14.0;
+        let ph = th as f64 + 6.0;
+        let px = mx - pw / 2.0;
+        let py = my - ph / 2.0;
+
+        rounded_rect(cr, px, py, pw, ph, 4.0);
+        cr.set_source_rgb(pal.card_bg_r, pal.card_bg_g, pal.card_bg_b);
+        let _ = cr.fill_preserve();
+        cr.set_source_rgba(r, g, b, 0.7);
+        cr.set_line_width(1.0);
+        let _ = cr.stroke();
+
+        cr.set_source_rgb(pal.text_r, pal.text_g, pal.text_b);
+        cr.move_to(px + 7.0, py + 3.0);
+        pangocairo::functions::show_layout(cr, &layout);
+    }
+
     let _ = cr.restore();
 }
 
@@ -1324,6 +1467,8 @@ mod tests {
             summaries: Vec::new(),
             task: None,
             fill_color: fill.map(str::to_string),
+            position: None,
+            custom_width: None,
         }
     }
 
@@ -1336,7 +1481,7 @@ mod tests {
             return;
         };
 
-        let topics = vec![
+        let mut topics = vec![
             topic("root", None, 0, "Funzioni", None),
             topic("b1", Some("root"), 1, "Definizione", None),
             topic(
@@ -1367,12 +1512,24 @@ mod tests {
             topic("t2", Some("b4"), 2, "date", None),
             topic("b5", Some("root"), 1, "Cardinalità", None),
         ];
+        let mut t_det = topic("det1", Some("root"), 1, "Schema suriettiva", None);
+        t_det.group = "detached".to_string();
+        t_det.notes = "Dimostrazione grafica".to_string();
+        topics.push(t_det);
+
+        let relationships = vec![crate::state::RelationshipView {
+            id: "r1".to_string(),
+            end1_id: "p1".to_string(),
+            end2_id: "det1".to_string(),
+            title: "grafico".to_string(),
+        }];
+
         let sheet = SheetDto {
             index: 0,
             id: Some("s1".into()),
             title: "Funzioni".into(),
             topics,
-            relationships: Vec::new(),
+            relationships,
         };
 
         let state = MapViewState {
@@ -1385,7 +1542,7 @@ mod tests {
             pan_y: Cell::new(20.0),
             zoom: Cell::new(1.0),
             drag_start_pan: Cell::new((20.0, 20.0)),
-            dark: Cell::new(false),
+            dark: Cell::new(true),
             metrics_cache: RefCell::new(HashMap::new()),
             images: RefCell::new(HashMap::new()),
             surfaces: RefCell::new(HashMap::new()),
@@ -1433,5 +1590,103 @@ mod tests {
         let mut file = std::fs::File::create(&path).unwrap();
         surface.write_to_png(&mut file).unwrap();
         eprintln!("snapshot scritto in: {path}");
+    }
+
+    #[test]
+    fn real_map_snapshot() {
+        let Ok(file_path) = std::env::var("REAL_MAP_FILE") else {
+            return;
+        };
+        let out_path = std::env::var("REAL_MAP_OUT").unwrap_or_else(|_| "/tmp/real_map.png".into());
+
+        let mut controller = crate::controller::AppController::new();
+        let wb = controller.open(&file_path).expect("open workbook");
+        let sheet = &wb.sheets[0];
+
+        let mut images = HashMap::new();
+        for topic in &sheet.topics {
+            if let Some(src) = topic.image_src.as_deref() {
+                if !images.contains_key(src) {
+                    if let Some(bytes) = controller.resource_bytes(src) {
+                        images.insert(src.to_string(), bytes);
+                    }
+                }
+            }
+            if let Some(latex) = topic.latex.as_deref() {
+                let key = topic
+                    .image_src
+                    .clone()
+                    .unwrap_or_else(|| format!("latex:{}", latex));
+                if !images.contains_key(&key) {
+                    if let Ok(preview) = controller.preview(latex, None) {
+                        if let Ok(png) = crate::raster::svg_to_png(
+                            &preview.svg,
+                            preview.width,
+                            preview.height,
+                            2.0,
+                            "#000000",
+                        ) {
+                            images.insert(key, png);
+                        }
+                    }
+                }
+            }
+        }
+
+        let state = MapViewState {
+            sheets: RefCell::new(vec![sheet.clone()]),
+            active_sheet: Cell::new(0),
+            collapsed: RefCell::new(HashSet::new()),
+            selected: RefCell::new(None),
+            layout: RefCell::new(Layout::default()),
+            pan_x: Cell::new(20.0),
+            pan_y: Cell::new(20.0),
+            zoom: Cell::new(1.0),
+            drag_start_pan: Cell::new((20.0, 20.0)),
+            dark: Cell::new(true),
+            metrics_cache: RefCell::new(HashMap::new()),
+            images: RefCell::new(images),
+            surfaces: RefCell::new(HashMap::new()),
+            on_select: RefCell::new(None),
+        };
+
+        let width = 2400;
+        let height = 1800;
+        let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, width, height).unwrap();
+        let cr = gtk::cairo::Context::new(&surface).unwrap();
+        let pango_ctx = pangocairo::functions::create_context(&cr);
+
+        {
+            let collapsed = state.collapsed.borrow();
+            let metrics = CanvasMetrics {
+                pango_ctx,
+                cache: &state.metrics_cache,
+                images: &state.images,
+                surfaces: &state.surfaces,
+            };
+            let l = layout::layout_single_sheet(
+                sheet,
+                &collapsed,
+                &metrics,
+                layout::LayoutOpts::default(),
+            );
+            *state.layout.borrow_mut() = l;
+        }
+
+        {
+            let l = state.layout.borrow();
+            let margin = 64.0;
+            let scale_x = (width as f64 - margin * 2.0) / l.width;
+            let scale_y = (height as f64 - margin * 2.0) / l.height;
+            let zoom = scale_x.min(scale_y).clamp(0.2, 1.8);
+            state.zoom.set(zoom);
+            state.pan_x.set((width as f64 - l.width * zoom) / 2.0);
+            state.pan_y.set((height as f64 - l.height * zoom) / 2.0);
+        }
+
+        draw_map(&cr, width as f64, height as f64, &state);
+        let mut file = std::fs::File::create(&out_path).unwrap();
+        surface.write_to_png(&mut file).unwrap();
+        eprintln!("Real map snapshot scritto in: {out_path}");
     }
 }

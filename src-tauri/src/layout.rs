@@ -47,6 +47,8 @@ pub struct MapNode {
     pub depth: usize,
     pub parent_id: Option<String>,
     pub sheet_index: usize,
+    pub position: Option<(f64, f64)>,
+    pub custom_width: Option<f64>,
     pub children: Vec<MapNode>,
 }
 
@@ -75,6 +77,8 @@ pub struct LayoutNode {
     pub group: String,
     pub depth: usize,
     pub sheet_index: usize,
+    pub position: Option<(f64, f64)>,
+    pub custom_width: Option<f64>,
 }
 
 impl LayoutNode {
@@ -100,10 +104,21 @@ pub struct LayoutEdge {
     pub group: String,
 }
 
+/// Un collegamento fra due nodi arbitrari (relazione / "collegamento" XMind).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayoutRelationship {
+    pub id: String,
+    pub title: Option<String>,
+    pub from: usize,
+    pub to: usize,
+    pub accent: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Layout {
     pub nodes: Vec<LayoutNode>,
     pub edges: Vec<LayoutEdge>,
+    pub relationships: Vec<LayoutRelationship>,
     pub width: f64,
     pub height: f64,
 }
@@ -175,13 +190,28 @@ pub struct EstimatedMetrics;
 
 impl NodeMetrics for EstimatedMetrics {
     fn measure(&self, node: &MapNode) -> (f64, f64) {
+        if let (Some(w), Some(h)) = (node.image_w, node.image_h) {
+            let max_w = if node.kind == "equation" || node.latex.is_some() {
+                650.0
+            } else {
+                380.0
+            };
+            let scale = if w > max_w { max_w / w } else { 1.0 };
+            let fw = w * scale + 24.0;
+            let mut fh = h * scale + 18.0;
+            if node.has_notes || !node.markers.is_empty() || !node.labels.is_empty() {
+                fh += 18.0;
+            }
+            return (fw.max(72.0), fh.max(32.0));
+        }
         let text = if !node.display_title.is_empty() {
             &node.display_title
         } else {
             &node.title
         };
         let chars = text.chars().count();
-        let mut w = (chars as f64 * 8.5 + 44.0).clamp(110.0, 260.0);
+        let max_w = node.custom_width.unwrap_or(400.0);
+        let mut w = (chars as f64 * 8.5 + 44.0).clamp(90.0, max_w);
         if !node.markers.is_empty() {
             w += (node.markers.len() * 20) as f64;
         }
@@ -190,7 +220,10 @@ impl NodeMetrics for EstimatedMetrics {
         }
         let usable_w = (w - 28.0).max(80.0);
         let lines = ((chars as f64 * 8.5) / usable_w).ceil().max(1.0);
-        let h = (lines * 18.0 + 16.0).max(34.0);
+        let mut h = (lines * 18.0 + 16.0).max(34.0);
+        if node.has_notes || !node.markers.is_empty() || !node.labels.is_empty() {
+            h += 16.0;
+        }
         (w, h)
     }
 }
@@ -208,8 +241,8 @@ pub struct LayoutOpts {
 impl Default for LayoutOpts {
     fn default() -> Self {
         Self {
-            h_gap: 56.0,
-            v_gap: 19.0,
+            h_gap: 50.0,
+            v_gap: 16.0,
             sheet_gap: 80.0,
         }
     }
@@ -217,12 +250,17 @@ impl Default for LayoutOpts {
 
 /// Ricostruisce l'albero `MapNode` dai DTO di una sheet, ereditando il colore di
 /// ramo (esplicito o dalla palette Snowbrush per i rami di primo livello).
-pub fn build_sheet_trees(sheet: &SheetDto) -> Vec<MapNode> {
+/// Ricostruisce gli alberi della sheet dai DTO.
+/// Ritorna una tupla `(alberi_principali, topic_fluttuanti_detached)`.
+pub fn build_sheet_trees(sheet: &SheetDto) -> (Vec<MapNode>, Vec<MapNode>) {
     let mut children_map: HashMap<String, Vec<&TopicView>> = HashMap::new();
     let mut roots: Vec<&TopicView> = Vec::new();
+    let mut floating: Vec<&TopicView> = Vec::new();
 
     for t in &sheet.topics {
-        if let Some(p) = &t.parent_id {
+        if t.group == "detached" {
+            floating.push(t);
+        } else if let Some(p) = &t.parent_id {
             children_map.entry(p.clone()).or_default().push(t);
         } else {
             roots.push(t);
@@ -233,10 +271,17 @@ pub fn build_sheet_trees(sheet: &SheetDto) -> Vec<MapNode> {
         roots.push(&sheet.topics[0]);
     }
 
-    roots
+    let tree_nodes = roots
         .into_iter()
         .map(|r| build_node_recursive(r, &children_map, None))
-        .collect()
+        .collect();
+
+    let floating_nodes = floating
+        .into_iter()
+        .map(|r| build_node_recursive(r, &children_map, None))
+        .collect();
+
+    (tree_nodes, floating_nodes)
 }
 
 fn build_node_recursive(
@@ -291,15 +336,18 @@ fn build_node_recursive(
         depth: topic.depth,
         parent_id: topic.parent_id.clone(),
         sheet_index: topic.sheet_index,
+        position: topic.position,
+        custom_width: topic.custom_width,
         children,
     }
 }
 
 /// Costruisce il layout dell'intera sequenza di sheet.
 ///
-/// Stile "Logic Chart" di XMind: il topic centrale (radice) sta in alto a
-/// sinistra; i rami di primo livello scendono in colonna e i loro sottoalberi si
-/// sviluppano verso destra, con il genitore centrato sui figli.
+/// Stile "Logic Chart" di XMind: la colonna dei rami di primo livello è
+/// centrata verticalmente rispetto alla radice; i sottoalberi si sviluppano a destra
+/// con ogni genitore centrato sui propri figli.
+/// I topic liberi (detached) sono posizionati a lato e connessi con le relazioni XMind.
 pub fn layout(
     sheets: &[SheetDto],
     collapsed: &HashSet<String>,
@@ -310,7 +358,7 @@ pub fn layout(
     let mut top = 20.0;
 
     for sheet in sheets {
-        let trees = build_sheet_trees(sheet);
+        let (trees, floating_nodes) = build_sheet_trees(sheet);
         for tree in &trees {
             let mut sizes = HashMap::new();
             compute_sizes(tree, collapsed, metrics, &opts, &mut sizes);
@@ -329,18 +377,19 @@ pub fn layout(
                     })
                     .sum()
             };
-            let row_h = if root_collapsed {
+            let total_h = if root_collapsed {
                 root_h
             } else {
-                root_h + opts.v_gap + children_h
+                root_h.max(children_h)
             };
 
-            // La radice è ancorata in alto, non centrata sui figli.
+            // La radice è perfettamente centrata verticalmente rispetto ai rami di primo livello.
+            let root_y = top + (total_h - root_h) / 2.0;
             let root_index = push_layout_node(
                 &mut out,
                 tree,
                 20.0,
-                top,
+                root_y,
                 root_w,
                 root_h,
                 collapsed.contains(&tree.id),
@@ -348,7 +397,7 @@ pub fn layout(
 
             if !root_collapsed {
                 let child_x = 20.0 + root_w + opts.h_gap;
-                let mut cur = top + root_h + opts.v_gap;
+                let mut cur = top + (total_h - children_h) / 2.0;
                 for child in &tree.children {
                     let ch = sizes.get(&child.id).map(|s| s.1).unwrap_or(0.0);
                     place_subtree(
@@ -366,15 +415,98 @@ pub fn layout(
                 }
             }
 
-            top += row_h + opts.sheet_gap;
+            top += total_h + opts.sheet_gap;
+        }
+
+        // Posizionamento dei topic fluttuanti / liberi (detached)
+        if !floating_nodes.is_empty() {
+            let max_tree_x = out.nodes.iter().map(|n| n.x + n.w).fold(20.0, f64::max);
+            let mut float_y_cursor = 20.0;
+
+            for float_node in &floating_nodes {
+                let mut float_sizes = HashMap::new();
+                compute_sizes(float_node, collapsed, metrics, &opts, &mut float_sizes);
+                let (fw, fh) = metrics.measure(float_node);
+                let float_sub_h = float_sizes.get(&float_node.id).map(|s| s.1).unwrap_or(fh);
+
+                // Cerca se esiste una relationship collegata a questo topic fluttuante
+                let related_target = sheet.relationships.iter().find_map(|rel| {
+                    if rel.end2_id == float_node.id {
+                        out.nodes.iter().find(|n| n.id == rel.end1_id)
+                    } else if rel.end1_id == float_node.id {
+                        out.nodes.iter().find(|n| n.id == rel.end2_id)
+                    } else {
+                        None
+                    }
+                });
+
+                let (fx, fy) = if let Some(target) = related_target {
+                    let x = (max_tree_x + 80.0).max(target.x + target.w + 60.0);
+                    let ideal_y = target.y + (target.h - float_sub_h) / 2.0;
+                    let y = ideal_y.max(float_y_cursor);
+                    (x, y)
+                } else if let Some((px, py)) = float_node.position {
+                    let x = px.max(max_tree_x + 60.0);
+                    let y = py.max(20.0);
+                    (x, y)
+                } else {
+                    let x = max_tree_x + 80.0;
+                    let y = float_y_cursor;
+                    (x, y)
+                };
+
+                float_y_cursor = fy + float_sub_h + opts.v_gap;
+
+                let is_collapsed = collapsed.contains(&float_node.id);
+                let float_idx = push_layout_node(&mut out, float_node, fx, fy, fw, fh, is_collapsed);
+                if !is_collapsed && !float_node.children.is_empty() {
+                    let child_x = fx + fw + opts.h_gap;
+                    let mut cur = fy;
+                    for child in &float_node.children {
+                        let ch = float_sizes.get(&child.id).map(|s| s.1).unwrap_or(0.0);
+                        place_subtree(
+                            child,
+                            child_x,
+                            cur,
+                            Some(float_idx),
+                            collapsed,
+                            metrics,
+                            &opts,
+                            &float_sizes,
+                            &mut out,
+                        );
+                        cur += ch + opts.v_gap;
+                    }
+                }
+            }
+        }
+
+        // Calcolo dei collegamenti / relazioni (Relationship)
+        for rel in &sheet.relationships {
+            if let (Some(from), Some(to)) = (
+                out.nodes.iter().position(|n| n.id == rel.end1_id),
+                out.nodes.iter().position(|n| n.id == rel.end2_id),
+            ) {
+                let accent = out.nodes[from]
+                    .accent
+                    .clone()
+                    .or_else(|| out.nodes[to].accent.clone());
+                out.relationships.push(LayoutRelationship {
+                    id: rel.id.clone(),
+                    title: (!rel.title.trim().is_empty()).then(|| rel.title.clone()),
+                    from,
+                    to,
+                    accent,
+                });
+            }
         }
     }
 
     if !out.nodes.is_empty() {
         let max_x = out.nodes.iter().map(|n| n.x + n.w).fold(0.0, f64::max);
         let max_y = out.nodes.iter().map(|n| n.y + n.h).fold(0.0, f64::max);
-        out.width = max_x + 20.0;
-        out.height = max_y + 20.0;
+        out.width = max_x + 40.0;
+        out.height = max_y + 40.0;
     }
 
     out
@@ -424,6 +556,8 @@ fn push_layout_node(
         group: node.group.clone(),
         depth: node.depth,
         sheet_index: node.sheet_index,
+        position: node.position,
+        custom_width: node.custom_width,
     });
     index
 }
@@ -521,6 +655,7 @@ fn place_subtree(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::RelationshipView;
 
     fn sample_sheet() -> SheetDto {
         SheetDto {
@@ -551,6 +686,8 @@ mod tests {
                     boundaries: vec![],
                     summaries: vec![],
                     task: None,
+                    position: None,
+                    custom_width: None,
                     fill_color: Some("#ff0000".to_string()),
                 },
                 TopicView {
@@ -576,6 +713,8 @@ mod tests {
                     boundaries: vec![],
                     summaries: vec![],
                     task: None,
+                    position: None,
+                    custom_width: None,
                     fill_color: None,
                 },
                 TopicView {
@@ -601,6 +740,8 @@ mod tests {
                     boundaries: vec![],
                     summaries: vec![],
                     task: None,
+                    position: None,
+                    custom_width: None,
                     fill_color: None,
                 },
                 TopicView {
@@ -626,6 +767,8 @@ mod tests {
                     boundaries: vec![],
                     summaries: vec![],
                     task: None,
+                    position: None,
+                    custom_width: None,
                     fill_color: Some("#00ff00".to_string()), // ridefinisce il colore
                 },
                 TopicView {
@@ -651,6 +794,8 @@ mod tests {
                     boundaries: vec![],
                     summaries: vec![],
                     task: None,
+                    position: None,
+                    custom_width: None,
                     fill_color: None,
                 },
             ],
@@ -674,9 +819,12 @@ mod tests {
         let root = &l.nodes[0];
         let a = l.nodes.iter().find(|n| n.id == "a").unwrap();
         assert!(a.x > root.x, "i figli si sviluppano a destra del genitore");
+        let children_top = l.nodes.iter().filter(|n| n.id != "root").map(|n| n.y).fold(f64::INFINITY, f64::min);
+        let children_bottom = l.nodes.iter().filter(|n| n.id != "root").map(|n| n.y + n.h).fold(0.0, f64::max);
+        let children_mid = (children_top + children_bottom) / 2.0;
         assert!(
-            (root.y - l.nodes.iter().map(|n| n.y).fold(f64::INFINITY, f64::min)).abs() < 0.5,
-            "la radice è ancorata in alto"
+            (root.y + root.h / 2.0 - children_mid).abs() < 1.0,
+            "la radice è centrata verticalmente sui suoi rami"
         );
     }
 
@@ -813,5 +961,61 @@ mod tests {
         // Indicatore di collapse su radice
         let (bx, by, bw, bh) = root.collapse_indicator_rect().unwrap();
         assert_eq!(l.collapse_handle_at(bx + bw / 2.0, by + bh / 2.0), Some(0));
+    }
+
+    #[test]
+    fn detached_topics_and_relationships_are_handled() {
+        let mut sheet = sample_sheet();
+        sheet.topics.push(TopicView {
+            id: "det1".to_string(),
+            sheet_index: 0,
+            parent_id: Some("root".to_string()),
+            depth: 1,
+            group: "detached".to_string(),
+            title: "Fluttuante".to_string(),
+            display_title: "Fluttuante".to_string(),
+            kind: "text",
+            latex: None,
+            image_src: None,
+            image_w: None,
+            image_h: None,
+            notes: String::new(),
+            notes_display: None,
+            labels: vec![],
+            markers: vec![],
+            href: None,
+            path: vec![],
+            child_count: 0,
+            boundaries: vec![],
+            summaries: vec![],
+            task: None,
+            position: None,
+            custom_width: None,
+            fill_color: None,
+        });
+        sheet.relationships.push(RelationshipView {
+            id: "rel1".to_string(),
+            end1_id: "a".to_string(),
+            end2_id: "det1".to_string(),
+            title: "collega".to_string(),
+        });
+
+        let l = layout(
+            &[sheet],
+            &HashSet::new(),
+            &FixedMetrics::default(),
+            LayoutOpts::default(),
+        );
+
+        let det = l.nodes.iter().find(|n| n.id == "det1").unwrap();
+        let a = l.nodes.iter().find(|n| n.id == "a").unwrap();
+        assert!(det.x > a.x, "il topic fluttuante è posizionato a destra");
+
+        assert!(!l.edges.iter().any(|e| l.nodes[e.child].id == "det1"));
+
+        assert_eq!(l.relationships.len(), 1);
+        assert_eq!(l.relationships[0].title.as_deref(), Some("collega"));
+        assert_eq!(l.nodes[l.relationships[0].from].id, "a");
+        assert_eq!(l.nodes[l.relationships[0].to].id, "det1");
     }
 }

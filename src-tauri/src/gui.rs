@@ -1366,7 +1366,7 @@ fn toast(ui: &Ui, text: &str) {
 
 fn refresh(ui: &Rc<Ui>, state: &Rc<State>) {
     let (wb, images, status) = {
-        let controller = state.controller.lock().unwrap();
+        let mut controller = state.controller.lock().unwrap();
         let wb = controller.workbook();
         // Byte delle immagini/equazioni da mostrare nella mappa: la UI è l'unica
         // a poter leggere l'archivio del controller.
@@ -1375,11 +1375,31 @@ fn refresh(ui: &Rc<Ui>, state: &Rc<State>) {
             for sheet in &w.sheets {
                 for topic in &sheet.topics {
                     if let Some(src) = topic.image_src.as_deref() {
-                        if images.contains_key(src) {
-                            continue;
+                        if !images.contains_key(src) {
+                            if let Some(bytes) = controller.resource_bytes(src) {
+                                images.insert(src.to_string(), bytes);
+                            }
                         }
-                        if let Some(bytes) = controller.resource_bytes(src) {
-                            images.insert(src.to_string(), bytes);
+                    }
+                    // Se il topic porta una formula LaTeX ma l'immagine manca o è esterna,
+                    // la generiamo al volo con MathJax per un rendering sempre impeccabile.
+                    if let Some(latex) = topic.latex.as_deref() {
+                        let key = topic
+                            .image_src
+                            .clone()
+                            .unwrap_or_else(|| format!("latex:{}", latex));
+                        if !images.contains_key(&key) {
+                            if let Ok(preview) = controller.preview(latex, None) {
+                                if let Ok(png) = crate::raster::svg_to_png(
+                                    &preview.svg,
+                                    preview.width,
+                                    preview.height,
+                                    2.0,
+                                    "#000000",
+                                ) {
+                                    images.insert(key, png);
+                                }
+                            }
                         }
                     }
                 }
@@ -2594,6 +2614,8 @@ mod tests {
             child_count: 0,
             task: None,
             fill_color: None,
+            position: None,
+            custom_width: None,
             boundaries: Vec::new(),
             summaries: Vec::new(),
         }

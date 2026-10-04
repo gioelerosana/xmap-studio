@@ -362,6 +362,21 @@ impl Topic {
             .as_str()
     }
 
+    /// Posizione esplicita dichiarata per topic liberi (`position: { x, y }`).
+    pub fn position(&self) -> Option<(f64, f64)> {
+        let pos = self.extra.get("position")?.as_object()?;
+        let x = pos.get("x")?.as_f64()?;
+        let y = pos.get("y")?.as_f64()?;
+        Some((x, y))
+    }
+
+    /// Larghezza custom del topic (`customWidth`), se impostata dall'utente in XMind.
+    pub fn custom_width(&self) -> Option<f64> {
+        self.extra
+            .get("customWidth")
+            .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+    }
+
     /// Numero di figli `attached` (gli indici usati da boundary/summary).
     pub fn attached_count(&self) -> usize {
         self.group("attached").map(Vec::len).unwrap_or(0)

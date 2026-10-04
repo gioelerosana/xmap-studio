@@ -121,6 +121,10 @@ pub struct TopicView {
     pub boundaries: Vec<BoundaryView>,
     pub summaries: Vec<SummaryView>,
     pub task: Option<TaskView>,
+    /// Posizione esplicita dichiarata per topic liberi (`position: { x, y }`).
+    pub position: Option<(f64, f64)>,
+    /// Larghezza custom del topic (`customWidth`), se impostata in XMind.
+    pub custom_width: Option<f64>,
     /// Colore di riempimento del ramo (`svg:fill`), se impostato.
     pub fill_color: Option<String>,
 }
@@ -416,7 +420,7 @@ fn visit(
         display_title: display_title(topic),
         kind: kind_of(topic),
         latex: topic.latex().map(str::to_string),
-        image_src: topic.image_src().map(str::to_string),
+        image_src: topic.image_src().map(str::to_string).or_else(|| topic.latex().map(|l| format!("latex:{}", l))),
         image_w: topic.image_size_px().map(|(w, _)| w),
         image_h: topic.image_size_px().map(|(_, h)| h),
         notes: topic.notes_text().map(str::to_string).unwrap_or_default(),
@@ -448,6 +452,8 @@ fn visit(
             start_date: t.start_date,
             due_date: t.due_date,
         }),
+        position: topic.position(),
+        custom_width: topic.custom_width(),
         fill_color: topic.fill_color().map(str::to_string),
     });
 
