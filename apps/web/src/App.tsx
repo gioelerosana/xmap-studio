@@ -664,8 +664,12 @@ export const App: React.FC = () => {
                   selectedTopicId={selectedTopicId}
                   onSelectTopic={setSelectedTopicId}
                   onOpenDetails={(id) => setSelectedTopicId(id)}
+                  onOpenLatex={(id) => setSelectedTopicId(id)}
+                  onAddChild={handleAddChild}
+                  onDeleteTopic={handleDeleteSelected}
                   onToggleCollapse={handleToggleCollapse}
                   resourceResolver={resolveResource}
+                  darkMode={darkMode}
                 />
               ) : (
                 <OutlineView text={outlineText} />

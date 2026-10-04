@@ -46,44 +46,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Esporta mappa"
-      maxWidth="max-w-2xl"
-      footer={
-        <div className="flex items-center justify-between w-full">
-          <Button
-            variant="flat"
-            size="sm"
-            icon={copied ? <Check className="w-3.5 h-3.5 text-[var(--adw-success-color)]" /> : <Copy className="w-3.5 h-3.5" />}
-            onClick={handleCopy}
-          >
-            {copied ? 'Copiato' : 'Copia'}
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button variant="flat" size="sm" onClick={onClose}>
-              Chiudi
-            </Button>
-            <Button variant="suggested" size="sm" icon={<Download className="w-3.5 h-3.5" />} onClick={handleDownload}>
-              Salva file
-            </Button>
-          </div>
-        </div>
-      }
-    >
+    <Modal isOpen={isOpen} onClose={onClose} title="Esporta Mappa" maxWidth="max-w-xl">
       <div className="space-y-3">
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[var(--adw-surface)] border border-[var(--adw-card-border)]">
           {FORMATS.map((f) => (
             <button
               key={f.id}
               type="button"
               onClick={() => setFormat(f.id)}
               className={cn(
-                'px-3 h-7 rounded-md text-xs border transition-colors',
+                'flex-1 h-7 rounded-md text-xs font-medium transition-colors',
                 format === f.id
-                  ? 'border-[var(--adw-accent-color)] bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)] font-medium'
-                  : 'border-[var(--adw-card-border)] text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
+                  ? 'bg-[var(--adw-card-bg)] text-[var(--adw-fg-color)] shadow-[var(--adw-shadow-sm)]'
+                  : 'text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
               )}
             >
               {f.label}
@@ -91,12 +66,32 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           ))}
         </div>
 
-        <textarea
-          readOnly
-          value={content}
-          rows={14}
-          className="w-full px-3 py-2 text-xs font-mono rounded-md border border-[var(--adw-card-border)] bg-[var(--adw-surface)] text-[var(--adw-fg-color)] focus:outline-none resize-none"
-        />
+        <div className="relative">
+          <textarea
+            readOnly
+            value={content}
+            className="w-full h-64 p-3 rounded-lg border border-[var(--adw-card-border)] bg-[var(--adw-bg-color)] font-mono text-xs text-[var(--adw-fg-color)] resize-none focus:outline-none"
+          />
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-[11px] text-[var(--adw-muted-color)]">
+            Salvataggio nei formati aperti interoperabili con Logseq, Obsidian e Freeplane.
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="flat"
+              size="sm"
+              icon={copied ? <Check className="w-3.5 h-3.5 text-[var(--adw-success-color)]" /> : <Copy className="w-3.5 h-3.5" />}
+              onClick={handleCopy}
+            >
+              {copied ? 'Copiato' : 'Copia'}
+            </Button>
+            <Button variant="suggested" size="sm" icon={<Download className="w-3.5 h-3.5" />} onClick={handleDownload}>
+              Scarica .{spec.ext}
+            </Button>
+          </div>
+        </div>
       </div>
     </Modal>
   );

@@ -1,4 +1,5 @@
 import { SheetDto, TopicView } from '../state/types.js';
+import { renderLatexToSvg } from '../latex/mathjax.js';
 import {
   BRANCH_COLORS,
   DEFAULT_NODE_H,
@@ -23,6 +24,20 @@ export class EstimatedMetrics implements NodeMetrics {
         fh += 18.0;
       }
       return { w: Math.max(72.0, fw), h: Math.max(32.0, fh) };
+    }
+
+    if (node.latex) {
+      try {
+        const rendered = renderLatexToSvg(node.latex, 18);
+        if (!rendered.error) {
+          const fw = Math.max(rendered.width + 36.0, 96.0);
+          let fh = Math.max(rendered.height + 22.0, 38.0);
+          if (node.hasNotes || node.markers.length > 0 || node.labels.length > 0) {
+            fh += 18.0;
+          }
+          return { w: Math.min(fw, 650.0), h: Math.max(32.0, fh) };
+        }
+      } catch {}
     }
 
     const text = node.displayTitle || node.title || '';
