@@ -1,5 +1,6 @@
 import { SheetDto, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
+import { isLikelyLatex } from '../model/utils.js';
 import {
   BRANCH_COLORS,
   DEFAULT_NODE_H,
@@ -26,9 +27,10 @@ export class EstimatedMetrics implements NodeMetrics {
       return { w: Math.max(72.0, fw), h: Math.max(32.0, fh) };
     }
 
-    if (node.latex) {
+    const effectiveLatex = node.latex || (isLikelyLatex(node.title) ? node.title : undefined);
+    if (effectiveLatex) {
       try {
-        const rendered = renderLatexToSvg(node.latex, 18);
+        const rendered = renderLatexToSvg(effectiveLatex, 18);
         if (!rendered.error) {
           const fw = Math.max(rendered.width + 36.0, 96.0);
           let fh = Math.max(rendered.height + 22.0, 38.0);
@@ -42,8 +44,8 @@ export class EstimatedMetrics implements NodeMetrics {
 
     const text = node.displayTitle || node.title || '';
     const chars = text.length;
-    const maxW = node.customWidth ?? 400.0;
-    let w = Math.min(Math.max(chars * 8.5 + 44.0, 90.0), maxW);
+    const maxW = node.customWidth ?? 360.0;
+    let w = Math.min(Math.max(chars * 8.5 + 44.0, 96.0), maxW);
     if (node.markers.length > 0) {
       w += node.markers.length * 20;
     }
@@ -52,7 +54,7 @@ export class EstimatedMetrics implements NodeMetrics {
     }
     const usableW = Math.max(w - 28.0, 80.0);
     const lines = Math.max(Math.ceil((chars * 8.5) / usableW), 1.0);
-    let h = Math.max(lines * 18.0 + 16.0, 34.0);
+    let h = Math.max(lines * 20.0 + 16.0, 36.0);
     if (node.hasNotes || node.markers.length > 0 || node.labels.length > 0) {
       h += 16.0;
     }
@@ -110,12 +112,14 @@ function buildNodeRecursive(
     return buildNodeRecursive(c, childrenMap, childBranch);
   });
 
+  const effectiveLatex = topic.latex || (isLikelyLatex(topic.title) ? topic.title : undefined);
+
   return {
     id: topic.id,
     title: topic.title,
     displayTitle: topic.displayTitle,
-    kind: topic.kind,
-    latex: topic.latex,
+    kind: effectiveLatex ? 'equation' : topic.kind,
+    latex: effectiveLatex,
     fillColor: explicitFill,
     accent,
     imageSrc: topic.imageSrc,
@@ -352,71 +356,80 @@ function computeSizes(
   opts: LayoutOpts,
   sizes: Map<string, { w: number; h: number }>
 ): { w: number; h: number } {
-  const measure = metrics.measure(node);
-  let size: { w: number; h: number };
+  const isCollapsed = collapsed.has(node.id) || node.children.length === 0;
+  const selfSize = metrics.measure(node);
 
-  if (collapsed.has(node.id) || node.children.length === 0) {
-    size = measure;
-  } else {
-    let colH = 0.0;
-    let maxCw = 0.0;
-    for (let i = 0; i < node.children.length; i++) {
-      const child = node.children[i];
-      const cSize = computeSizes(child, collapsed, metrics, opts, sizes);
-      if (i > 0) colH += opts.vGap;
-      colH += cSize.h;
-      maxCw = Math.max(maxCw, cSize.w);
-    }
-    size = {
-      w: measure.w + opts.hGap + maxCw,
-      h: Math.max(measure.h, colH),
-    };
+  if (isCollapsed) {
+    sizes.set(node.id, selfSize);
+    return selfSize;
   }
 
-  sizes.set(node.id, size);
-  return size;
+  let childrenH = 0.0;
+  let maxChildW = 0.0;
+
+  for (let i = 0; i < node.children.length; i++) {
+    const child = node.children[i];
+    const cSize = computeSizes(child, collapsed, metrics, opts, sizes);
+    childrenH += cSize.h + (i > 0 ? opts.vGap : 0.0);
+    maxChildW = Math.max(maxChildW, cSize.w);
+  }
+
+  const totalH = Math.max(selfSize.h, childrenH);
+  const totalW = selfSize.w + opts.hGap + maxChildW;
+  const result = { w: totalW, h: totalH };
+  sizes.set(node.id, result);
+  return result;
 }
 
 function placeSubtree(
   node: MapNode,
-  left: number,
-  top: number,
-  parentIdx: number,
+  x: number,
+  y: number,
+  parentIndex: number,
   collapsed: Set<string>,
   metrics: NodeMetrics,
   opts: LayoutOpts,
   sizes: Map<string, { w: number; h: number }>,
   out: Layout
 ): void {
-  const measure = metrics.measure(node);
-  const subH = sizes.get(node.id)?.h ?? measure.h;
-  const isCollapsed = collapsed.has(node.id);
+  const isCollapsed = collapsed.has(node.id) || node.children.length === 0;
+  const selfSize = metrics.measure(node);
+  const subtreeSize = sizes.get(node.id) || selfSize;
 
-  const y = top + (subH - measure.h) / 2.0;
-  const index = pushLayoutNode(out, node, left, y, measure.w, measure.h, isCollapsed);
+  const nodeY = y + (subtreeSize.h - selfSize.h) / 2.0;
+  const nodeIndex = pushLayoutNode(
+    out,
+    node,
+    x,
+    nodeY,
+    selfSize.w,
+    selfSize.h,
+    isCollapsed
+  );
 
   out.edges.push({
-    parent: parentIdx,
-    child: index,
+    parent: parentIndex,
+    child: nodeIndex,
     group: node.group,
   });
 
-  if (isCollapsed || node.children.length === 0) {
-    return;
-  }
-
-  let childrenH = 0.0;
-  for (let i = 0; i < node.children.length; i++) {
-    const ch = sizes.get(node.children[i].id)?.h ?? 0.0;
-    childrenH += ch + (i > 0 ? opts.vGap : 0.0);
-  }
-
-  let cur = top + (subH - childrenH) / 2.0;
-  const childX = left + measure.w + opts.hGap;
-
-  for (const child of node.children) {
-    const ch = sizes.get(child.id)?.h ?? 0.0;
-    placeSubtree(child, childX, cur, index, collapsed, metrics, opts, sizes, out);
-    cur += ch + opts.vGap;
+  if (!isCollapsed) {
+    const childX = x + selfSize.w + opts.hGap;
+    let curY = y;
+    for (const child of node.children) {
+      const cSize = sizes.get(child.id) || metrics.measure(child);
+      placeSubtree(
+        child,
+        childX,
+        curY,
+        nodeIndex,
+        collapsed,
+        metrics,
+        opts,
+        sizes,
+        out
+      );
+      curY += cSize.h + opts.vGap;
+    }
   }
 }

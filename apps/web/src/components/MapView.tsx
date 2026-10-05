@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layout, renderLatexToSvg } from '@xmap/core';
 import {
   Plus,
@@ -50,6 +50,8 @@ export const MapView: React.FC<MapViewProps> = ({
   const [pan, setPan] = useState({ x: 60, y: 60 });
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
+  const hasAutoFitted = useRef(false);
+  const lastLayoutRef = useRef<Layout | null>(null);
 
   // Cache delle risorse immagine / PNG come data URL
   const resourceUrls = useMemo(() => {
@@ -71,9 +73,10 @@ export const MapView: React.FC<MapViewProps> = ({
 
     const color = darkMode ? '#ffffff' : '#1e1e1e';
     for (const node of layout.nodes) {
-      if (node.latex) {
+      const latex = node.latex;
+      if (latex) {
         try {
-          const res = renderLatexToSvg(node.latex, 16);
+          const res = renderLatexToSvg(latex, 16);
           if (!res.error && res.svg) {
             const coloredSvg = res.svg.replaceAll('currentColor', color);
             cache.set(node.id, coloredSvg);
@@ -84,11 +87,99 @@ export const MapView: React.FC<MapViewProps> = ({
     return cache;
   }, [layout, darkMode]);
 
+  // Calcolo e posizionamento completo fitToView
+  const fitToView = useCallback(() => {
+    if (!layout || !containerRef.current || layout.nodes.length === 0) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width <= 10 || rect.height <= 10) return;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const node of layout.nodes) {
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x + node.w);
+      minY = Math.min(minY, node.y);
+      maxY = Math.max(maxY, node.y + node.h);
+    }
+
+    if (minX === Infinity) return;
+
+    const contentW = maxX - minX;
+    const contentH = maxY - minY;
+    const margin = 64;
+
+    const scaleX = (rect.width - margin * 2) / Math.max(contentW, 100);
+    const scaleY = (rect.height - margin * 2) / Math.max(contentH, 100);
+
+    const safeZoom = Math.max(Math.min(scaleX, scaleY, 1.15), 0.12);
+    setZoom(safeZoom);
+    setPan({
+      x: (rect.width - contentW * safeZoom) / 2 - minX * safeZoom,
+      y: (rect.height - contentH * safeZoom) / 2 - minY * safeZoom,
+    });
+  }, [layout]);
+
+  // ResizeObserver e auto-fit al caricamento o ridimensionamento finestra
+  useEffect(() => {
+    if (!layout) return;
+
+    // Se il layout o i nodi sono cambiati, permetti nuovo auto-fit
+    if (lastLayoutRef.current !== layout) {
+      lastLayoutRef.current = layout;
+      hasAutoFitted.current = false;
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {
+          if (!hasAutoFitted.current) {
+            hasAutoFitted.current = true;
+            fitToView();
+          }
+        }
+      }
+    });
+
+    ro.observe(container);
+
+    // Timeout fallback per primo frame
+    const timer = setTimeout(() => {
+      if (!hasAutoFitted.current) {
+        hasAutoFitted.current = true;
+        fitToView();
+      }
+    }, 50);
+
+    return () => {
+      ro.disconnect();
+      clearTimeout(timer);
+    };
+  }, [layout, fitToView]);
+
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
-      const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
-      setZoom((z) => Math.min(Math.max(z * zoomFactor, 0.15), 3.5));
+      const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        setZoom((prevZoom) => {
+          const newZoom = Math.min(Math.max(prevZoom * zoomFactor, 0.12), 3.5);
+          const ratio = newZoom / prevZoom;
+          setPan((p) => ({
+            x: mouseX - (mouseX - p.x) * ratio,
+            y: mouseY - (mouseY - p.y) * ratio,
+          }));
+          return newZoom;
+        });
+      }
     } else {
       setPan((p) => ({
         x: p.x - e.deltaX,
@@ -98,7 +189,12 @@ export const MapView: React.FC<MapViewProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg' || (e.target as HTMLElement).id === 'map-bg')) {
+    if (
+      e.button === 0 &&
+      (e.target === containerRef.current ||
+        (e.target as HTMLElement).tagName === 'svg' ||
+        (e.target as HTMLElement).id === 'map-bg')
+    ) {
       setIsPanning(true);
       setStartPan({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
@@ -109,28 +205,6 @@ export const MapView: React.FC<MapViewProps> = ({
   };
 
   const stopPan = () => setIsPanning(false);
-
-  const fitToView = () => {
-    if (!layout || !containerRef.current || layout.nodes.length === 0) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const margin = 60;
-    const z = Math.min(
-      (rect.width - margin * 2) / Math.max(layout.width, 1),
-      (rect.height - margin * 2) / Math.max(layout.height, 1),
-      1.4
-    );
-    const safeZoom = Math.max(0.2, z);
-    setZoom(safeZoom);
-    setPan({
-      x: (rect.width - layout.width * safeZoom) / 2,
-      y: (rect.height - layout.height * safeZoom) / 2,
-    });
-  };
-
-  useEffect(() => {
-    fitToView();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout?.width, layout?.height]);
 
   const selectedNode = useMemo(() => {
     if (!layout || !selectedTopicId) return null;
@@ -162,7 +236,7 @@ export const MapView: React.FC<MapViewProps> = ({
       <div className="absolute bottom-5 right-5 z-20 flex items-center space-x-1 p-1 rounded-xl bg-[var(--adw-card-bg)]/90 backdrop-blur-md border border-[var(--adw-card-border)] shadow-md">
         <button
           type="button"
-          onClick={() => setZoom((z) => Math.max(z * 0.85, 0.2))}
+          onClick={() => setZoom((z) => Math.max(z * 0.85, 0.12))}
           className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-fg-color)] transition-colors"
           title="Zoom Indietro"
         >
@@ -173,7 +247,7 @@ export const MapView: React.FC<MapViewProps> = ({
         </span>
         <button
           type="button"
-          onClick={() => setZoom((z) => Math.min(z * 1.15, 3.0))}
+          onClick={() => setZoom((z) => Math.min(z * 1.15, 3.5))}
           className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-fg-color)] transition-colors"
           title="Zoom Avanti"
         >
@@ -184,7 +258,7 @@ export const MapView: React.FC<MapViewProps> = ({
           type="button"
           onClick={fitToView}
           className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-accent-color)] transition-colors"
-          title="Adatta alla finestra"
+          title="Adatta alla finestra (vista integrale)"
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>
@@ -278,10 +352,10 @@ export const MapView: React.FC<MapViewProps> = ({
 
         <rect
           id="map-bg"
-          x={-5000}
-          y={-5000}
-          width={15000}
-          height={15000}
+          x={-15000}
+          y={-15000}
+          width={45000}
+          height={45000}
           fill="url(#map-dot-grid)"
         />
 
@@ -426,13 +500,13 @@ export const MapView: React.FC<MapViewProps> = ({
                 />
               )}
 
-              {/* Contenuto del Nodo: Formula SVG o Testo */}
+              {/* Contenuto del Nodo: Formula SVG o Testo Integrale */}
               {!hasImage && (
                 <foreignObject
                   x={isRoot ? 12 : nodeAccent ? 14 : 10}
                   y={4}
-                  width={node.w - (isRoot ? 24 : nodeAccent ? 22 : 18)}
-                  height={node.h - 8}
+                  width={Math.max(node.w - (isRoot ? 24 : nodeAccent ? 22 : 18), 10)}
+                  height={Math.max(node.h - 8, 10)}
                 >
                   <div
                     className={cn(
@@ -449,9 +523,16 @@ export const MapView: React.FC<MapViewProps> = ({
                       ) : (
                         <span
                           className={cn(
-                            'truncate',
-                            isRoot ? 'text-sm font-bold tracking-tight' : 'text-xs font-semibold'
+                            'break-words whitespace-normal leading-snug',
+                            isRoot ? 'text-sm font-bold tracking-tight text-[var(--adw-accent-color)]' : 'text-xs font-semibold'
                           )}
+                          style={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: Math.max(Math.floor((node.h - 8) / 16), 1),
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                          title={node.displayTitle || node.title}
                         >
                           {node.displayTitle || node.title || '(senza titolo)'}
                         </span>
@@ -460,7 +541,7 @@ export const MapView: React.FC<MapViewProps> = ({
                       {node.hasNotes && (
                         <FileText
                           className={cn(
-                            'w-3 h-3 shrink-0',
+                            'w-3 h-3 shrink-0 self-center',
                             isRoot ? 'opacity-80' : 'opacity-50'
                           )}
                         />

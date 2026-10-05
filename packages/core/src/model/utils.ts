@@ -85,16 +85,40 @@ export function sheetIndexOf(sheets: Sheet[], topicId: string): number {
 }
 
 /**
- * Estrae la formula LaTeX se presente come estensione org.xmind.ui.mathJax.
+ * Rileva se una stringa è molto probabilmente una formula o espressione LaTeX.
+ */
+export function isLikelyLatex(title?: string): boolean {
+  if (!title || typeof title !== 'string') return false;
+  const t = title.trim();
+  if (!t) return false;
+  if (t.startsWith('$') && t.endsWith('$') && t.length > 2) return true;
+  if (/\\\\[a-zA-Z]{1,20}/.test(t)) return true;
+  if (/[a-zA-Z0-9]\^\{?[0-9a-zA-Z+\\-]/.test(t)) return true;
+  if (/[a-zA-Z0-9]_\{?[0-9a-zA-Z+\\-]/.test(t)) return true;
+  return false;
+}
+
+/**
+ * Estrae la formula LaTeX se presente come estensione org.xmind.ui.mathJax
+ * oppure direttamente dal titolo del topic se contiene sintassi LaTeX valida.
  */
 export function topicLatex(topic: Topic): string | undefined {
-  if (!topic.extensions) return undefined;
-  const ext = topic.extensions.find((e) => e.provider === MATHJAX_PROVIDER);
-  if (!ext || !ext.content) return undefined;
-  if (typeof ext.content === 'object' && ext.content !== null && 'content' in ext.content) {
-    const c = (ext.content as { content?: unknown }).content;
-    if (typeof c === 'string') return c;
+  if (topic.extensions) {
+    const ext = topic.extensions.find((e) => e.provider === MATHJAX_PROVIDER);
+    if (ext && ext.content && typeof ext.content === 'object' && 'content' in ext.content) {
+      const c = (ext.content as { content?: unknown }).content;
+      if (typeof c === 'string' && c.trim().length > 0) return c;
+    }
   }
+
+  const title = topic.title?.trim();
+  if (title && isLikelyLatex(title)) {
+    if (title.startsWith('$') && title.endsWith('$') && title.length > 2) {
+      return title.slice(1, -1).trim();
+    }
+    return title;
+  }
+
   return undefined;
 }
 
