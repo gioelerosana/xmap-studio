@@ -5,5 +5,6 @@ export * from './latex/index.js';
 export * from './exporters/index.js';
 export * from './layout/index.js';
 export * from './markers/index.js';
+export * from './task/index.js';
 export * from './state/index.js';
 export * from './controller.js';

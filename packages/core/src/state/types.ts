@@ -92,6 +92,7 @@ export interface SaveResultDto {
 
 export interface MergeResultDto {
   addedSheets: number;
+  addedTopics: number;
   totalSheets: number;
   addedResources: number;
 }

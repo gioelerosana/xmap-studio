@@ -243,6 +243,72 @@ export function fontSizePx(topic: Topic): number | undefined {
 }
 
 /**
+ * Riassegna tutti gli id di un albero di sheet, aggiornando i riferimenti noti
+ * (`id`, `topicId`, `end1Id`, `end2Id`) e i link interni `xmind:#<id>`.
+ *
+ * Serve all'unione di file creati in modo indipendente, dove due workbook
+ * possono condividere gli stessi UUID radice.
+ */
+export function remapIds(sheets: Sheet[]): void {
+  const idMap = new Map<string, string>();
+
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) collect(item);
+      return;
+    }
+    if (value !== null && typeof value === 'object') {
+      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+        if (key === 'id' && typeof val === 'string' && val.length > 0 && !idMap.has(val)) {
+          idMap.set(val, newTopicId());
+        }
+        collect(val);
+      }
+    }
+  };
+  collect(sheets);
+
+  const rewrite = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) rewrite(item);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    const obj = value as Record<string, unknown>;
+    for (const [key, val] of Object.entries(obj)) {
+      if (
+        (key === 'id' || key === 'topicId' || key === 'end1Id' || key === 'end2Id') &&
+        typeof val === 'string' &&
+        idMap.has(val)
+      ) {
+        obj[key] = idMap.get(val);
+      } else if (typeof val === 'string' && val.startsWith('xmind:#')) {
+        const oldId = val.slice('xmind:#'.length);
+        if (idMap.has(oldId)) obj[key] = `xmind:#${idMap.get(oldId)}`;
+      } else {
+        rewrite(val);
+      }
+    }
+  };
+  rewrite(sheets);
+}
+
+/**
+ * Conta i topic di un albero (inclusi i figli in tutti i gruppi).
+ */
+export function countTopics(sheets: Sheet[]): number {
+  let count = 0;
+  for (const sheet of sheets) {
+    if (sheet.rootTopic) {
+      walkTopic(sheet.rootTopic, () => {
+        count++;
+      });
+    }
+  }
+  return count;
+}
+
+/**
  * Raccoglie tutti i riferimenti xap:resources/<nome> in qualsiasi valore JSON (content.json, manifest, theme).
  */
 export function collectResourceRefs(value: unknown, out: Set<string>): void {

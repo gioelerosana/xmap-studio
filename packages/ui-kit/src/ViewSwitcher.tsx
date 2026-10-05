@@ -23,22 +23,22 @@ export function ViewSwitcher<T extends string>({
   return (
     <div
       className={cn(
-        'inline-flex p-0.5 rounded-lg bg-[rgba(0,0,0,0.06)] dark:bg-[rgba(255,255,255,0.08)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]',
+        'inline-flex items-center p-0.5 rounded-lg bg-[var(--adw-surface)] border border-[var(--adw-card-border)]',
         className
       )}
     >
       {items.map((item) => {
-        const isActive = item.id === activeId;
+        const active = item.id === activeId;
         return (
           <button
             key={item.id}
             type="button"
             onClick={() => onChange(item.id)}
             className={cn(
-              'flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all select-none focus:outline-none',
-              isActive
-                ? 'bg-white dark:bg-[var(--adw-card-bg)] text-[var(--adw-fg-color)] shadow-sm font-semibold'
-                : 'text-[var(--adw-fg-color)] opacity-70 hover:opacity-100 hover:bg-[rgba(0,0,0,0.03)] dark:hover:bg-[rgba(255,255,255,0.04)]'
+              'flex items-center gap-1.5 px-2.5 h-7 rounded-md text-xs font-medium transition-colors select-none focus:outline-none',
+              active
+                ? 'bg-[var(--adw-card-bg)] text-[var(--adw-fg-color)] shadow-[var(--adw-shadow-sm)]'
+                : 'text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
             )}
           >
             {item.icon && <span className="shrink-0">{item.icon}</span>}

@@ -102,6 +102,77 @@ export async function saveLocalXmindFile(
   return undefined;
 }
 
+/**
+ * Apre un file qualsiasi (per unire mappe o allegare file) con dialogo nativo
+ * su Electron e input file su web.
+ */
+export async function pickAnyFile(options?: {
+  description?: string;
+  extensions?: string[];
+}): Promise<{ name: string; path?: string; bytes: Uint8Array } | null> {
+  const api = (window as any).electronAPI;
+  if (api?.openFile) {
+    const res = await api.openFile({
+      description: options?.description,
+      extensions: options?.extensions,
+    });
+    if (!res) return null;
+    return { name: res.name, path: res.path, bytes: new Uint8Array(res.bytes) };
+  }
+
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    if (options?.extensions?.length) {
+      input.accept = options.extensions.map((e) => `.${e}`).join(',');
+    }
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) {
+        resolve(null);
+        return;
+      }
+      resolve({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+    };
+    input.click();
+  });
+}
+
+/**
+ * Salva byte arbitrari (export, split, …) con dialogo nativo o download.
+ */
+export async function saveBytes(
+  bytes: Uint8Array,
+  suggestedName: string,
+  mimeType: string,
+  options?: { description?: string; extensions?: string[] }
+): Promise<{ path?: string } | null> {
+  const api = (window as any).electronAPI;
+  if (api?.saveBytes) {
+    return (await api.saveBytes(suggestedName, Array.from(bytes), options)) || null;
+  }
+
+  if ('showSaveFilePicker' in window) {
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName,
+        types: options?.extensions
+          ? [{ description: options.description || 'File', accept: { [mimeType]: options.extensions.map((e) => `.${e}`) } }]
+          : undefined,
+      });
+      const writable = await handle.createWritable();
+      await writable.write(bytes);
+      await writable.close();
+      return { path: handle.name };
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return null;
+    }
+  }
+
+  downloadBlob(bytes, suggestedName, mimeType);
+  return null;
+}
+
 export function downloadBlob(bytes: Uint8Array, filename: string, mimeType: string): void {
   const blob = new Blob([bytes as any], { type: mimeType });
   const url = URL.createObjectURL(blob);

@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   HeaderBar,
   ViewSwitcher,
   Button,
   IconButton,
+  Menu,
+  MenuItem,
+  Modal,
   ToastContainer,
   ToastMessage,
 } from '@xmap/ui-kit';
@@ -20,39 +23,70 @@ import {
   Save,
   Undo2,
   Redo2,
-  Share2,
-  Upload,
-  Search,
   Moon,
   Sun,
   ListTree,
   Network,
+  MoreVertical,
+  FileDown,
+  FileUp,
+  Sigma,
+  Paperclip,
+  Merge,
+  Split,
+  Trash2,
+  Info,
+  PanelRight,
 } from 'lucide-react';
-import { openLocalXmindFile, saveLocalXmindFile } from './adapters/fileSystem.js';
-import { Outliner } from './components/Outliner.js';
+import {
+  openLocalXmindFile,
+  saveLocalXmindFile,
+  pickAnyFile,
+  saveBytes,
+  downloadBlob,
+} from './adapters/fileSystem.js';
+import { Sidebar } from './components/Sidebar.js';
 import { MapView } from './components/MapView.js';
-import { LatexModal } from './components/LatexModal.js';
-import { TopicDetailsModal } from './components/TopicDetailsModal.js';
+import { OutlineView } from './components/OutlineView.js';
+import { Inspector } from './components/Inspector.js';
 import { ExportModal } from './components/ExportModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
+import { DropPlacement, TopicFilter } from './components/TopicTree.js';
 
 declare global {
   interface Window {
     electronAPI?: {
       openFileDialog: () => Promise<{ path: string; name: string; bytes: number[] } | null>;
       openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: number[] } | null>;
+      openFile: (options?: { description?: string; extensions?: string[] }) => Promise<{ path: string; name: string; bytes: number[] } | null>;
       saveFileDialog: (suggestedName?: string) => Promise<string | null>;
+      saveBytes: (suggestedName: string, bytes: number[], options?: { description?: string; extensions?: string[] }) => Promise<{ path: string } | null>;
       saveAtomic: (filePath: string, bytes: number[]) => Promise<{ backup?: string; bytes: number }>;
       checkXMindRunning: () => Promise<string[]>;
       minimize: () => void;
       maximize: () => void;
       close: () => void;
+      forceClose: () => void;
       isMaximized: () => Promise<boolean>;
       getInitialFile: () => Promise<string | null>;
       onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;
+      onBeforeClose: (callback: () => void) => () => void;
+      onOpenFile: (callback: (filePath: string) => void) => () => void;
     };
   }
+}
+
+type CloseAction = null | 'confirm';
+
+function sanitizeName(name: string): string {
+  return (
+    name
+      .replace(/[\\/]/g, '-')
+      .replace(/\s+/g, ' ')
+      .replace(/^[.\s]+|[.\s]+$/g, '')
+      .slice(0, 80) || 'mappa'
+  );
 }
 
 export const App: React.FC = () => {
@@ -60,81 +94,98 @@ export const App: React.FC = () => {
   const [controller] = useState(() => new AppController());
   const [workbook, setWorkbook] = useState<WorkbookDto | null>(null);
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
-  const [viewMode, setViewMode] = useState<'outliner' | 'map'>('outliner');
+  const [viewMode, setViewMode] = useState<'map' | 'outline'>('map');
   const [searchQuery, setSearchQuery] = useState('');
-  const [darkMode, setDarkMode] = useState(true);
+  const [filter, setFilter] = useState<TopicFilter>('all');
+  const [darkMode, setDarkMode] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+  );
   const [selectedTopicId, setSelectedTopicId] = useState<string | undefined>();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  // Stati dei Modali
-  const [latexModalOpen, setLatexModalOpen] = useState(false);
-  const [latexTargetTopicId, setLatexTargetTopicId] = useState<string>('');
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
-  const [detailsTargetTopic, setDetailsTargetTopic] = useState<TopicView | null>(null);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [closePrompt, setClosePrompt] = useState<CloseAction>(null);
 
-  const addToast = (type: 'info' | 'success' | 'warning' | 'error', message: string) => {
+  const addToast = useCallback((type: ToastMessage['type'], message: string) => {
     const id = Math.random().toString(36).slice(2);
     setToasts((prev) => [...prev, { id, type, message }]);
-  };
+  }, []);
 
-  const removeToast = (id: string) => {
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
-  // Sincronizzazione finestra massimizzata per Electron
-  useEffect(() => {
-    if (isElectron && window.electronAPI) {
-      window.electronAPI.isMaximized().then(setIsWindowMaximized);
-      const unsubscribe = window.electronAPI.onMaximizedChange(setIsWindowMaximized);
-      return unsubscribe;
-    }
-  }, [isElectron]);
+  const refreshState = useCallback(() => {
+    setWorkbook(controller.workbook());
+  }, [controller]);
 
-  // Caricamento file passato da CLI o doppio clic in Electron
-  useEffect(() => {
-    if (isElectron && window.electronAPI) {
-      window.electronAPI.getInitialFile().then(async (filePath) => {
-        if (filePath && window.electronAPI) {
-          const res = await window.electronAPI.openFilePath(filePath);
-          if (res) {
-            const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
-            setWorkbook(dto);
-            setActiveSheetIndex(0);
-            addToast('success', `Aperto: ${res.name}`);
-          }
-        }
-      });
-    }
-  }, [controller, isElectron]);
-
-  // Tema Dark/Light
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
+  const resolveResource = useCallback(
+    (src: string) => controller.resourceBytes(src),
+    [controller]
+  );
 
   const currentSheet = workbook?.sheets[activeSheetIndex];
   const allTopics = useMemo(() => currentSheet?.topics || [], [currentSheet]);
+  const selectedTopic = useMemo(
+    () => allTopics.find((t) => t.id === selectedTopicId) || null,
+    [allTopics, selectedTopicId]
+  );
 
   const currentLayout = useMemo<Layout | null>(() => {
     if (!workbook || viewMode !== 'map') return null;
     return controller.mapLayout(activeSheetIndex, collapsedIds);
   }, [controller, workbook, activeSheetIndex, viewMode, collapsedIds]);
 
-  const refreshState = useCallback(() => {
-    setWorkbook(controller.workbook());
-  }, [controller]);
+  const outlineText = useMemo(() => {
+    if (!workbook || viewMode !== 'outline') return '';
+    return controller.export('outline');
+  }, [controller, workbook, viewMode, activeSheetIndex]);
 
-  // Gestione File
-  const handleOpenLocalFile = async () => {
+  // Tema
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
+
+  // Finestra massimizzata
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI) return;
+    window.electronAPI.isMaximized().then(setIsWindowMaximized);
+    return window.electronAPI.onMaximizedChange(setIsWindowMaximized);
+  }, [isElectron]);
+
+  const openFromPath = useCallback(
+    async (filePath: string) => {
+      if (!window.electronAPI) return;
+      const res = await window.electronAPI.openFilePath(filePath);
+      if (!res) return;
+      const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
+      setWorkbook(dto);
+      setActiveSheetIndex(0);
+      setCollapsedIds(new Set());
+      setSelectedTopicId(undefined);
+      addToast('success', `Aperto: ${res.name}`);
+    },
+    [controller, addToast]
+  );
+
+  // File iniziale + aperture successive (Electron)
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI) return;
+    window.electronAPI.getInitialFile().then((p) => {
+      if (p) void openFromPath(p);
+    });
+    return window.electronAPI.onOpenFile((p) => {
+      void openFromPath(p);
+    });
+  }, [isElectron, openFromPath]);
+
+  const handleOpenLocalFile = useCallback(async () => {
     try {
       if (isElectron && window.electronAPI) {
         const res = await window.electronAPI.openFileDialog();
@@ -143,6 +194,7 @@ export const App: React.FC = () => {
         setWorkbook(dto);
         setActiveSheetIndex(0);
         setCollapsedIds(new Set());
+        setSelectedTopicId(undefined);
         addToast('success', `Mappa aperta: ${res.name}`);
         return;
       }
@@ -154,11 +206,12 @@ export const App: React.FC = () => {
       setFileHandle(res.handle);
       setActiveSheetIndex(0);
       setCollapsedIds(new Set());
+      setSelectedTopicId(undefined);
       addToast('success', `Mappa aperta: ${res.name}`);
     } catch (err: any) {
       addToast('error', `Errore apertura file: ${err.message || String(err)}`);
     }
-  };
+  }, [controller, isElectron, addToast]);
 
   const handleLoadDemo = async () => {
     try {
@@ -170,14 +223,15 @@ export const App: React.FC = () => {
       setFileHandle(undefined);
       setActiveSheetIndex(0);
       setCollapsedIds(new Set());
-      addToast('info', 'Mappa demo caricata!');
+      setSelectedTopicId(undefined);
+      addToast('info', 'Mappa demo caricata');
     } catch (err: any) {
       addToast('error', `Impossibile caricare la demo: ${err.message}`);
     }
   };
 
   const handleNewMap = async () => {
-    const blankJson = JSON.stringify([
+    const blank = JSON.stringify([
       {
         id: 'sheet-1',
         class: 'sheet',
@@ -194,190 +248,327 @@ export const App: React.FC = () => {
         },
       },
     ]);
-
     const enc = new TextEncoder();
-    const rawArchive: RawArchive = {
+    const raw: RawArchive = {
       entries: new Map([
-        ['content.json', enc.encode(blankJson)],
+        ['content.json', enc.encode(blank)],
         ['manifest.json', enc.encode(JSON.stringify({ 'file-entries': { 'content.json': {} } }))],
         ['metadata.json', enc.encode(JSON.stringify({ creator: { name: 'XMap Studio' } }))],
       ]),
       resources: new Map(),
     };
-
-    const bytes = await buildArchiveBytes(rawArchive);
+    const bytes = await buildArchiveBytes(raw);
     const dto = await controller.open(bytes, 'senza_titolo.xmind');
     setWorkbook(dto);
     setFileHandle(undefined);
     setActiveSheetIndex(0);
     setCollapsedIds(new Set());
+    setSelectedTopicId(undefined);
     addToast('success', 'Nuova mappa creata');
   };
 
-  const handleSave = async () => {
-    if (!workbook) return;
-    try {
-      // Controllo di sicurezza XMind in background
-      if (isElectron && window.electronAPI) {
-        const running = await window.electronAPI.checkXMindRunning();
-        if (running.length > 0) {
-          addToast(
-            'warning',
-            `Attenzione: XMind è in esecuzione (${running.join(', ')}). Rischio sovrascrittura.`
-          );
+  const writeWorkbook = useCallback(
+    async (force: boolean, saveAs: boolean): Promise<boolean> => {
+      if (!workbook) return false;
+      setBusy(true);
+      try {
+        if (!force && isElectron && window.electronAPI) {
+          const running = await window.electronAPI.checkXMindRunning();
+          if (running.length > 0) {
+            const proceed = confirm(
+              `XMind è in esecuzione (${running.join(', ')}). Salvando adesso il file potrebbe essere sovrascritto o corrotto.\n\nForzare il salvataggio?`
+            );
+            if (!proceed) {
+              addToast('warning', 'Salvataggio annullato.');
+              return false;
+            }
+          }
         }
-      }
 
-      const { bytes, validation } = await controller.prepareArchiveBytes();
+        const { bytes, validation } = await controller.prepareArchiveBytes();
 
-      if (isElectron && window.electronAPI) {
-        let savePath = workbook.path;
-        if (!savePath || savePath === 'senza_titolo.xmind' || !savePath.includes('/')) {
-          const selected = await window.electronAPI.saveFileDialog(workbook.fileName || 'mappa.xmind');
-          if (!selected) return;
-          savePath = selected;
+        if (isElectron && window.electronAPI) {
+          let savePath = workbook.path;
+          if (saveAs || !savePath || savePath === 'senza_titolo.xmind' || !savePath.includes('/')) {
+            const selected = await window.electronAPI.saveFileDialog(workbook.fileName || 'mappa.xmind');
+            if (!selected) return false;
+            savePath = selected;
+          }
+          await window.electronAPI.saveAtomic(savePath, Array.from(bytes));
+          controller.markSaved(savePath);
+          refreshState();
+          addToast('success', `Salvato (${bytes.length.toLocaleString('it-IT')} byte)`);
+          return true;
         }
-        const report = await window.electronAPI.saveAtomic(savePath, Array.from(bytes));
-        controller.save();
+
+        const handle = await saveLocalXmindFile(bytes, workbook.fileName || 'mappa.xmind', saveAs ? undefined : fileHandle);
+        if (handle) setFileHandle(handle);
+        controller.markSaved();
         refreshState();
-        addToast(
-          'success',
-          `Salvataggio atomico completato. ${report.backup ? `Backup salvato in: ${report.backup}` : ''}`
-        );
-        return;
+        addToast('success', `Mappa salvata (${validation.resourceRefs} risorse registrate)`);
+        return true;
+      } catch (err: any) {
+        addToast('error', `Errore durante il salvataggio: ${err.message}`);
+        return false;
+      } finally {
+        setBusy(false);
       }
+    },
+    [workbook, controller, fileHandle, isElectron, addToast, refreshState]
+  );
 
-      const newHandle = await saveLocalXmindFile(
-        bytes,
-        workbook.fileName || 'mappa.xmind',
-        fileHandle
-      );
-      if (newHandle) {
-        setFileHandle(newHandle);
+  const handleSave = useCallback(async () => {
+    if (!workbook) return;
+    if (!workbook.dirty) {
+      addToast('info', 'Nessuna modifica da salvare.');
+      return;
+    }
+    await writeWorkbook(false, false);
+  }, [workbook, writeWorkbook, addToast]);
+
+  const handleSaveAs = useCallback(async () => {
+    if (!workbook) return;
+    await writeWorkbook(true, true);
+  }, [workbook, writeWorkbook]);
+
+  // Scorciatoie da tastiera
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        e.shiftKey ? controller.redo() : controller.undo();
+        refreshState();
+      } else if (key === 'y') {
+        e.preventDefault();
+        controller.redo();
+        refreshState();
+      } else if (key === 's') {
+        e.preventDefault();
+        e.shiftKey ? handleSaveAs() : handleSave();
+      } else if (key === 'o') {
+        e.preventDefault();
+        handleOpenLocalFile();
+      } else if (key === 'm') {
+        e.preventDefault();
+        setViewMode('map');
+      } else if (e.shiftKey && key === 'n') {
+        e.preventDefault();
+        if (selectedTopic) handleAddChild(selectedTopic.id);
+        else if (allTopics[0]) handleAddChild(allTopics[0].id);
       }
-      controller.save();
-      refreshState();
-      addToast(
-        'success',
-        `Mappa salvata con successo (${validation.resourceRefs} formule/risorse registrate)`
-      );
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [controller, refreshState, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
+
+  // Chiusura con modifiche non salvate
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (controller.isDirty()) e.preventDefault();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [controller]);
+
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI) return;
+    return window.electronAPI.onBeforeClose(() => {
+      if (controller.isDirty()) setClosePrompt('confirm');
+      else window.electronAPI?.forceClose();
+    });
+  }, [isElectron, controller]);
+
+  const handleToggleCollapse = useCallback((topicId: string) => {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      next.has(topicId) ? next.delete(topicId) : next.add(topicId);
+      return next;
+    });
+  }, []);
+
+  const handleAddChild = useCallback(
+    (parentId: string) => {
+      try {
+        const { newId } = controller.addTopic(parentId, 'Nuovo blocco');
+        setCollapsedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(parentId);
+          return next;
+        });
+        setSelectedTopicId(newId);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', err.message);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleMove = useCallback(
+    (id: string, targetId: string, placement: DropPlacement) => {
+      try {
+        controller.moveTopic(id, targetId, placement);
+        refreshState();
+        addToast('success', 'Blocco spostato');
+      } catch (err: any) {
+        addToast('error', `Spostamento non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleExportEquation = async (format: 'svg' | 'png') => {
+    if (!selectedTopic || selectedTopic.kind !== 'equation') return;
+    try {
+      const { bytes, mime, extension } = await controller.exportEquation(selectedTopic.id, format);
+      const base = sanitizeName(selectedTopic.title || controller.mapTitle() || 'equazione');
+      await saveBytes(bytes, `${base}.${extension}`, mime, {
+        description: format.toUpperCase(),
+        extensions: [extension],
+      });
+      addToast('success', `Equazione esportata in ${format.toUpperCase()}`);
     } catch (err: any) {
-      addToast('error', `Errore durante il salvataggio: ${err.message}`);
+      addToast('error', `Esportazione non riuscita: ${err.message}`);
     }
   };
 
-  // Scorciatoie da tastiera globali
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          if (controller.workbook()?.canRedo) {
-            controller.redo();
-            refreshState();
-          }
-        } else {
-          if (controller.workbook()?.canUndo) {
-            controller.undo();
-            refreshState();
-          }
-        }
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        if (controller.workbook()?.canRedo) {
-          controller.redo();
-          refreshState();
-        }
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        handleSave();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        handleOpenLocalFile();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [controller, handleSave]);
-
-  const handleToggleCollapse = (topicId: string) => {
-    setCollapsedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(topicId)) {
-        next.delete(topicId);
-      } else {
-        next.add(topicId);
-      }
-      return next;
-    });
+  const handleAttach = async () => {
+    if (!selectedTopic) return;
+    try {
+      const picked = await pickAnyFile({ description: 'Tutti i file' });
+      if (!picked) return;
+      controller.attachFileToTopic(selectedTopic.id, picked.name, picked.bytes);
+      refreshState();
+      addToast('success', `Allegato: ${picked.name}`);
+    } catch (err: any) {
+      addToast('error', `Allegato non aggiunto: ${err.message}`);
+    }
   };
 
-  // Apertura Modali
-  const openLatexModal = (topicId: string) => {
-    setLatexTargetTopicId(topicId);
-    setLatexModalOpen(true);
+  const handleMerge = async () => {
+    if (!workbook) return;
+    try {
+      const picked = await pickAnyFile({ description: 'File XMind', extensions: ['xmind'] });
+      if (!picked) return;
+      const res = await controller.mergeWorkbook(picked.bytes);
+      refreshState();
+      addToast('success', `Unite ${res.addedSheets} mappe (${res.addedTopics} blocchi)`);
+    } catch (err: any) {
+      addToast('error', `Unione non riuscita: ${err.message}`);
+    }
   };
 
-  const openDetailsModal = (topic: TopicView) => {
-    setDetailsTargetTopic(topic);
-    setDetailsModalOpen(true);
+  const handleSplit = async () => {
+    if (!selectedTopic || selectedTopic.depth === 0) {
+      addToast('warning', 'Seleziona un blocco non radice da estrarre.');
+      return;
+    }
+    try {
+      const bytes = await controller.splitTopic(selectedTopic.id);
+      const base = sanitizeName(selectedTopic.title || 'mappa');
+      await saveBytes(bytes, `${base}.xmind`, 'application/vnd.xmind.workbook', {
+        description: 'File XMind',
+        extensions: ['xmind'],
+      });
+      addToast('success', 'Ramo estratto in una nuova mappa');
+    } catch (err: any) {
+      addToast('error', `Estrazione non riuscita: ${err.message}`);
+    }
   };
 
-  const handleAddChild = (parentId: string) => {
-    const { dto, newId } = controller.addTopic(parentId, 'Nuovo Argomento');
-    setWorkbook(dto);
-    setSelectedTopicId(newId);
+  const handleDeleteSelected = () => {
+    if (!selectedTopic || selectedTopic.depth === 0) return;
+    if (!confirm(`Eliminare «${selectedTopic.displayTitle}» e i suoi sotto-blocchi?`)) return;
+    try {
+      controller.removeTopic(selectedTopic.id);
+      setSelectedTopicId(undefined);
+      refreshState();
+      addToast('info', 'Blocco eliminato');
+    } catch (err: any) {
+      addToast('error', err.message);
+    }
   };
+
+  const handleConfirmClose = async (action: 'save' | 'discard' | 'cancel') => {
+    if (action === 'cancel') {
+      setClosePrompt(null);
+      return;
+    }
+    if (action === 'save') {
+      const ok = await writeWorkbook(true, false);
+      if (!ok) return;
+    }
+    window.electronAPI?.forceClose();
+  };
+
+  const menuItems: MenuItem[] = workbook
+    ? [
+        { id: 'save-as', label: 'Salva con nome…', icon: <Save className="w-3.5 h-3.5" />, shortcut: 'Ctrl+Shift+S', onSelect: handleSaveAs },
+        { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="w-3.5 h-3.5" />, separatorBefore: true, onSelect: () => setExportModalOpen(true) },
+        { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="w-3.5 h-3.5" />, onSelect: () => setImportModalOpen(true) },
+        {
+          id: 'export-svg',
+          label: 'Esporta equazione SVG',
+          icon: <Sigma className="w-3.5 h-3.5" />,
+          separatorBefore: true,
+          disabled: selectedTopic?.kind !== 'equation',
+          onSelect: () => handleExportEquation('svg'),
+        },
+        {
+          id: 'export-png',
+          label: 'Esporta equazione PNG',
+          icon: <Sigma className="w-3.5 h-3.5" />,
+          disabled: selectedTopic?.kind !== 'equation',
+          onSelect: () => handleExportEquation('png'),
+        },
+        { id: 'attach', label: 'Allega file…', icon: <Paperclip className="w-3.5 h-3.5" />, separatorBefore: true, disabled: !selectedTopic, onSelect: handleAttach },
+        { id: 'merge', label: 'Unisci una mappa…', icon: <Merge className="w-3.5 h-3.5" />, onSelect: handleMerge },
+        { id: 'split', label: 'Estrai ramo come mappa…', icon: <Split className="w-3.5 h-3.5" />, disabled: !selectedTopic || selectedTopic.depth === 0, onSelect: handleSplit },
+        {
+          id: 'delete',
+          label: 'Elimina blocco',
+          icon: <Trash2 className="w-3.5 h-3.5" />,
+          danger: true,
+          separatorBefore: true,
+          disabled: !selectedTopic || selectedTopic.depth === 0,
+          onSelect: handleDeleteSelected,
+        },
+        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />, separatorBefore: true, onSelect: () => setDarkMode((v) => !v) },
+        { id: 'about', label: 'Informazioni', icon: <Info className="w-3.5 h-3.5" />, onSelect: () => setAboutOpen(true) },
+      ]
+    : [
+        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />, onSelect: () => setDarkMode((v) => !v) },
+        { id: 'about', label: 'Informazioni', icon: <Info className="w-3.5 h-3.5" />, onSelect: () => setAboutOpen(true) },
+      ];
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-adw-bg text-adw-fg select-none">
-      {/* HeaderBar GNOME Adwaita con CSD */}
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--adw-bg-color)] text-[var(--adw-fg-color)] select-none">
       <HeaderBar
-        title={controller.mapTitle() || 'XMap Studio'}
-        subtitle={workbook?.dirty ? 'Modificato (non salvato)' : undefined}
+        title={workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio'}
+        subtitle={workbook?.dirty ? 'Modifiche non salvate' : undefined}
         leftContent={
           <>
-            <Button
-              variant="flat"
-              size="sm"
-              icon={<FolderOpen className="w-4 h-4" />}
-              onClick={handleOpenLocalFile}
-              title="Apri file .xmind (Ctrl+O)"
-            >
+            <Button variant="flat" size="sm" icon={<FolderOpen className="w-4 h-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
               Apri
             </Button>
             <Button
               variant={workbook?.dirty ? 'suggested' : 'flat'}
               size="sm"
               icon={<Save className="w-4 h-4" />}
-              disabled={!workbook}
+              disabled={!workbook || busy}
               onClick={handleSave}
-              title="Salva mappa (Ctrl+S)"
+              title="Salva (Ctrl+S)"
             >
               Salva
             </Button>
-            <div className="h-4 w-px bg-adw-headerbarBorder mx-1" />
-            <IconButton
-              size="sm"
-              disabled={!workbook?.canUndo}
-              onClick={() => {
-                controller.undo();
-                refreshState();
-              }}
-              title="Annulla (Ctrl+Z)"
-            >
+            <div className="w-px h-4 bg-[var(--adw-hairline)] mx-0.5" />
+            <IconButton size="sm" disabled={!workbook?.canUndo} onClick={() => { controller.undo(); refreshState(); }} title="Annulla (Ctrl+Z)">
               <Undo2 className="w-4 h-4" />
             </IconButton>
-            <IconButton
-              size="sm"
-              disabled={!workbook?.canRedo}
-              onClick={() => {
-                controller.redo();
-                refreshState();
-              }}
-              title="Ripristina (Ctrl+Y)"
-            >
+            <IconButton size="sm" disabled={!workbook?.canRedo} onClick={() => { controller.redo(); refreshState(); }} title="Ripeti (Ctrl+Shift+Z)">
               <Redo2 className="w-4 h-4" />
             </IconButton>
           </>
@@ -386,53 +577,38 @@ export const App: React.FC = () => {
           workbook && (
             <ViewSwitcher
               items={[
-                { id: 'outliner', label: 'Outliner', icon: <ListTree className="w-3.5 h-3.5" /> },
-                { id: 'map', label: 'Mappa Concettuale', icon: <Network className="w-3.5 h-3.5" /> },
+                { id: 'map', label: 'Mappa', icon: <Network className="w-3.5 h-3.5" /> },
+                { id: 'outline', label: 'Outliner', icon: <ListTree className="w-3.5 h-3.5" /> },
               ]}
               activeId={viewMode}
-              onChange={(id) => setViewMode(id as 'outliner' | 'map')}
+              onChange={(id) => setViewMode(id as 'map' | 'outline')}
             />
           )
         }
         rightContent={
           <>
             {workbook && (
-              <div className="relative flex items-center">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 opacity-40 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cerca nodi o formule..."
-                  className="w-40 focus:w-56 transition-all pl-8 pr-2.5 py-1 text-xs rounded-lg border border-adw-cardBorder bg-white/70 dark:bg-black/20 focus:outline-none focus:ring-1 focus:ring-adw-accent"
-                />
-              </div>
+              <IconButton
+                size="sm"
+                active={Boolean(selectedTopicId)}
+                disabled={!workbook}
+                onClick={() => {
+                  if (selectedTopicId) setSelectedTopicId(undefined);
+                  else if (allTopics[0]) setSelectedTopicId(allTopics[0].id);
+                }}
+                title={selectedTopicId ? 'Chiudi pannello dettagli' : 'Apri pannello dettagli'}
+              >
+                <PanelRight className="w-4 h-4" />
+              </IconButton>
             )}
-            {workbook && (
-              <>
-                <IconButton
-                  size="sm"
-                  title="Importa Outline"
-                  onClick={() => setImportModalOpen(true)}
-                >
-                  <Upload className="w-4 h-4" />
-                </IconButton>
-                <IconButton
-                  size="sm"
-                  title="Esporta (Markdown, OPML, Outline)"
-                  onClick={() => setExportModalOpen(true)}
-                >
-                  <Share2 className="w-4 h-4" />
-                </IconButton>
-              </>
-            )}
-            <IconButton
-              size="sm"
-              title="Cambia Tema"
-              onClick={() => setDarkMode(!darkMode)}
-            >
+            <IconButton size="sm" onClick={() => setDarkMode((v) => !v)} title="Cambia tema">
               {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </IconButton>
+            <Menu items={menuItems} widthClass="w-64" trigger={
+              <IconButton size="sm" title="Menu">
+                <MoreVertical className="w-4 h-4" />
+              </IconButton>
+            } />
           </>
         }
         showWindowControls={isElectron}
@@ -448,8 +624,7 @@ export const App: React.FC = () => {
         }
       />
 
-      {/* Area Principale di Lavoro */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+      <main className="flex-1 flex overflow-hidden">
         {!workbook ? (
           <EmptyState
             onOpenFile={handleOpenLocalFile}
@@ -460,145 +635,126 @@ export const App: React.FC = () => {
               const dto = await controller.open(new Uint8Array(buffer), file.name);
               setWorkbook(dto);
               setActiveSheetIndex(0);
+              setCollapsedIds(new Set());
+              setSelectedTopicId(undefined);
               addToast('success', `Aperto ${file.name}`);
             }}
           />
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Vista Selezionata */}
-            {viewMode === 'outliner' ? (
-              <Outliner
-                topics={allTopics}
-                searchQuery={searchQuery}
-                onSelectTopic={(t) => setSelectedTopicId(t.id)}
-                onAddChild={handleAddChild}
-                onOpenLatex={openLatexModal}
-                onOpenDetails={openDetailsModal}
-                selectedTopicId={selectedTopicId}
-                collapsedIds={collapsedIds}
-                onToggleCollapse={handleToggleCollapse}
-                resourceResolver={(src) => controller.resourceBytes(src)}
-              />
-            ) : (
-              <MapView
-                layout={currentLayout}
-                selectedTopicId={selectedTopicId}
-                onSelectTopic={(id) => setSelectedTopicId(id)}
-                onOpenDetails={(id) => {
-                  const t = allTopics.find((x) => x.id === id);
-                  if (t) openDetailsModal(t);
-                }}
-                onOpenLatex={openLatexModal}
-                onAddChild={handleAddChild}
-                onToggleCollapse={handleToggleCollapse}
-                resourceResolver={(src) => controller.resourceBytes(src)}
-              />
-            )}
+          <>
+            <Sidebar
+              topics={allTopics}
+              searchQuery={searchQuery}
+              onSearch={setSearchQuery}
+              filter={filter}
+              onFilter={setFilter}
+              selectedTopicId={selectedTopicId}
+              collapsedIds={collapsedIds}
+              onSelect={setSelectedTopicId}
+              onToggleCollapse={handleToggleCollapse}
+              onAddChild={handleAddChild}
+              onAddRootChild={() => allTopics[0] && handleAddChild(allTopics[0].id)}
+              onMove={handleMove}
+            />
 
-            {/* Schede Fogli (Se ce ne sono più di uno) */}
-            {workbook.sheets.length > 1 && (
-              <div className="h-9 border-t border-adw-cardBorder bg-adw-card flex items-center px-3 space-x-1 overflow-x-auto text-xs font-medium">
-                {workbook.sheets.map((sheet, idx) => (
-                  <button
-                    key={sheet.id || idx}
-                    type="button"
-                    onClick={() => setActiveSheetIndex(idx)}
-                    className={`px-3 py-1 rounded-md transition-colors ${
-                      idx === activeSheetIndex
-                        ? 'bg-adw-accent text-white font-semibold'
-                        : 'opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    {sheet.title}
-                  </button>
-                ))}
-              </div>
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {viewMode === 'map' ? (
+                <MapView
+                  layout={currentLayout}
+                  selectedTopicId={selectedTopicId}
+                  onSelectTopic={setSelectedTopicId}
+                  onOpenDetails={(id) => setSelectedTopicId(id)}
+                  onToggleCollapse={handleToggleCollapse}
+                  resourceResolver={resolveResource}
+                />
+              ) : (
+                <OutlineView text={outlineText} />
+              )}
+
+              {workbook.sheets.length > 1 && (
+                <div className="h-9 shrink-0 border-t border-[var(--adw-card-border)] bg-[var(--adw-sidebar-bg)] flex items-center gap-1 px-2 overflow-x-auto">
+                  {workbook.sheets.map((sheet, idx) => (
+                    <button
+                      key={sheet.id || idx}
+                      type="button"
+                      onClick={() => {
+                        setActiveSheetIndex(idx);
+                        setSelectedTopicId(undefined);
+                      }}
+                      className={
+                        'px-2.5 h-6 rounded-md text-[12px] whitespace-nowrap transition-colors ' +
+                        (idx === activeSheetIndex
+                          ? 'bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)] font-medium'
+                          : 'text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)] hover:bg-[var(--adw-button-hover)]')
+                      }
+                    >
+                      {sheet.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedTopicId && (
+              <Inspector
+                topic={selectedTopic}
+                allTopics={allTopics}
+                relationships={currentSheet?.relationships || []}
+                controller={controller}
+                onChanged={refreshState}
+                onClose={() => setSelectedTopicId(undefined)}
+                darkMode={darkMode}
+                onToast={addToast}
+              />
             )}
-          </div>
+          </>
         )}
       </main>
 
-      {/* Modale Formula LaTeX */}
-      <LatexModal
-        isOpen={latexModalOpen}
-        onClose={() => setLatexModalOpen(false)}
-        topicId={latexTargetTopicId}
-        currentTitle={allTopics.find((t) => t.id === latexTargetTopicId)?.title}
-        initialLatex={allTopics.find((t) => t.id === latexTargetTopicId)?.latex}
-        onApply={async (topicId, latex, options) => {
-          try {
-            const updated = await controller.apply(topicId, latex, {
-              titleMode: options.titleMode,
-              color: options.color,
-            });
-            setWorkbook(updated);
-            addToast('success', 'Equazione applicata con successo');
-          } catch (err: any) {
-            addToast('error', `Errore applicazione equazione: ${err.message}`);
-          }
-        }}
-        onRemove={(topicId) => {
-          const updated = controller.removeEquation(topicId);
-          setWorkbook(updated);
-          addToast('info', 'Equazione rimossa');
-        }}
-      />
-
-      {/* Modale Dettagli Blocco */}
-      <TopicDetailsModal
-        isOpen={detailsModalOpen}
-        onClose={() => setDetailsModalOpen(false)}
-        topic={detailsTargetTopic}
-        onSave={(updates) => {
-          if (!detailsTargetTopic) return;
-          controller.setTopicTitle(detailsTargetTopic.id, updates.title);
-          controller.setTopicNotes(detailsTargetTopic.id, updates.notes);
-          if (updates.notesDisplay !== undefined) {
-            controller.setTopicNotesDisplay(detailsTargetTopic.id, updates.notesDisplay);
-          }
-          controller.setTopicLabels(detailsTargetTopic.id, updates.labels);
-          if (updates.href !== undefined) {
-            controller.setTopicHref(detailsTargetTopic.id, updates.href);
-          }
-          if (updates.color !== undefined) {
-            controller.setTopicColor(detailsTargetTopic.id, updates.color);
-          }
-          if (updates.markerToggle) {
-            controller.toggleTopicMarker(detailsTargetTopic.id, updates.markerToggle);
-          }
-          refreshState();
-        }}
-        onOpenLatex={openLatexModal}
-        onDeleteTopic={(topicId) => {
-          const updated = controller.removeTopic(topicId);
-          setWorkbook(updated);
-          addToast('info', 'Blocco eliminato');
-        }}
-      />
-
-      {/* Modale Esporta */}
       <ExportModal
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
         getExportContent={(fmt) => controller.export(fmt)}
+        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
       />
-
-      {/* Modale Importa */}
       <ImportModal
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onImport={async (fmt, text, asNewSheet) => {
           try {
-            const updated = await controller.importOutline(fmt, text, { asNewSheet });
-            setWorkbook(updated);
-            addToast('success', 'Outline importato con successo');
+            await controller.importOutline(fmt, text, { asNewSheet });
+            refreshState();
+            addToast('success', 'Outline importato');
           } catch (err: any) {
-            addToast('error', `Errore durante l'importazione: ${err.message}`);
+            addToast('error', `Import non riuscito: ${err.message}`);
           }
         }}
       />
 
-      {/* Container Notifiche Toast */}
+      <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title="XMap Studio" maxWidth="max-w-sm">
+        <p className="text-[13px] leading-relaxed text-[var(--adw-muted-color)]">
+          Editor per mappe XMind con equazioni LaTeX native. Lossless, offline, scrittura atomica e validata.
+        </p>
+        <p className="text-[12px] mt-3 text-[var(--adw-muted-color)]">Versione 2.0 — TypeScript / React</p>
+      </Modal>
+
+      <Modal
+        isOpen={closePrompt === 'confirm'}
+        onClose={() => setClosePrompt(null)}
+        title="Salvare le modifiche?"
+        description="Ci sono modifiche non salvate. Se chiudi senza salvare andranno perse."
+        maxWidth="max-w-sm"
+        footer={
+          <div className="flex items-center justify-end gap-2 w-full">
+            <Button variant="flat" size="sm" onClick={() => handleConfirmClose('cancel')}>Annulla</Button>
+            <Button variant="destructive" size="sm" onClick={() => handleConfirmClose('discard')}>Non salvare</Button>
+            <Button variant="suggested" size="sm" onClick={() => handleConfirmClose('save')}>Salva</Button>
+          </div>
+        }
+      >
+        <span />
+      </Modal>
+
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );

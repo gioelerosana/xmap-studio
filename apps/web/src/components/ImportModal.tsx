@@ -1,37 +1,29 @@
 import React, { useState } from 'react';
-import { Modal, Button } from '@xmap/ui-kit';
+import { Modal, Button, cn } from '@xmap/ui-kit';
 import { Upload } from 'lucide-react';
+import { pickAnyFile } from '../adapters/fileSystem.js';
+
+type ImportFormat = 'markdown' | 'opml';
 
 export interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (format: 'markdown' | 'opml', text: string, asNewSheet: boolean) => void;
+  onImport: (format: ImportFormat, text: string, asNewSheet: boolean) => void;
 }
 
-export const ImportModal: React.FC<ImportModalProps> = ({
-  isOpen,
-  onClose,
-  onImport,
-}) => {
-  const [format, setFormat] = useState<'markdown' | 'opml'>('markdown');
+export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onImport }) => {
+  const [format, setFormat] = useState<ImportFormat>('markdown');
   const [text, setText] = useState('');
-  const [asNewSheet, setAsNewSheet] = useState(false);
+  const [asNewSheet, setAsNewSheet] = useState(true);
 
   if (!isOpen) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setText(reader.result as string);
-      if (file.name.endsWith('.opml') || file.name.endsWith('.xml')) {
-        setFormat('opml');
-      } else {
-        setFormat('markdown');
-      }
-    };
-    reader.readAsText(file);
+  const handleFile = async () => {
+    const picked = await pickAnyFile({ description: 'Markdown o OPML', extensions: ['md', 'markdown', 'txt', 'opml', 'xml'] });
+    if (!picked) return;
+    setText(new TextDecoder().decode(picked.bytes));
+    if (picked.name.endsWith('.opml') || picked.name.endsWith('.xml')) setFormat('opml');
+    else setFormat('markdown');
   };
 
   const handleSubmit = () => {
@@ -44,30 +36,26 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Importa Outline (Markdown o OPML)"
+      title="Importa outline"
+      description="Il contenuto viene aggiunto come nuovo foglio della mappa aperta."
       maxWidth="max-w-2xl"
       footer={
         <div className="flex items-center justify-between w-full">
-          <label className="flex items-center space-x-2 text-xs cursor-pointer select-none">
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none text-[var(--adw-muted-color)]">
             <input
               type="checkbox"
               checked={asNewSheet}
               onChange={(e) => setAsNewSheet(e.target.checked)}
-              className="rounded text-adw-accent focus:ring-adw-accent"
+              className="rounded"
             />
-            <span className="opacity-80">Importa in un nuovo Foglio</span>
+            Importa in un nuovo foglio
           </label>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <Button variant="flat" size="sm" onClick={onClose}>
               Annulla
             </Button>
-            <Button
-              variant="suggested"
-              size="sm"
-              disabled={!text.trim()}
-              onClick={handleSubmit}
-            >
-              Importa nella Mappa
+            <Button variant="suggested" size="sm" disabled={!text.trim()} onClick={handleSubmit}>
+              Importa
             </Button>
           </div>
         </div>
@@ -75,34 +63,27 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     >
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          {/* Scelta formato */}
-          <div className="flex space-x-2">
+          <div className="flex gap-1">
             {(['markdown', 'opml'] as const).map((fmt) => (
               <button
                 key={fmt}
                 type="button"
                 onClick={() => setFormat(fmt)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                className={cn(
+                  'px-3 h-7 rounded-md text-xs border transition-colors',
                   format === fmt
-                    ? 'border-adw-accent bg-adw-accent/10 text-adw-accent font-semibold'
-                    : 'border-adw-cardBorder hover:bg-black/5 dark:hover:bg-white/5 opacity-70'
-                }`}
+                    ? 'border-[var(--adw-accent-color)] bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)] font-medium'
+                    : 'border-[var(--adw-card-border)] text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
+                )}
               >
-                {fmt === 'markdown' ? 'Markdown (.md)' : 'OPML (.opml)'}
+                {fmt === 'markdown' ? 'Markdown' : 'OPML'}
               </button>
             ))}
           </div>
 
-          <label className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-adw-cardBorder hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer text-xs font-medium transition-all">
-            <Upload className="w-3.5 h-3.5 text-adw-accent" />
-            <span>Carica da File...</span>
-            <input
-              type="file"
-              accept=".md,.markdown,.txt,.opml,.xml"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
+          <Button variant="flat" size="sm" icon={<Upload className="w-3.5 h-3.5" />} onClick={handleFile}>
+            Carica file…
+          </Button>
         </div>
 
         <textarea
@@ -110,11 +91,11 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           onChange={(e) => setText(e.target.value)}
           placeholder={
             format === 'markdown'
-              ? '# Argomento Principale\n\n- Sotto-argomento 1\n  - Dettaglio 1.1\n- Sotto-argomento 2 $\\int x dx$'
-              : '<opml version="2.0">...'
+              ? '# Argomento principale\n- Sotto-argomento\n  - Dettaglio $\\int x\\,dx$'
+              : '<opml version="2.0">…'
           }
           rows={12}
-          className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-adw-cardBorder bg-adw-bg text-adw-fg focus:outline-none resize-none selection:bg-blue-500/20"
+          className="w-full px-3 py-2 text-xs font-mono rounded-md border border-[var(--adw-card-border)] bg-[var(--adw-surface)] text-[var(--adw-fg-color)] focus:outline-none resize-none"
         />
       </div>
     </Modal>

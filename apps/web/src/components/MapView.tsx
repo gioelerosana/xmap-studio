@@ -1,14 +1,22 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Layout, LayoutNode, TopicView } from '@xmap/core';
-import { Plus, Minus, Maximize2, Sparkles, FileText, ChevronRight } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Layout } from '@xmap/core';
+import { Plus, Minus, Maximize2, FileText, ChevronRight } from 'lucide-react';
+import { cn } from '@xmap/ui-kit';
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
 
 export interface MapViewProps {
   layout: Layout | null;
   selectedTopicId?: string;
   onSelectTopic: (topicId: string) => void;
   onOpenDetails: (topicId: string) => void;
-  onOpenLatex: (topicId: string) => void;
-  onAddChild: (topicId: string) => void;
   onToggleCollapse: (topicId: string) => void;
   resourceResolver: (src: string) => Uint8Array | null;
 }
@@ -18,28 +26,35 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedTopicId,
   onSelectTopic,
   onOpenDetails,
-  onOpenLatex,
-  onAddChild,
   onToggleCollapse,
   resourceResolver,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 60, y: 60 });
+  const [pan, setPan] = useState({ x: 80, y: 80 });
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
 
-  // Gestione rotellina per zoom e pan
+  // Cache delle risorse come data URL: nessun ciclo di vita blob da gestire.
+  const resourceUrls = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!layout) return map;
+    for (const node of layout.nodes) {
+      if (!node.imageSrc || map.has(node.imageSrc)) continue;
+      const bytes = resourceResolver(node.imageSrc);
+      if (!bytes) continue;
+      map.set(node.imageSrc, `data:image/png;base64,${bytesToBase64(bytes)}`);
+    }
+    return map;
+  }, [layout, resourceResolver]);
+
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom((z) => Math.min(Math.max(z * zoomFactor, 0.2), 3.0));
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom((z) => Math.min(Math.max(z * factor, 0.2), 3));
     } else {
-      setPan((p) => ({
-        x: p.x - e.deltaX,
-        y: p.y - e.deltaY,
-      }));
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
     }
   };
 
@@ -51,39 +66,42 @@ export const MapView: React.FC<MapViewProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPan({
-        x: e.clientX - startPan.x,
-        y: e.clientY - startPan.y,
-      });
-    }
+    if (isPanning) setPan({ x: e.clientX - startPan.x, y: e.clientY - startPan.y });
   };
 
-  const handleMouseUp = () => {
-    setIsPanning(false);
+  const stopPan = () => setIsPanning(false);
+
+  const fitToView = () => {
+    if (!layout || !containerRef.current || layout.nodes.length === 0) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const margin = 60;
+    const z = Math.min(
+      (rect.width - margin * 2) / Math.max(layout.width, 1),
+      (rect.height - margin * 2) / Math.max(layout.height, 1),
+      1.4
+    );
+    const safeZoom = Math.max(0.2, z);
+    setZoom(safeZoom);
+    setPan({
+      x: (rect.width - layout.width * safeZoom) / 2,
+      y: (rect.height - layout.height * safeZoom) / 2,
+    });
   };
 
-  const resetView = () => {
-    setZoom(1);
-    setPan({ x: 60, y: 60 });
-  };
+  useEffect(() => {
+    fitToView();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout?.width, layout?.height]);
 
   if (!layout || layout.nodes.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-sm opacity-50 select-none">
+      <div className="flex-1 h-full flex items-center justify-center text-sm text-[var(--adw-muted-color)]">
         Nessun layout disponibile.
       </div>
     );
   }
 
-  // Prepara l'URL per le immagini dei nodi
-  const getResourceUrl = (src?: string): string | undefined => {
-    if (!src) return undefined;
-    const bytes = resourceResolver(src);
-    if (!bytes) return undefined;
-    const blob = new Blob([bytes as any], { type: 'image/png' });
-    return URL.createObjectURL(blob);
-  };
+  const accent = '#3b6cf6';
 
   return (
     <div
@@ -91,126 +109,67 @@ export const MapView: React.FC<MapViewProps> = ({
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      className="relative flex-1 h-full w-full overflow-hidden bg-adw-bg select-none cursor-grab active:cursor-grabbing"
+      onMouseUp={stopPan}
+      onMouseLeave={stopPan}
+      className="relative flex-1 h-full w-full overflow-hidden bg-[var(--adw-surface)] select-none cursor-grab active:cursor-grabbing"
     >
-      {/* Controlli Zoom Flottanti */}
-      <div className="absolute bottom-5 right-5 z-20 flex items-center space-x-1.5 p-1.5 rounded-2xl bg-adw-card/90 backdrop-blur-md border border-adw-cardBorder shadow-lg">
-        <button
-          type="button"
-          onClick={() => setZoom((z) => Math.max(z * 0.85, 0.2))}
-          className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10"
-          title="Zoom Indietro"
-        >
-          <Minus className="w-4 h-4" />
-        </button>
-        <span className="text-xs font-semibold px-1 min-w-[42px] text-center font-mono">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          type="button"
-          onClick={() => setZoom((z) => Math.min(z * 1.15, 3.0))}
-          className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10"
-          title="Zoom Avanti"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={resetView}
-          className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-adw-accent"
-          title="Ripristina Vista"
-        >
-          <Maximize2 className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* SVG Canvas Principale */}
       <svg
         className="w-full h-full"
-        style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: '0 0',
-        }}
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
       >
         <defs>
-          <marker
-            id="rel-arrow"
-            viewBox="0 0 10 10"
-            refX="6"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e01b24" opacity="0.8" />
+          <marker id="rel-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e5484d" opacity="0.85" />
           </marker>
         </defs>
 
-        {/* 1. Tracciamento Connettori Gerarchici tra Nodi */}
+        {/* Connettori gerarchici */}
         {layout.edges.map((edge, idx) => {
           const p = layout.nodes[edge.parent];
           const c = layout.nodes[edge.child];
           if (!p || !c) return null;
-
-          const startX = p.x + p.w;
-          const startY = p.y + p.h / 2;
-          const endX = c.x;
-          const endY = c.y + c.h / 2;
-          const midX = (startX + endX) / 2;
-
-          const pathD = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
-          const strokeColor = c.accent || '#3584e4';
-
+          const sx = p.x + p.w;
+          const sy = p.y + p.h / 2;
+          const ex = c.x;
+          const ey = c.y + c.h / 2;
+          const mid = (sx + ex) / 2;
           return (
             <path
               key={`edge-${idx}`}
-              d={pathD}
+              d={`M ${sx} ${sy} C ${mid} ${sy}, ${mid} ${ey}, ${ex} ${ey}`}
               fill="none"
-              stroke={strokeColor}
-              strokeWidth={p.depth === 0 ? 2.5 : 2}
+              stroke={c.accent || '#c4c9d2'}
+              strokeWidth={p.depth === 0 ? 2 : 1.5}
               strokeLinecap="round"
-              opacity={0.8}
+              opacity={0.9}
             />
           );
         })}
 
-        {/* 2. Tracciamento Relazioni Arbitrarie tra Nodi (Relationship) */}
+        {/* Relazioni */}
         {layout.relationships.map((rel) => {
-          const fromNode = layout.nodes[rel.from];
-          const toNode = layout.nodes[rel.to];
-          if (!fromNode || !toNode) return null;
-
-          const startX = fromNode.x + fromNode.w / 2;
-          const startY = fromNode.y + fromNode.h / 2;
-          const endX = toNode.x + toNode.w / 2;
-          const endY = toNode.y + toNode.h / 2;
-
-          const dx = endX - startX;
-          const dy = endY - startY;
-          const cx = (startX + endX) / 2 - dy * 0.2;
-          const cy = (startY + endY) / 2 + dx * 0.2;
-
+          const from = layout.nodes[rel.from];
+          const to = layout.nodes[rel.to];
+          if (!from || !to) return null;
+          const sx = from.x + from.w / 2;
+          const sy = from.y + from.h / 2;
+          const ex = to.x + to.w / 2;
+          const ey = to.y + to.h / 2;
+          const cx = (sx + ex) / 2 - (ey - sy) * 0.18;
+          const cy = (sy + ey) / 2 + (ex - sx) * 0.18;
           return (
             <g key={`rel-${rel.id}`}>
               <path
-                d={`M ${startX} ${startY} Q ${cx} ${cy}, ${endX} ${endY}`}
+                d={`M ${sx} ${sy} Q ${cx} ${cy}, ${ex} ${ey}`}
                 fill="none"
-                stroke="#e01b24"
-                strokeWidth={1.8}
-                strokeDasharray="5,5"
+                stroke="#e5484d"
+                strokeWidth={1.6}
+                strokeDasharray="5,4"
                 markerEnd="url(#rel-arrow)"
-                opacity={0.7}
+                opacity={0.75}
               />
               {rel.title && (
-                <text
-                  x={cx}
-                  y={cy - 4}
-                  fill="#e01b24"
-                  fontSize={10}
-                  textAnchor="middle"
-                  fontWeight="bold"
-                >
+                <text x={cx} y={cy - 4} fill="#e5484d" fontSize={10} textAnchor="middle" fontWeight={600}>
                   {rel.title}
                 </text>
               )}
@@ -218,12 +177,12 @@ export const MapView: React.FC<MapViewProps> = ({
           );
         })}
 
-        {/* 3. Rendering dei Nodi del Layout */}
+        {/* Nodi */}
         {layout.nodes.map((node) => {
           const isSelected = node.id === selectedTopicId;
-          const accent = node.accent || (node.depth === 0 ? '#3584e4' : undefined);
-          const hasChildren = node.childCount > 0;
-
+          const isRoot = node.depth === 0;
+          const nodeAccent = node.accent || (isRoot ? accent : undefined);
+          const boxed = node.depth <= 1 || Boolean(node.fill) || Boolean(node.imageSrc);
           return (
             <g
               key={node.id}
@@ -235,78 +194,57 @@ export const MapView: React.FC<MapViewProps> = ({
                 onOpenDetails(node.id);
               }}
             >
-              {/* Box del Nodo */}
-              <rect
-                width={node.w}
-                height={node.h}
-                rx={node.depth === 0 ? 12 : 8}
-                className="transition-all"
-                fill={node.fill || (node.depth === 0 ? '#3584e4' : 'var(--adw-card-bg)')}
-                stroke={
-                  isSelected
-                    ? '#3584e4'
-                    : accent || 'var(--adw-card-border)'
-                }
-                strokeWidth={isSelected ? 2.5 : accent ? 1.8 : 1}
-                filter="drop-shadow(0 2px 6px rgba(0,0,0,0.06))"
-              />
-
-              {/* Contenuto del Nodo: Titolo o Immagine Formula LaTeX */}
-              <foreignObject x={8} y={4} width={node.w - 16} height={node.h - 8}>
-                <div
-                  className={`w-full h-full flex items-center space-x-2 truncate select-none ${
-                    node.depth === 0 ? 'text-white font-bold' : 'text-adw-fg'
-                  }`}
-                >
-                  {node.latex ? (
-                    <div className="flex items-center space-x-1.5 overflow-hidden">
-                      <Sparkles className="w-3.5 h-3.5 text-adw-accent shrink-0" />
-                      <span className="font-mono text-xs truncate">
-                        ${node.latex}$
-                      </span>
-                    </div>
-                  ) : (
-                    <span
-                      className={`truncate ${
-                        node.depth === 0 ? 'text-sm font-bold' : 'text-xs font-medium'
-                      }`}
-                    >
+              {node.imageSrc && resourceUrls.get(node.imageSrc) ? (
+                <image
+                  href={resourceUrls.get(node.imageSrc)}
+                  x={0}
+                  y={0}
+                  width={node.w}
+                  height={node.h}
+                  preserveAspectRatio="xMidYMid meet"
+                  // Le equazioni sono PNG nero; in tema scuro vanno tinti per la
+                  // sola visualizzazione (il file resta invariato).
+                  className={node.kind === 'equation' ? 'dark:invert' : undefined}
+                />
+              ) : (
+                <rect
+                  width={node.w}
+                  height={node.h}
+                  rx={8}
+                  fill={node.fill || (isRoot ? 'var(--adw-accent-soft)' : 'var(--adw-card-bg)')}
+                  stroke={isSelected ? accent : nodeAccent || 'var(--adw-card-border)'}
+                  strokeWidth={isSelected ? 2 : 1.2}
+                />
+              )}
+              {!node.imageSrc && (
+                <foreignObject x={10} y={4} width={Math.max(node.w - 20, 10)} height={Math.max(node.h - 8, 10)}>
+                  <div
+                    className={cn(
+                      'w-full h-full flex items-center gap-1.5 overflow-hidden',
+                      isRoot ? 'text-[var(--adw-accent-color)]' : 'text-[var(--adw-fg-color)]'
+                    )}
+                  >
+                    <span className={cn('truncate', isRoot ? 'text-[13px] font-semibold' : 'text-[12px]')}>
                       {node.title || '(senza titolo)'}
                     </span>
-                  )}
+                    {node.hasNotes && <FileText className="w-3 h-3 opacity-40 shrink-0" />}
+                  </div>
+                </foreignObject>
+              )}
 
-                  {node.hasNotes && (
-                    <FileText className="w-3 h-3 opacity-50 shrink-0" />
-                  )}
-                </div>
-              </foreignObject>
-
-              {/* Indicatore Comprimi / Espandi sul bordo destro */}
-              {hasChildren && (
+              {node.childCount > 0 && (
                 <g
                   transform={`translate(${node.w}, ${node.h / 2})`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onToggleCollapse(node.id);
                   }}
-                  className="hover:scale-125 transition-transform"
                 >
-                  <circle
-                    r={7}
-                    fill={accent || '#3584e4'}
-                    stroke="white"
-                    strokeWidth={1.5}
-                  />
+                  <circle r={6.5} fill={nodeAccent || accent} stroke="var(--adw-bg-color)" strokeWidth={1.5} />
                   {node.collapsed ? (
-                    <path
-                      d="M -2 -3 L 2 0 L -2 3"
-                      fill="none"
-                      stroke="white"
-                      strokeWidth={1.5}
-                      strokeLinecap="round"
-                    />
+                    <path d="M -2 -3 L 2 0 L -2 3" fill="none" stroke="white" strokeWidth={1.5} strokeLinecap="round" />
                   ) : (
-                    <circle r={2} fill="white" />
+                    <path d="M -3 0 L 3 0" stroke="white" strokeWidth={1.5} strokeLinecap="round" />
                   )}
                 </g>
               )}
@@ -314,6 +252,38 @@ export const MapView: React.FC<MapViewProps> = ({
           );
         })}
       </svg>
+
+      {/* Controlli zoom */}
+      <div className="absolute bottom-4 right-4 flex items-center gap-0.5 p-1 rounded-lg bg-[var(--adw-card-bg)] border border-[var(--adw-card-border)] shadow-[var(--adw-shadow-md)]">
+        <button
+          type="button"
+          onClick={() => setZoom((z) => Math.max(z * 0.85, 0.2))}
+          className="h-7 w-7 flex items-center justify-center rounded-md text-[var(--adw-muted-color)] hover:bg-[var(--adw-button-hover)] hover:text-[var(--adw-fg-color)]"
+          title="Riduci zoom"
+        >
+          <Minus className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-[11px] font-medium px-1 min-w-[40px] text-center tabular-nums">
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => setZoom((z) => Math.min(z * 1.15, 3))}
+          className="h-7 w-7 flex items-center justify-center rounded-md text-[var(--adw-muted-color)] hover:bg-[var(--adw-button-hover)] hover:text-[var(--adw-fg-color)]"
+          title="Aumenta zoom"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+        <div className="w-px h-4 bg-[var(--adw-hairline)] mx-0.5" />
+        <button
+          type="button"
+          onClick={fitToView}
+          className="h-7 w-7 flex items-center justify-center rounded-md text-[var(--adw-muted-color)] hover:bg-[var(--adw-button-hover)] hover:text-[var(--adw-fg-color)]"
+          title="Adatta allo schermo"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 };

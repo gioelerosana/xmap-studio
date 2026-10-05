@@ -18,9 +18,7 @@ export interface ToastProps {
 
 export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
   useEffect(() => {
-    const timer = setTimeout(() => {
-      onDismiss(toast.id);
-    }, toast.duration ?? 4000);
+    const timer = setTimeout(() => onDismiss(toast.id), toast.duration ?? 4000);
     return () => clearTimeout(timer);
   }, [toast, onDismiss]);
 
@@ -35,16 +33,16 @@ export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
     <div
       role="status"
       className={cn(
-        'flex items-center space-x-2.5 px-4 py-2.5 rounded-full shadow-lg border text-xs font-medium select-none pointer-events-auto transition-all animate-in fade-in slide-in-from-bottom-2',
-        'bg-white dark:bg-[#383838] text-[var(--adw-fg-color)] border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.15)] shadow-[0_4px_16px_rgba(0,0,0,0.2)]'
+        'pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border text-[13px]',
+        'bg-[var(--adw-card-bg)] text-[var(--adw-fg-color)] border-[var(--adw-card-border)] shadow-[var(--adw-shadow-md)]'
       )}
     >
       {icons[toast.type]}
-      <span className="max-w-md truncate">{toast.message}</span>
+      <span className="max-w-md">{toast.message}</span>
       <button
         type="button"
         onClick={() => onDismiss(toast.id)}
-        className="opacity-50 hover:opacity-100 p-0.5 rounded-full focus:outline-none"
+        className="p-0.5 rounded text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)] focus:outline-none"
       >
         <X className="w-3.5 h-3.5" />
       </button>
@@ -58,7 +56,7 @@ export const ToastContainer: React.FC<{
 }> = ({ toasts, onDismiss }) => {
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-6 inset-x-0 flex flex-col items-center space-y-2 pointer-events-none z-50">
+    <div className="fixed bottom-5 right-5 flex flex-col items-end gap-2 pointer-events-none z-50">
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}

@@ -21,16 +21,21 @@ import {
 } from './model/edit.js';
 import { Sheet, Topic } from './model/types.js';
 import {
+  countTopics,
   findTopic,
   fontSizePx,
   newTopicId,
+  remapIds,
   setFillColor,
   sheetIndexOf,
+  topicLatex,
   topicTitle,
   walkTopic,
 } from './model/utils.js';
 import { applyEquation, removeEquation, TitleMode } from './latex/equation.js';
 import { renderLatexToSvg } from './latex/mathjax.js';
+import { svgToPng } from './latex/raster.js';
+import { clearTask, writeTask, TaskData } from './task/task.js';
 import { refreshManifest } from './safety/manifest.js';
 import { xmindProcesses } from './safety/process.js';
 import { validateArchiveBytes, ValidationReport } from './safety/validate.js';
@@ -388,6 +393,26 @@ export class AppController {
     return wb.toDto();
   }
 
+  public setTopicTask(topicId: string, task: TaskData): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+
+    writeTask(topic, task);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  public clearTopicTask(topicId: string): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+
+    clearTask(topic);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
   public attachFileToTopic(topicId: string, fileName: string, fileBytes: Uint8Array): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
@@ -414,6 +439,38 @@ export class AppController {
       default:
         throw new Error(`Formato sconosciuto: ${format}`);
     }
+  }
+
+  /**
+   * Esporta l'equazione del topic selezionato come SVG o PNG, senza toccare
+   * l'archivio. Il PNG usa lo stesso rasterizzatore del salvataggio.
+   */
+  public async exportEquation(
+    topicId: string,
+    format: 'svg' | 'png'
+  ): Promise<{ bytes: Uint8Array; mime: string; extension: string }> {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+
+    const latex = topicLatex(topic);
+    if (!latex) throw new Error('Il blocco selezionato non contiene un\'equazione');
+
+    const fontPx = fontSizePx(topic);
+    const emPx = fontPx ? fontPx * 1.25 : 23.33;
+    const render = renderLatexToSvg(latex, emPx);
+    if (render.error) throw new Error(`LaTeX non valido: ${render.error}`);
+
+    if (format === 'svg') {
+      return {
+        bytes: new TextEncoder().encode(render.svg),
+        mime: 'image/svg+xml',
+        extension: 'svg',
+      };
+    }
+
+    const png = await svgToPng(render.svg, render.width, render.height, 3.0, '#000000');
+    return { bytes: png, mime: 'image/png', extension: 'png' };
   }
 
   public outlineText(): string | null {
@@ -465,6 +522,11 @@ export class AppController {
     if (!otherContentBytes) throw new Error('content.json assente nel file da unire');
 
     const otherSheets: Sheet[] = JSON.parse(new TextDecoder().decode(otherContentBytes));
+    if (otherSheets.length === 0) throw new Error('Il file da unire non contiene fogli');
+
+    // Riassegna gli id per evitare collisioni tra file indipendenti.
+    remapIds(otherSheets);
+    const addedTopics = countTopics(otherSheets);
 
     let addedResources = 0;
     for (const [name, bytes] of otherArchive.resources) {
@@ -482,6 +544,7 @@ export class AppController {
     wb.pushHistory();
     return {
       addedSheets,
+      addedTopics,
       totalSheets: wb.content.length,
       addedResources,
     };
@@ -558,6 +621,17 @@ export class AppController {
     const validation = await validateArchiveBytes(bytes);
 
     return { bytes, validation };
+  }
+
+  /**
+   * Segna il workbook come salvato dopo che i byte sono stati scritti da un
+   * adapter esterno (Electron IPC, File System Access API). Opzionalmente
+   * aggiorna il percorso (Salva con nome).
+   */
+  public markSaved(path?: string): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    wb.markSaved(path);
+    return wb.toDto();
   }
 
   public async save(force: boolean = false, desktopFs: boolean = false): Promise<SaveResultDto> {

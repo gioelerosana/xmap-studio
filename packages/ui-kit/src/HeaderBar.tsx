@@ -26,43 +26,34 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   return (
     <header
       className={cn(
-        'app-drag-region h-12 flex items-center justify-between px-3 border-b select-none transition-colors duration-150',
+        'app-drag-region relative h-12 shrink-0 flex items-center gap-3 px-3 border-b select-none',
         'bg-[var(--adw-headerbar-bg)] border-[var(--adw-headerbar-border)] text-[var(--adw-fg-color)]',
         className
       )}
     >
-      {/* Sinistra: Azioni Principali */}
-      <div className="app-no-drag flex items-center space-x-1.5 min-w-[200px]">
+      {/* Sinistra: identità file + azioni primarie */}
+      <div className="app-no-drag flex items-center gap-2 min-w-0">
         {leftContent}
       </div>
 
-      {/* Centro: Titolo / Outliner Switcher */}
-      <div className="flex-1 flex flex-col items-center justify-center pointer-events-none px-4 overflow-hidden">
-        {centerContent ? (
-          <div className="app-no-drag pointer-events-auto">{centerContent}</div>
-        ) : (
-          <div className="flex flex-col items-center justify-center text-center truncate max-w-full">
-            {title && (
-              <span className="text-sm font-semibold truncate tracking-tight">
-                {title}
-              </span>
-            )}
-            {subtitle && (
-              <span className="text-[11px] opacity-60 truncate">
-                {subtitle}
-              </span>
-            )}
-          </div>
-        )}
+      {/* Destra: switcher, azioni secondarie, controlli finestra */}
+      <div className="app-no-drag flex items-center gap-2 min-w-0 ml-auto">
+        {centerContent}
+        {rightContent}
+        {showWindowControls && <WindowControls {...windowControlProps} />}
       </div>
 
-      {/* Destra: Azioni secondarie e Window Controls */}
-      <div className="app-no-drag flex items-center space-x-1.5 min-w-[200px] justify-end">
-        {rightContent}
-        {showWindowControls && (
-          <WindowControls {...windowControlProps} />
-        )}
-      </div>
+      {/* Titolo centrato in overlay, non occupa spazio nel flusso */}
+      {title && (
+        <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 flex flex-col items-center max-w-[40%]">
+          <span className="text-[13px] font-semibold truncate max-w-full">{title}</span>
+          {subtitle && (
+            <span className="text-[11px] text-[var(--adw-muted-color)] truncate max-w-full -mt-0.5">
+              {subtitle}
+            </span>
+          )}
+        </div>
+      )}
     </header>
   );
 };

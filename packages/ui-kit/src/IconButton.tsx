@@ -16,33 +16,28 @@ export const IconButton: React.FC<IconButtonProps> = ({
   disabled,
   ...props
 }) => {
-  const baseStyles =
-    'inline-flex items-center justify-center rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-[var(--adw-focus-ring)] disabled:opacity-40 disabled:cursor-not-allowed select-none active:scale-95';
+  const base =
+    'inline-flex items-center justify-center rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--adw-focus-ring)] disabled:opacity-35 disabled:cursor-not-allowed select-none';
 
-  const sizeStyles = {
-    sm: 'w-7 h-7 p-1',
-    md: 'w-8 h-8 p-1.5',
-    lg: 'w-10 h-10 p-2',
+  const sizes = {
+    sm: 'h-7 w-7',
+    md: 'h-8 w-8',
+    lg: 'h-9 w-9',
   };
 
-  const variantStyles = {
+  const variants = {
     default:
-      'bg-[rgba(0,0,0,0.05)] dark:bg-[rgba(255,255,255,0.08)] text-[var(--adw-fg-color)] hover:bg-[rgba(0,0,0,0.1)] dark:hover:bg-[rgba(255,255,255,0.14)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]',
-    flat:
-      'bg-transparent text-[var(--adw-fg-color)] hover:bg-[rgba(0,0,0,0.06)] dark:hover:bg-[rgba(255,255,255,0.08)]',
+      'bg-[var(--adw-card-bg)] border border-[var(--adw-card-border)] text-[var(--adw-fg-color)] hover:bg-[var(--adw-button-hover)]',
+    flat: 'bg-transparent text-[var(--adw-muted-color)] hover:bg-[var(--adw-button-hover)] hover:text-[var(--adw-fg-color)]',
     suggested:
       'bg-[var(--adw-accent-color)] text-white hover:bg-[var(--adw-accent-hover)]',
     destructive:
-      'bg-[var(--adw-destructive-color)] text-white hover:opacity-90',
+      'bg-transparent text-[var(--adw-destructive-color)] hover:bg-[color-mix(in_srgb,var(--adw-destructive-color)_12%,transparent)]',
   };
-
-  const activeStyles = active
-    ? 'bg-[var(--adw-accent-color)]/15 text-[var(--adw-accent-color)] font-semibold'
-    : '';
 
   return (
     <button
-      className={cn(baseStyles, sizeStyles[size], variantStyles[variant], activeStyles, className)}
+      className={cn(base, sizes[size], variants[variant], active && 'bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)]', className)}
       disabled={disabled}
       {...props}
     >

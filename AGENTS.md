@@ -4,6 +4,13 @@ Istruzioni destinate agli agenti AI (e ai contributor) che lavorano su questo
 repository. Leggi questa pagina prima di toccare il codice. Per il dettaglio
 tecnico vedi [`docs/`](docs/README.md).
 
+> **Stato attuale (branch `feat/ts-migration`).** L'implementazione attiva è il
+> monorepo TypeScript: `packages/core` (motore), `packages/ui-kit` (design
+> system), `apps/web` (UI React) e `apps/desktop` (Electron). Il codice Rust in
+> `src-tauri/` è mantenuto come **riferimento** per la parità funzionale; le
+> invarianti sotto valgono per `packages/core`. Comandi: `pnpm build`, `pnpm
+> test`, `pnpm dev:web`, `pnpm dev:desktop`.
+
 ## Cos'è questo progetto
 
 **XMap Studio** è un'app desktop Linux nativa, companion di XMind gratuito.

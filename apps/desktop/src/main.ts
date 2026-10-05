@@ -5,6 +5,7 @@ import { atomicWrite, xmindProcesses } from '@xmap/core';
 
 let mainWindow: BrowserWindow | null = null;
 let initialFilePath: string | null = null;
+let allowClose = false;
 
 // Gestione file da riga di comando (es. doppio clic su .xmind)
 for (let i = 1; i < process.argv.length; i++) {
@@ -58,6 +59,13 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  // Chiede conferma al renderer prima di chiudere, per non perdere modifiche.
+  mainWindow.on('close', (e) => {
+    if (allowClose) return;
+    e.preventDefault();
+    mainWindow?.webContents.send('app:beforeClose');
   });
 
   mainWindow.on('maximize', () => {
@@ -128,6 +136,42 @@ ipcMain.handle('dialog:saveFile', async (_, suggestedName?: string) => {
   });
   if (result.canceled || !result.filePath) return null;
   return result.filePath;
+});
+
+ipcMain.handle(
+  'dialog:openAnyFile',
+  async (_, options?: { description?: string; extensions?: string[] }) => {
+    if (!mainWindow) return null;
+    const extensions = options?.extensions ?? ['xmind'];
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: options?.description || 'File', extensions }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const filePath = result.filePaths[0];
+    const buffer = fs.readFileSync(filePath);
+    return { path: filePath, name: path.basename(filePath), bytes: Array.from(buffer) };
+  }
+);
+
+ipcMain.handle(
+  'dialog:saveBytes',
+  async (_, suggestedName: string, bytesArr: number[], options?: { description?: string; extensions?: string[] }) => {
+    if (!mainWindow) return null;
+    const extensions = options?.extensions ?? ['bin'];
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: suggestedName,
+      filters: [{ name: options?.description || 'File', extensions }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    fs.writeFileSync(result.filePath, Buffer.from(new Uint8Array(bytesArr)));
+    return { path: result.filePath };
+  }
+);
+
+ipcMain.on('window:forceClose', () => {
+  allowClose = true;
+  mainWindow?.close();
 });
 
 ipcMain.handle('fs:saveAtomic', async (_, filePath: string, bytesArr: number[]) => {
