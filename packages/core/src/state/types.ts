@@ -50,6 +50,8 @@ export interface TopicView {
   position?: { x: number; y: number };
   customWidth?: number;
   fillColor?: string;
+  /** Struttura XMind dichiarata (`structureClass`), es. `org.xmind.ui.tree.right`. */
+  structureClass?: string;
 }
 
 export interface SheetDto {

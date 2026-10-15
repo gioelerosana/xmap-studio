@@ -10,6 +10,15 @@ export const BRANCH_COLORS: string[] = [
   '#7953A9',
 ];
 
+/** Struttura XMind della Tree Chart verso destra: radice in alto, tronco verticale. */
+export const TREE_RIGHT_STRUCTURE = 'org.xmind.ui.tree.right';
+
+/** Larghezza della graffa di un sommario (px logici). */
+export const SUMMARY_BRACE_W = 14.0;
+
+/** Distanza massima del tronco della Tree Chart dal bordo sinistro della radice. */
+export const TREE_TRUNK_INSET = 36.0;
+
 export interface MapNode {
   id: string;
   title: string;
@@ -32,7 +41,21 @@ export interface MapNode {
   sheetIndex: number;
   position?: { x: number; y: number };
   customWidth?: number;
+  structureClass?: string;
+  /** Figli disposti in colonna (`attached`, `callout`). */
   children: MapNode[];
+  /** Sommari: topic del gruppo `summary` agganciati a una graffa, fuori dalla colonna. */
+  summaries: MapSummary[];
+}
+
+/**
+ * Un sommario XMind: la graffa abbraccia i figli `start..=end` (indici in
+ * `children` del genitore) e il topic di sommario sta alla sua destra.
+ */
+export interface MapSummary {
+  start: number;
+  end: number;
+  node: MapNode;
 }
 
 export interface LayoutNode {
@@ -60,12 +83,35 @@ export interface LayoutNode {
   sheetIndex: number;
   position?: { x: number; y: number };
   customWidth?: number;
+  /**
+   * Vero per la radice di una Tree Chart: i figli scendono lungo un tronco
+   * verticale in `trunkX(node)` e l'indicatore di collasso sta sotto il blocco.
+   */
+  childrenBelow: boolean;
 }
+
+/** Forma del connettore: gomito dal lato destro (Logic Chart) o dal tronco (Tree Chart). */
+export type EdgeKind = 'logic' | 'tree';
 
 export interface LayoutEdge {
   parent: number;
   child: number;
   group: string;
+  kind: EdgeKind;
+}
+
+/** Graffa di un sommario: verticale in `x` da `y1` a `y2`, punta verso il nodo `topic`. */
+export interface LayoutSummary {
+  x: number;
+  y1: number;
+  y2: number;
+  topic: number;
+  accent?: string;
+}
+
+/** Ascissa del tronco verticale di una Tree Chart (vale per `childrenBelow`). */
+export function trunkX(node: Pick<LayoutNode, 'x' | 'w'>): number {
+  return node.x + Math.min(node.w / 2, TREE_TRUNK_INSET);
 }
 
 export interface LayoutRelationship {
@@ -79,6 +125,7 @@ export interface LayoutRelationship {
 export interface Layout {
   nodes: LayoutNode[];
   edges: LayoutEdge[];
+  summaries: LayoutSummary[];
   relationships: LayoutRelationship[];
   width: number;
   height: number;

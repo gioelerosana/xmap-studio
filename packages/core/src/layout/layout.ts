@@ -136,7 +136,9 @@ function buildNodeRecursive(
     sheetIndex: topic.sheetIndex,
     position: topic.position,
     customWidth: topic.customWidth,
+    structureClass: topic.structureClass,
     children,
+    summaries: [],
   };
 }
 
@@ -149,6 +151,7 @@ export function layoutSheets(
   const out: Layout = {
     nodes: [],
     edges: [],
+    summaries: [],
     relationships: [],
     width: 0,
     height: 0,
@@ -345,6 +348,7 @@ function pushLayoutNode(
     sheetIndex: node.sheetIndex,
     position: node.position,
     customWidth: node.customWidth,
+    childrenBelow: false,
   });
   return index;
 }
@@ -411,6 +415,7 @@ function placeSubtree(
     parent: parentIndex,
     child: nodeIndex,
     group: node.group,
+    kind: 'logic',
   });
 
   if (!isCollapsed) {
