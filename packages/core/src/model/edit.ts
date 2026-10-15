@@ -160,10 +160,15 @@ function descend(topic: Topic, path: PathItem[]): Topic {
   return curr;
 }
 
-function shiftRange(rangeStr: string | undefined, removed: number): string | false {
-  if (!rangeStr) return '';
+/**
+ * Ricalcola un range `(start,end)` dopo la rimozione del figlio `removed`.
+ * Restituisce `false` se il range copriva solo quel figlio e va eliminato;
+ * un range assente resta assente, uno non numerico ('master') invariato.
+ */
+function shiftRange(rangeStr: string | undefined, removed: number): string | undefined | false {
+  if (rangeStr === undefined) return undefined;
   const parsed = parseRange(rangeStr);
-  if (!parsed) return rangeStr; // 'master' o formati non numerici restano invariati
+  if (!parsed) return rangeStr;
   const [start, end] = parsed;
   if (removed > end) {
     return rangeStr;
@@ -171,7 +176,7 @@ function shiftRange(rangeStr: string | undefined, removed: number): string | fal
   if (removed < start) {
     return formatRange(start - 1, end - 1);
   }
-  if (end === 0) {
+  if (start === end) {
     return false;
   }
   return formatRange(start, end - 1);
@@ -193,7 +198,7 @@ function adjustParentRanges(parent: Topic, group: ChildGroup, childIndex: number
     for (const b of parent.boundaries) {
       const shifted = shiftRange(b.range, childIndex);
       if (shifted !== false) {
-        b.range = shifted;
+        if (shifted !== undefined) b.range = shifted;
         nextBoundaries.push(b);
       }
     }
@@ -210,7 +215,7 @@ function adjustParentRanges(parent: Topic, group: ChildGroup, childIndex: number
     for (const s of parent.summaries) {
       const shifted = shiftRange(s.range, childIndex);
       if (shifted !== false) {
-        s.range = shifted;
+        if (shifted !== undefined) s.range = shifted;
         nextSummaries.push(s);
       } else if (s.topicId) {
         droppedIds.push(s.topicId);
