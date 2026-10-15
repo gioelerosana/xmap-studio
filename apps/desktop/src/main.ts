@@ -1,7 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { atomicWrite, validateArchiveBytes, xmindProcesses } from '@xmap/core';
+
+// @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
+// può fare `require()` di un modulo ESM, quindi lo carichiamo con import()
+// dinamico, una sola volta e solo quando serve.
+type Core = typeof import('@xmap/core');
+let corePromise: Promise<Core> | null = null;
+function loadCore(): Promise<Core> {
+  corePromise ??= import('@xmap/core');
+  return corePromise;
+}
 
 const initialFiles = new Map<number, string | null>();
 const allowedCloseIds = new Set<number>();
@@ -107,7 +116,7 @@ ipcMain.handle('app:getInitialFile', (event) => {
   return filePath;
 });
 
-ipcMain.handle('safety:checkXMind', async () => xmindProcesses());
+ipcMain.handle('safety:checkXMind', async () => (await loadCore()).xmindProcesses());
 
 ipcMain.handle('dialog:openFile', async (event) => {
   const owner = senderWindow(event);
@@ -179,6 +188,7 @@ ipcMain.handle(
       outputPath += '.xmind';
     }
     if (writesXmind || outputPath.toLowerCase().endsWith('.xmind')) {
+      const { atomicWrite, validateArchiveBytes } = await loadCore();
       await validateArchiveBytes(bytes);
       await atomicWrite(outputPath, bytes, true);
     } else {
@@ -199,6 +209,7 @@ ipcMain.handle(
   'fs:saveAtomic',
   async (_, filePath: string, bytesArr: number[], expectedHash?: string) => {
     const bytes = new Uint8Array(bytesArr);
+    const { atomicWrite, validateArchiveBytes } = await loadCore();
     await validateArchiveBytes(bytes);
     const report = await atomicWrite(filePath, bytes, true, expectedHash);
     return { backup: report.backup, bytes: report.bytesWritten };
