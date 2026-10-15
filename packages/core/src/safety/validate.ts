@@ -20,7 +20,7 @@ const ZIP_RESOURCE_DIR = 'resources/';
 export async function validateArchiveBytes(bytes: Uint8Array): Promise<ValidationReport> {
   let zip: JSZip;
   try {
-    zip = await JSZip.loadAsync(bytes);
+    zip = await JSZip.loadAsync(bytes, { checkCRC32: true });
   } catch (err) {
     throw new Error(`Lo ZIP prodotto non si riapre: ${err}`);
   }
