@@ -1,3 +1,4 @@
+import { CODE_RENDERER, XmapError } from '../errors.js';
 /**
  * Converte SVG in immagine PNG ad alta risoluzione (scala tipica: 3x per XMind).
  */
@@ -41,7 +42,7 @@ export async function svgToPng(
     return await rasterizeOffscreenCanvas(coloredSvg, width, height, scale);
   }
 
-  throw new Error('Nessun motore di rasterizzazione disponibile (manca @resvg/resvg-js o Canvas DOM)');
+  throw new XmapError(CODE_RENDERER, 'Nessun motore di rasterizzazione disponibile (manca @resvg/resvg-js o Canvas DOM)');
 }
 
 function rasterizeBrowserCanvas(
@@ -62,13 +63,13 @@ function rasterizeBrowserCanvas(
       canvas.height = Math.round(height * scale);
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        reject(new Error('Canvas 2D context not available'));
+        reject(new XmapError(CODE_RENDERER, 'Canvas 2D context not available'));
         return;
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blobResult) => {
         if (!blobResult) {
-          reject(new Error('Canvas toBlob failed'));
+          reject(new XmapError(CODE_RENDERER, 'Canvas toBlob failed'));
           return;
         }
         blobResult.arrayBuffer().then((buf) => {
@@ -79,7 +80,7 @@ function rasterizeBrowserCanvas(
 
     img.onerror = (e) => {
       URL.revokeObjectURL(url);
-      reject(new Error(`Caricamento SVG fallito per rasterizzazione: ${e}`));
+      reject(new XmapError(CODE_RENDERER, `Caricamento SVG fallito per rasterizzazione: ${e}`));
     };
 
     img.src = url;
@@ -96,7 +97,7 @@ async function rasterizeOffscreenCanvas(
   const bmp = await createImageBitmap(blob);
   const canvas = new OffscreenCanvas(Math.round(width * scale), Math.round(height * scale));
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('OffscreenCanvas 2D not available');
+  if (!ctx) throw new XmapError(CODE_RENDERER, 'OffscreenCanvas 2D not available');
   ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
   const resultBlob = await canvas.convertToBlob({ type: 'image/png' });
   const buf = await resultBlob.arrayBuffer();

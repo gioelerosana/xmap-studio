@@ -1,3 +1,4 @@
+import { CODE_CONFLICT, CODE_IO, XmapError } from '../errors.js';
 import { WriteReport } from './types.js';
 import { sha256HexAsync } from './archive.js';
 
@@ -37,16 +38,16 @@ export async function atomicWrite(
   const dir = path.dirname(resolved);
 
   if (!fs.existsSync(dir)) {
-    throw new Error(`La cartella ${dir} non esiste`);
+    throw new XmapError(CODE_IO, `La cartella ${dir} non esiste`);
   }
 
   if (expectedHash !== undefined) {
     if (!fs.existsSync(resolved)) {
-      throw new Error('Il file è cambiato o è stato rimosso dopo l\'apertura.');
+      throw new XmapError(CODE_CONFLICT, 'Il file è cambiato o è stato rimosso dopo l\'apertura.');
     }
     const currentHash = await sha256HexAsync(fs.readFileSync(resolved));
     if (currentHash !== expectedHash) {
-      throw new Error('Il file è cambiato su disco dopo l\'apertura. Ricaricalo prima di salvare.');
+      throw new XmapError(CODE_CONFLICT, 'Il file è cambiato su disco dopo l\'apertura. Ricaricalo prima di salvare.');
     }
   }
 
@@ -112,7 +113,7 @@ export async function atomicWrite(
         // Ignora
       }
     }
-    throw err instanceof Error ? err : new Error(String(err));
+    throw err instanceof Error ? err : new XmapError(CODE_IO, String(err));
   }
 
   return {

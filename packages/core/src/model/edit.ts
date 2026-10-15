@@ -1,3 +1,4 @@
+import { CODE_MOVE, XmapError } from '../errors.js';
 import {
   Boundary,
   CHILD_GROUPS,
@@ -153,7 +154,7 @@ function descend(topic: Topic, path: PathItem[]): Topic {
   for (const item of path) {
     const list = curr.children?.[item.group];
     if (!list || !list[item.index]) {
-      throw new Error(`Invalid path in descend`);
+      throw new XmapError(CODE_MOVE, 'Percorso non valido nell\'albero dei blocchi.');
     }
     curr = list[item.index];
   }
@@ -311,9 +312,12 @@ export function removeTopic(sheets: Sheet[], id: string): Topic | undefined {
 
 export type MovePlacement = 'before' | 'after' | 'into';
 
-export class MoveError extends Error {
-  constructor(public code: 'not_found' | 'immovable' | 'cycle' | 'no_siblings', message: string) {
-    super(message);
+export class MoveError extends XmapError {
+  constructor(
+    public readonly reason: 'not_found' | 'immovable' | 'cycle' | 'no_siblings',
+    message: string
+  ) {
+    super(CODE_MOVE, message);
     this.name = 'MoveError';
   }
 }

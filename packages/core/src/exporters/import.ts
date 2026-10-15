@@ -1,3 +1,4 @@
+import { CODE_FORMAT, XmapError } from '../errors.js';
 import { setLabels, setNotes } from '../model/edit.js';
 import { Sheet, Topic } from '../model/types.js';
 import { newTopicId } from '../model/utils.js';
@@ -17,11 +18,11 @@ export function parseOutline(format: 'markdown' | 'opml' | string, text: string)
   } else if (format === 'opml') {
     root = parseOPML(text);
   } else {
-    throw new Error(`Formato non supportato: ${format}`);
+    throw new XmapError(CODE_FORMAT, `Formato non supportato: ${format}`);
   }
 
   if (root.children.length === 0 && !root.title && !root.latex) {
-    throw new Error('Nessun argomento riconosciuto nel file.');
+    throw new XmapError(CODE_FORMAT, 'Nessun argomento riconosciuto nel file.');
   }
 
   return root;

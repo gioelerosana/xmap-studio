@@ -1,3 +1,4 @@
+import { CODE_INVALID_INPUT, XmapError } from '../errors.js';
 import { RawArchive } from '../archive/types.js';
 import { CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
 import {
@@ -104,7 +105,7 @@ export class OpenWorkbook {
   }
 
   public markSaved(newPath?: string, newHash?: string): void {
-    if (!newHash) throw new Error('Hash del file salvato mancante.');
+    if (!newHash) throw new XmapError(CODE_INVALID_INPUT, 'Hash del file salvato mancante.');
     if (newPath) {
       this.path = newPath;
       this.fileName = newPath.split(/[\\/]/).pop() || newPath;

@@ -1,3 +1,4 @@
+import { CODE_VALIDATION, XmapError } from '../errors.js';
 import JSZip from 'jszip';
 import { collectAttachmentRefs, collectResourceRefs } from '../model/utils.js';
 
@@ -22,7 +23,7 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
   try {
     zip = await JSZip.loadAsync(bytes, { checkCRC32: true });
   } catch (err) {
-    throw new Error(`Lo ZIP prodotto non si riapre: ${err}`);
+    throw new XmapError(CODE_VALIDATION, `Lo ZIP prodotto non si riapre: ${err}`);
   }
 
   const names = new Set<string>();
@@ -46,30 +47,30 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
 
   const contentStr = contents.get('content.json');
   if (!contentStr) {
-    throw new Error('content.json assente nell\'output');
+    throw new XmapError(CODE_VALIDATION, 'content.json assente nell\'output');
   }
 
   let contentObj: unknown;
   try {
     contentObj = JSON.parse(contentStr);
   } catch (err) {
-    throw new Error(`content.json non è JSON valido: ${err}`);
+    throw new XmapError(CODE_VALIDATION, `content.json non è JSON valido: ${err}`);
   }
 
   if (!Array.isArray(contentObj)) {
-    throw new Error('content.json non è un array di sheet');
+    throw new XmapError(CODE_VALIDATION, 'content.json non è un array di sheet');
   }
 
   const manifestStr = contents.get('manifest.json');
   if (!manifestStr) {
-    throw new Error('manifest.json assente nell\'output');
+    throw new XmapError(CODE_VALIDATION, 'manifest.json assente nell\'output');
   }
 
   let manifestObj: any;
   try {
     manifestObj = JSON.parse(manifestStr);
   } catch (err) {
-    throw new Error(`manifest.json non è JSON valido: ${err}`);
+    throw new XmapError(CODE_VALIDATION, `manifest.json non è JSON valido: ${err}`);
   }
 
   const metadataStr = contents.get('metadata.json');
@@ -77,7 +78,7 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
     try {
       JSON.parse(metadataStr);
     } catch (err) {
-      throw new Error(`metadata.json non è JSON valido: ${err}`);
+      throw new XmapError(CODE_VALIDATION, `metadata.json non è JSON valido: ${err}`);
     }
   }
 
@@ -95,10 +96,10 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
   for (const r of refs) {
     const path = `${ZIP_RESOURCE_DIR}${r}`;
     if (!names.has(path)) {
-      throw new Error(`Riferimento ${path} senza risorsa nello ZIP`);
+      throw new XmapError(CODE_VALIDATION, `Riferimento ${path} senza risorsa nello ZIP`);
     }
     if (!(path in fileEntries)) {
-      throw new Error(`Riferimento ${path} non registrato nel manifest`);
+      throw new XmapError(CODE_VALIDATION, `Riferimento ${path} non registrato nel manifest`);
     }
   }
 
@@ -106,10 +107,10 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
   collectAttachmentRefs(contentObj, attachments);
   for (const attachment of attachments) {
     if (!names.has(attachment)) {
-      throw new Error(`Riferimento ${attachment} senza allegato nello ZIP`);
+      throw new XmapError(CODE_VALIDATION, `Riferimento ${attachment} senza allegato nello ZIP`);
     }
     if (!(attachment in fileEntries)) {
-      throw new Error(`Riferimento ${attachment} non registrato nel manifest`);
+      throw new XmapError(CODE_VALIDATION, `Riferimento ${attachment} non registrato nel manifest`);
     }
   }
 
@@ -119,17 +120,17 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
     if (name.startsWith('resources/') && !name.endsWith('/')) {
       resourceCount++;
       if (!(name in fileEntries)) {
-        throw new Error(`Risorsa ${name} presente nello ZIP ma assente dal manifest`);
+        throw new XmapError(CODE_VALIDATION, `Risorsa ${name} presente nello ZIP ma assente dal manifest`);
       }
     }
     if (name.startsWith('attachments/') && !name.endsWith('/') && !(name in fileEntries)) {
-      throw new Error(`Allegato ${name} presente nello ZIP ma assente dal manifest`);
+      throw new XmapError(CODE_VALIDATION, `Allegato ${name} presente nello ZIP ma assente dal manifest`);
     }
   }
 
   for (const required of ['content.json', 'metadata.json']) {
     if (contents.has(required) && !(required in fileEntries)) {
-      throw new Error(`${required} non registrato nel manifest`);
+      throw new XmapError(CODE_VALIDATION, `${required} non registrato nel manifest`);
     }
   }
 

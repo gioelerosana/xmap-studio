@@ -1,3 +1,4 @@
+import { CODE_LATEX, XmapError } from '../errors.js';
 import { MATHJAX_PROVIDER, Topic } from '../model/types.js';
 import { sha256Hex } from '../archive/archive.js';
 import { renderLatexToSvg } from './mathjax.js';
@@ -47,7 +48,7 @@ export async function applyEquation(
 ): Promise<{ outcome: ApplyOutcome; png: Uint8Array }> {
   const trimmed = latex.trim();
   if (trimmed.length === 0) {
-    throw new Error('La formula è vuota.');
+    throw new XmapError(CODE_LATEX, 'La formula è vuota.');
   }
 
   const emPx = options.emPx ?? 23.33;
@@ -57,7 +58,7 @@ export async function applyEquation(
 
   const render = renderLatexToSvg(trimmed, emPx);
   if (render.error) {
-    throw new Error(`LaTeX non valido: ${render.error}`);
+    throw new XmapError(CODE_LATEX, `LaTeX non valido: ${render.error}`);
   }
 
   const png = await svgToPng(render.svg, render.width, render.height, rasterScale, color);

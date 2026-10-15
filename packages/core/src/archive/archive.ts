@@ -1,3 +1,4 @@
+import { CODE_FORMAT, XmapError } from '../errors.js';
 import JSZip from 'jszip';
 import { Entries, RawArchive, Resources } from './types.js';
 
@@ -123,7 +124,12 @@ function pureSha256(bytes: Uint8Array): string {
  */
 export async function readArchive(data: ArrayBuffer | Uint8Array): Promise<RawArchive> {
   // checkCRC32: un archivio corrotto deve fallire qui, non produrre byte sbagliati.
-  const zip = await JSZip.loadAsync(data, { checkCRC32: true });
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(data, { checkCRC32: true });
+  } catch (err) {
+    throw new XmapError(CODE_FORMAT, `Il file non è un archivio ZIP valido: ${err}`);
+  }
   const entries: Entries = new Map();
   const resources: Resources = new Map();
 
@@ -145,7 +151,7 @@ export async function readArchive(data: ArrayBuffer | Uint8Array): Promise<RawAr
   await Promise.all(filePromises);
 
   if (!entries.has('content.json')) {
-    throw new Error('content.json assente: formato legacy XMind 8 non supportato');
+    throw new XmapError(CODE_FORMAT, 'content.json assente: formato legacy XMind 8 non supportato');
   }
 
   return { entries, resources };
