@@ -9,8 +9,9 @@ pnpm build
 
 `pnpm test` esegue i test del core con Vitest. Al momento coprono round-trip su
 `demo/Relazioni.xmap-studio.xmind`, applicazione/rimozione LaTeX, undo/redo,
-export, layout, task, import e gli invarianti di parità elencati in
-[`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md).
+export, layout, task, import e gli invarianti dell'archivio
+(`archive-invariants.test.ts`: allegati, split, relazioni, marker, batch
+atomico, conflitto su file modificato).
 
 Le operazioni nuove o corrette vanno coperte in `packages/core/tests/` con
 archivi creati in memoria. Per il formato `.xmind`, verificare almeno:
@@ -27,5 +28,11 @@ archivi creati in memoria. Per il formato `.xmind`, verificare almeno:
 La validazione automatica non prova il parser XMind reale. Prima di dichiarare
 conclusa una modifica allo schema, aprire in XMind un `.xmind` generato, provare
 a modificare l'equazione e verificare note/allegati quando coinvolti. In
-particolare, l'audit TS richiede ancora la verifica manuale di un file con
-allegato e di un ramo ottenuto da split.
+particolare, resta da verificare a mano un file con allegato e un ramo
+ottenuto da split.
+
+## Limiti noti della verifica
+
+- Il browser non può rilevare i processi XMind del sistema: il blocco del
+  salvataggio e la forzatura esplicita esistono solo nell'app Electron.
+- Non ci sono test automatizzati di interazione UI.

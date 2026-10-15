@@ -301,7 +301,7 @@ l'arrivo di nuove feature:
    (`[key: string]: unknown`), e nessun
    campo sconosciuto si perde (§"Mai distruggere dati dell'utente").
 2. Le nuove feature **non** introducono scritture dirette: si passa sempre da
-   `atomicWrite` (`archive/atomic.ts`) e da `validateArchiveBytes`
+   `atomicWrite` (`node/atomic.ts`) e da `validateArchiveBytes`
    (`safety/validate.ts`).
 3. Il core resta senza dipendenze dalla UI (`controller.ts` testabile headless).
 4. Nessuna nuova dipendenza se le API standard o una dipendenza esistente

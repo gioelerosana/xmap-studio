@@ -117,8 +117,8 @@ export function suggestedLatex(topic: Topic): string | undefined {
 }
 
 /**
- * LaTeX dell'equazione nativa (estensione `org.xmind.ui.mathJax`), come
- * `Topic::latex` nel backend Rust. Il titolo non conta mai come formula.
+ * LaTeX dell'equazione nativa (estensione `org.xmind.ui.mathJax`). Il titolo
+ * non conta mai come formula.
  */
 export function topicLatex(topic: Topic): string | undefined {
   const ext = topic.extensions?.find((e) => e.provider === MATHJAX_PROVIDER);

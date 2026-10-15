@@ -101,11 +101,6 @@ sovrascriverlo; in assenza di handle produce un download.
 MathJax e parte del calcolo del layout girano nel renderer React, non in un
 worker; mappe grandi o formule pesanti possono quindi causare pause visibili.
 La divisione di file e le altre scritture `.xmind` passano per la scrittura
-atomica desktop (`atomicWrite` in `packages/core/src/archive/atomic.ts`) o per
+atomica desktop (`atomicWrite` in `packages/core/src/node/atomic.ts`) o per
 l'API di salvataggio del browser. La suite automatica non
 sostituisce l'apertura manuale del file risultante in XMind.
-
-## Storico
-
-La migrazione dalla precedente implementazione è documentata in
-[`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md).

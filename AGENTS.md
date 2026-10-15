@@ -32,10 +32,6 @@ Niente account, niente telemetria. Apre, mostra, modifica, salva.
   (tecnica).
 - Repository: privato su GitLab (`gitlab.com`).
 
-L'implementazione Rust/GTK originale è stata rimossa al completamento della
-migrazione (storico in [`docs/TS-MIGRATION-PARITY.md`](docs/TS-MIGRATION-PARITY.md)
-e nella cronologia git).
-
 ## Regole non negoziabili
 
 Queste sono le invarianti del progetto. Una modifica che le viola è un bug, non
@@ -46,7 +42,7 @@ una scelta di stile.
    ammettono campi extra arbitrari: non ricostruire mai gli oggetti da zero
    scartando le chiavi che non conosci.
 2. **Il disco si tocca solo in `atomicWrite`**
-   (`packages/core/src/archive/atomic.ts`): temp nella stessa directory →
+   (`packages/core/src/node/atomic.ts`): temp nella stessa directory →
    `fsync` → backup datato nella cartella nascosta `.xmap-studio/backups/`
    (ultimi 5 per file) → `rename` → `fsync` della directory. Non aggiungere
    altre scritture dirette sul file `.xmind`.
@@ -54,8 +50,10 @@ una scelta di stile.
    (`packages/core/src/safety/validate.ts`) deve passare in memoria prima di
    sovrascrivere. Se fallisce, il file originale resta intatto.
 4. **Il salvataggio è bloccato mentre XMind è aperto**
-   (`packages/core/src/safety/process.ts`, controllo in `controller.ts`), non
-   semplicemente avvisato; la forzatura è sempre esplicita (`force`).
+   (rilevamento in `packages/core/src/safety/process.ts` e
+   `packages/core/src/node/process.ts`, controllo nel desktop in `guardedSave`,
+   `packages/core/src/node/guarded-save.ts`), non semplicemente avvisato; la
+   forzatura è sempre esplicita (`force`).
 5. **Lo schema MathJax è sacro.** Rispetta le 12 regole in
    [`docs/XMIND-FORMAT.md`](docs/XMIND-FORMAT.md). In particolare: `image` è un
    oggetto annidato, `extensions` è un array, provider

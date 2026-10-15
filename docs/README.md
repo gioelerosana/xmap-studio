@@ -6,7 +6,6 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 | Documento | Contenuto |
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Monorepo TypeScript e flusso dati |
-| [`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md) | Storico della migrazione a TypeScript, difetti corretti e limiti residui |
 | [`XMIND-FORMAT.md`](XMIND-FORMAT.md) | Struttura `.xmind`, schema MathJax verificato e trappole |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Prerequisiti, build e avvio del monorepo TypeScript |
 | [`TESTING.md`](TESTING.md) | Test del core TypeScript e verifica in XMind |

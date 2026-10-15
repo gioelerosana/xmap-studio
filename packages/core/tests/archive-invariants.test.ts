@@ -62,7 +62,7 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('parità della migrazione Rust → TypeScript', () => {
+describe("invarianti dell'archivio", () => {
   it('registra gli allegati nel manifest e valida il round-trip', async () => {
     const input = await makeArchive([
       { id: 'sheet-1', rootTopic: { id: 'root', title: 'Root', children: { attached: [{ id: 'child', title: '' }] } } },

@@ -69,5 +69,4 @@ percorso Canvas predisposto dal core.
 - Non aggiungere dipendenze quando le API standard o quelle già presenti
   bastano.
 
-La mappa dei moduli è in [`ARCHITECTURE.md`](ARCHITECTURE.md); la storia della
-migrazione in [`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md).
+La mappa dei moduli è in [`ARCHITECTURE.md`](ARCHITECTURE.md).

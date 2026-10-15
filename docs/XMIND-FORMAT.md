@@ -28,7 +28,7 @@ manca `content.json`, `readArchive` (`packages/core/src/archive/archive.ts`) res
   affidabile (`RawArchive` in `archive/types.ts`).
 - In scrittura le entry non-risorsa precedono le risorse (`buildArchiveBytes`).
 - La scrittura è atomica con backup datato in una cartella nascosta
-  (`.xmap-studio/backups/`, ultimi 5 per file) (`atomicWrite` in `archive/atomic.ts`).
+  (`.xmap-studio/backups/`, ultimi 5 per file) (`atomicWrite` in `node/atomic.ts`).
 
 ## Modello di `content.json`
 
