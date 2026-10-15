@@ -65,6 +65,59 @@ una scelta di stile.
    compattezza. Prima di aggiungere un crate, chiediti se la std o una dipendenza
    esistente bastano.
 
+## Modalità di lavoro: orchestratore e sotto-agenti
+
+**L'agente principale è un orchestratore, non un esecutore.** L'utente parla
+con un solo agente principale; quell'agente pianifica, scompone, delega e
+integra, ma il grosso del lavoro sul codice lo svolgono **sotto-agenti con
+modelli inferiori al suo**. Esempio: se l'agente principale è Claude Opus,
+delega a **Sonnet** e **Haiku**, mai ad altre istanze di Opus.
+
+### Scelta del modello per i sotto-agenti
+
+| Modello | Quando usarlo |
+|---|---|
+| **Haiku** (preferito, costa meno) | lavoro meccanico e ben specificato: rinomini, restyle, migrazioni ripetitive, aggiornamento di import/doc, test su pattern esistenti, ricerche nella codebase |
+| **Sonnet** | lavoro che richiede giudizio: componenti fondanti, logica nuova in `packages/core`, formato `.xmind`, debugging non banale, refactoring trasversali |
+| Modello principale | **solo** orchestrazione: piano, contratti condivisi, revisione e integrazione finale |
+
+Parti da Haiku; sali a Sonnet solo se il compito lo richiede davvero o se Haiku
+ha fallito. Non delegare compiti banali (una modifica di poche righe): falli
+direttamente, uno spawn costa più del lavoro.
+
+### Responsabilità dell'orchestratore
+
+1. **Contratto prima del fan-out.** Scrivi tu le parti condivise da cui
+   dipendono gli altri (tipi, API, token del design system, firme delle
+   funzioni) e committale o fissale prima di lanciare i sotto-agenti.
+2. **Compiti a file disgiunti.** Ogni sotto-agente riceve un insieme esplicito
+   di file/cartelle che può toccare; due agenti in parallelo non modificano lo
+   stesso file. File condivisi "caldi" (`package.json`, `pnpm-lock.yaml`,
+   `packages/core/src/index.ts`, `docs/`) li tocca solo l'orchestratore.
+3. **Prompt autosufficienti.** Il sotto-agente parte senza contesto: indica
+   obiettivo, file ammessi, contratto da rispettare, regole non negoziabili
+   rilevanti e il comando di verifica da eseguire prima di chiudere.
+4. **Parallelismo reale.** Lancia insieme (nello stesso turno) i compiti
+   indipendenti; serializza solo quelli che dipendono da un risultato.
+5. **Verifica a freddo.** Al rientro, l'orchestratore rilegge i diff, esegue
+   `pnpm build` e `pnpm test` come li eseguirebbe l'utente e, per la UI,
+   controlla l'app avviata. Il lavoro di un sotto-agente non è "fatto" finché
+   l'orchestratore non l'ha verificato.
+
+### Lavoro parallelo e isolamento
+
+- Per modifiche concorrenti sostanziose usa **worktree git isolati** (un
+  worktree per sotto-agente, sotto `.claude/worktrees/`, non versionato). In un
+  worktree nuovo esegui `pnpm install --frozen-lockfile` prima di buildare.
+- Ogni sotto-agente lavora su un branch proprio
+  (`feat/<slug>-<parte>`); l'orchestratore integra i branch nel branch di
+  lavoro e risolve i conflitti.
+- Nessun sotto-agente aggiunge dipendenze, fa commit su `main`, push o apre MR:
+  sono decisioni dell'orchestratore (e, per push/MR, dell'utente).
+- I sotto-agenti rispettano le regole non negoziabili sotto: nel prompt di
+  delega richiamale esplicitamente quando il compito tocca salvataggio,
+  formato `.xmind` o MathJax.
+
 ## Ambiente e prerequisiti
 
 - Rust edizione 2021, `rust-version = 1.77`.

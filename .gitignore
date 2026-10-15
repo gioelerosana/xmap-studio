@@ -29,3 +29,6 @@ src-tauri/resources/renderer/package-lock.json
 *.swp
 *.swo
 .DS_Store
+
+# worktree dei sotto-agenti (lavoro parallelo)
+.claude/worktrees/
