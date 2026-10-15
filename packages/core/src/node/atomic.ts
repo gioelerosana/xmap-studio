@@ -1,5 +1,8 @@
-import { WriteReport } from './types.js';
-import { sha256HexAsync } from './archive.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { sha256HexAsync } from '../archive/archive.js';
+import { WriteReport } from '../archive/types.js';
+import { CODE_CONFLICT, CODE_IO, XmapError } from '../errors.js';
 
 const MAX_BACKUPS = 5;
 const BACKUP_DIR = '.xmap-studio/backups';
@@ -27,26 +30,24 @@ function formatTimestamp(): string {
 export async function atomicWrite(
   targetPath: string,
   bytes: Uint8Array,
-  makeBackup: boolean = true,
-  expectedHash?: string
+  options: { makeBackup?: boolean; expectedHash?: string } = {}
 ): Promise<WriteReport> {
-  const fs = await import('node:fs');
-  const path = await import('node:path');
+  const { makeBackup = true, expectedHash } = options;
 
   const resolved = path.resolve(targetPath);
   const dir = path.dirname(resolved);
 
   if (!fs.existsSync(dir)) {
-    throw new Error(`La cartella ${dir} non esiste`);
+    throw new XmapError(CODE_IO, `La cartella ${dir} non esiste`);
   }
 
   if (expectedHash !== undefined) {
     if (!fs.existsSync(resolved)) {
-      throw new Error('Il file è cambiato o è stato rimosso dopo l\'apertura.');
+      throw new XmapError(CODE_CONFLICT, 'Il file è cambiato o è stato rimosso dopo l\'apertura.');
     }
     const currentHash = await sha256HexAsync(fs.readFileSync(resolved));
     if (currentHash !== expectedHash) {
-      throw new Error('Il file è cambiato su disco dopo l\'apertura. Ricaricalo prima di salvare.');
+      throw new XmapError(CODE_CONFLICT, 'Il file è cambiato su disco dopo l\'apertura. Ricaricalo prima di salvare.');
     }
   }
 
@@ -88,7 +89,7 @@ export async function atomicWrite(
       backupPath = candidate;
 
       // Prune backups oltre MAX_BACKUPS
-      pruneBackups(fs, path, backupDir, stem);
+      pruneBackups(backupDir, stem);
     }
 
     // 3) Rename atomico
@@ -112,7 +113,7 @@ export async function atomicWrite(
         // Ignora
       }
     }
-    throw err instanceof Error ? err : new Error(String(err));
+    throw err instanceof Error ? err : new XmapError(CODE_IO, String(err));
   }
 
   return {
@@ -121,12 +122,7 @@ export async function atomicWrite(
   };
 }
 
-function pruneBackups(
-  fs: typeof import('node:fs'),
-  path: typeof import('node:path'),
-  dir: string,
-  stem: string
-): void {
+function pruneBackups(dir: string, stem: string): void {
   try {
     const prefix = `${stem}.backup.`;
     const entries = fs.readdirSync(dir);

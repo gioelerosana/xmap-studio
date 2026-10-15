@@ -5,10 +5,10 @@ import * as fs from 'node:fs';
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
 // può fare `require()` di un modulo ESM, quindi lo carichiamo con import()
 // dinamico, una sola volta e solo quando serve.
-type Core = typeof import('@xmap/core');
+type Core = typeof import('@xmap/core/node');
 let corePromise: Promise<Core> | null = null;
 function loadCore(): Promise<Core> {
-  corePromise ??= import('@xmap/core');
+  corePromise ??= import('@xmap/core/node');
   return corePromise;
 }
 
@@ -188,29 +188,37 @@ ipcMain.handle(
     event,
     suggestedName: string,
     bytesArr: number[],
-    options?: { description?: string; extensions?: string[] }
+    options?: {
+      description?: string;
+      extensions?: string[];
+      /** Percorso già scelto (ripetizione dopo conferma "forza"): salta il dialogo. */
+      targetPath?: string;
+      force?: boolean;
+    }
   ) => {
     const owner = senderWindow(event);
     if (!owner) return null;
     const extensions = options?.extensions ?? ['bin'];
-    const result = await dialog.showSaveDialog(owner, {
-      defaultPath: suggestedName,
-      filters: [{ name: options?.description || 'File', extensions }],
-    });
-    if (result.canceled || !result.filePath) return null;
+    let outputPath = options?.targetPath;
+    if (!outputPath) {
+      const result = await dialog.showSaveDialog(owner, {
+        defaultPath: suggestedName,
+        filters: [{ name: options?.description || 'File', extensions }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      outputPath = result.filePath;
+    }
     const bytes = new Uint8Array(bytesArr);
     const writesXmind = extensions.some((extension) => extension.toLowerCase() === 'xmind');
-    let outputPath = result.filePath;
     if (writesXmind && !outputPath.toLowerCase().endsWith('.xmind')) {
       outputPath += '.xmind';
     }
     if (writesXmind || outputPath.toLowerCase().endsWith('.xmind')) {
-      const { atomicWrite, validateArchiveBytes } = await loadCore();
-      await validateArchiveBytes(bytes);
-      await atomicWrite(outputPath, bytes, true);
-    } else {
-      fs.writeFileSync(outputPath, Buffer.from(bytes));
+      const { guardedSave } = await loadCore();
+      const res = await guardedSave(outputPath, bytes, { force: options?.force === true });
+      return res.ok ? { path: outputPath } : { ...res, path: outputPath };
     }
+    fs.writeFileSync(outputPath, Buffer.from(bytes));
     return { path: outputPath };
   }
 );
@@ -222,14 +230,16 @@ ipcMain.on('window:forceClose', (event) => {
   window.close();
 });
 
+// L'IPC di Electron perde le proprietà custom degli errori: l'esito è un
+// valore discriminato ({ ok, code, message, processes }), non un'eccezione.
 ipcMain.handle(
   'fs:saveAtomic',
-  async (_, filePath: string, bytesArr: number[], expectedHash?: string) => {
-    const bytes = new Uint8Array(bytesArr);
-    const { atomicWrite, validateArchiveBytes } = await loadCore();
-    await validateArchiveBytes(bytes);
-    const report = await atomicWrite(filePath, bytes, true, expectedHash);
-    return { backup: report.backup, bytes: report.bytesWritten };
+  async (_, filePath: string, bytesArr: number[], options?: { expectedHash?: string; force?: boolean }) => {
+    const { guardedSave } = await loadCore();
+    return guardedSave(filePath, new Uint8Array(bytesArr), {
+      expectedHash: options?.expectedHash,
+      force: options?.force === true,
+    });
   }
 );
 

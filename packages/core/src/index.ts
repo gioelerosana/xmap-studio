@@ -1,3 +1,5 @@
+export * from './errors.js';
+export * from './platform.js';
 export * from './model/index.js';
 export * from './archive/index.js';
 export * from './safety/index.js';

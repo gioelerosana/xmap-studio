@@ -1,3 +1,4 @@
+import { CODE_INVALID_INPUT, XmapError } from '../errors.js';
 import { RawArchive } from '../archive/types.js';
 import { CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
 import {
@@ -11,6 +12,7 @@ import {
   topicNotesText,
   topicPosition,
   topicTitle,
+  suggestedLatex,
 } from '../model/utils.js';
 import {
   BoundaryView,
@@ -23,9 +25,11 @@ import {
 } from './types.js';
 
 const MAX_HISTORY = 200;
+/** Posizione sentinella: lo stato su disco non è più nella cronologia. */
+const UNREACHABLE = -1;
 
 export class OpenWorkbook {
-  public path: string;
+  public path: string | null;
   public fileName: string;
   public archive: RawArchive;
   public content: Sheet[];
@@ -37,7 +41,7 @@ export class OpenWorkbook {
   public originalHash: string;
 
   constructor(
-    path: string,
+    path: string | null,
     fileName: string,
     archive: RawArchive,
     content: Sheet[],
@@ -70,16 +74,18 @@ export class OpenWorkbook {
   }
 
   public pushHistory(): void {
-    // Troncamento se siamo tornati indietro
+    // Troncamento se siamo tornati indietro: se lo stato salvato stava nel
+    // ramo redo scartato, non è più raggiungibile e nessuna posizione futura
+    // può coincidere con il disco.
     if (this.pos + 1 < this.history.length) {
       this.history.splice(this.pos + 1);
+      if (this.savedPos > this.pos) this.savedPos = UNREACHABLE;
     }
     this.history.push(cloneSheets(this.content));
     if (this.history.length > MAX_HISTORY) {
       this.history.shift();
-      if (this.savedPos > 0) {
-        this.savedPos--;
-      }
+      // Se lo stato salvato esce dalla cronologia diventa irraggiungibile.
+      this.savedPos = this.savedPos > 0 ? this.savedPos - 1 : UNREACHABLE;
     }
     this.pos = this.history.length - 1;
   }
@@ -99,7 +105,7 @@ export class OpenWorkbook {
   }
 
   public markSaved(newPath?: string, newHash?: string): void {
-    if (!newHash) throw new Error('Hash del file salvato mancante.');
+    if (!newHash) throw new XmapError(CODE_INVALID_INPUT, 'Hash del file salvato mancante.');
     if (newPath) {
       this.path = newPath;
       this.fileName = newPath.split(/[\\/]/).pop() || newPath;
@@ -218,6 +224,7 @@ function collectTopicViews(
     displayTitle,
     kind,
     latex,
+    latexSuggestion: suggestedLatex(topic),
     imageSrc: topic.image?.src,
     imageW: topic.image?.width,
     imageH: topic.image?.height,

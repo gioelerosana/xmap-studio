@@ -1,37 +1,25 @@
+import { CODE_FORMAT, XmapError } from '../errors.js';
 import JSZip from 'jszip';
 import { Entries, RawArchive, Resources } from './types.js';
 
 /**
- * Calcola l'hash SHA-256 di un buffer e restituisce la stringa esadecimale.
- * Implementazione isomorfa sincrona (usa node:crypto se presente, altrimenti implementazione pura).
+ * SHA-256 esadecimale, sincrono e identico su ogni piattaforma: serve dove
+ * l'hash è parte del formato (nome della risorsa PNG, regola MathJax).
  */
 export function sha256Hex(data: Uint8Array | string): string {
   const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
-
-  try {
-    // Prova ad usare node:crypto se in ambiente Node/Electron
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const cryptoMod = typeof process !== 'undefined' && process.versions?.node ? require('crypto') : null;
-    if (cryptoMod && typeof cryptoMod.createHash === 'function') {
-      return cryptoMod.createHash('sha256').update(bytes).digest('hex');
-    }
-  } catch {
-    // Continua con l'algoritmo puro
-  }
-
   return pureSha256(bytes);
 }
 
-/** Calcola SHA-256 senza bloccare la UI quando WebCrypto è disponibile. */
+/**
+ * SHA-256 asincrono: usa WebCrypto (browser, Electron e Node ≥ 18) per i
+ * buffer grandi come l'intero archivio, con ricaduta sull'implementazione pura.
+ */
 export async function sha256HexAsync(data: Uint8Array | string): Promise<string> {
   const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
 
-  if (typeof process !== 'undefined' && process.versions?.node) {
-    const { createHash } = await import('node:crypto');
-    return createHash('sha256').update(bytes).digest('hex');
-  }
-
   if (globalThis.crypto?.subtle) {
+    // Copia in un ArrayBuffer proprio: la vista può puntare a un buffer condiviso più grande.
     const digestBytes = new Uint8Array(bytes.length);
     digestBytes.set(bytes);
     const digest = await globalThis.crypto.subtle.digest('SHA-256', digestBytes.buffer);
@@ -135,7 +123,13 @@ function pureSha256(bytes: Uint8Array): string {
  * Genera errore se content.json non è presente (formato legacy XMind 8 non supportato).
  */
 export async function readArchive(data: ArrayBuffer | Uint8Array): Promise<RawArchive> {
-  const zip = await JSZip.loadAsync(data);
+  // checkCRC32: un archivio corrotto deve fallire qui, non produrre byte sbagliati.
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(data, { checkCRC32: true });
+  } catch (err) {
+    throw new XmapError(CODE_FORMAT, `Il file non è un archivio ZIP valido: ${err}`);
+  }
   const entries: Entries = new Map();
   const resources: Resources = new Map();
 
@@ -157,7 +151,7 @@ export async function readArchive(data: ArrayBuffer | Uint8Array): Promise<RawAr
   await Promise.all(filePromises);
 
   if (!entries.has('content.json')) {
-    throw new Error('content.json assente: formato legacy XMind 8 non supportato');
+    throw new XmapError(CODE_FORMAT, 'content.json assente: formato legacy XMind 8 non supportato');
   }
 
   return { entries, resources };

@@ -1,3 +1,4 @@
+import { CODE_RENDERER, XmapError } from '../errors.js';
 import { mathjax } from 'mathjax-full/js/mathjax.js';
 import { TeX } from 'mathjax-full/js/input/tex.js';
 import { SVG } from 'mathjax-full/js/output/svg.js';
@@ -57,7 +58,7 @@ export function renderLatexToSvg(latex: string, emPx: number = 23.33): RenderRes
 
   const vbMatch = svgStr.match(/viewBox="([-\d.]+)\s+([-\d.]+)\s+([\d.]+)\s+([\d.]+)"/);
   if (!vbMatch) {
-    throw new Error('viewBox non trovato nell\'output MathJax');
+    throw new XmapError(CODE_RENDERER, 'viewBox non trovato nell\'output MathJax');
   }
 
   const widthPx = (parseFloat(vbMatch[3]) / 1000) * emPx;

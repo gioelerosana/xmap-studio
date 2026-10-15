@@ -1,3 +1,4 @@
+import { CODE_FORMAT, XmapError } from '../errors.js';
 import { setLabels, setNotes } from '../model/edit.js';
 import { Sheet, Topic } from '../model/types.js';
 import { newTopicId } from '../model/utils.js';
@@ -17,11 +18,11 @@ export function parseOutline(format: 'markdown' | 'opml' | string, text: string)
   } else if (format === 'opml') {
     root = parseOPML(text);
   } else {
-    throw new Error(`Formato non supportato: ${format}`);
+    throw new XmapError(CODE_FORMAT, `Formato non supportato: ${format}`);
   }
 
   if (root.children.length === 0 && !root.title && !root.latex) {
-    throw new Error('Nessun argomento riconosciuto nel file.');
+    throw new XmapError(CODE_FORMAT, 'Nessun argomento riconosciuto nel file.');
   }
 
   return root;
@@ -335,11 +336,26 @@ function parseAttrs(raw: string): Record<string, string> {
   return attrs;
 }
 
-function unescapeXml(s: string): string {
-  return s
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
+const XML_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Decodifica le entità XML in un solo passaggio, così `&amp;lt;` resta il
+ * testo letterale `&lt;`. Gestisce anche i riferimenti numerici
+ * (`&#233;`, `&#xE9;`); le entità sconosciute restano intatte.
+ */
+export function unescapeXml(s: string): string {
+  return s.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (match, body: string) => {
+    if (body[0] === '#') {
+      const code = body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return match;
+      return String.fromCodePoint(code);
+    }
+    return XML_ENTITIES[body] ?? match;
+  });
 }

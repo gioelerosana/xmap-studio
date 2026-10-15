@@ -34,6 +34,8 @@ export interface TopicView {
   displayTitle: string;
   kind: 'equation' | 'image' | 'text';
   latex?: string;
+  /** Titolo che sembra LaTeX ma non è un'equazione: solo suggerimento per la UI. */
+  latexSuggestion?: string;
   imageSrc?: string;
   imageW?: number;
   imageH?: number;
@@ -63,7 +65,8 @@ export interface SheetDto {
 }
 
 export interface WorkbookDto {
-  path: string;
+  /** Percorso su disco; `null` per mappe nuove o aperte senza percorso (browser). */
+  path: string | null;
   fileName: string;
   dirty: boolean;
   canUndo: boolean;

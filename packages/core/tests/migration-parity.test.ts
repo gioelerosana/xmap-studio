@@ -4,13 +4,13 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   AppController,
-  atomicWrite,
   buildArchiveBytes,
   RawArchive,
   readArchive,
   sha256HexAsync,
   validateArchiveBytes,
 } from '../src/index.js';
+import { atomicWrite } from '../src/node/index.js';
 
 const tempDirs: string[] = [];
 
@@ -247,7 +247,7 @@ describe('parità della migrazione Rust → TypeScript', () => {
     const expectedHash = await sha256HexAsync(original);
     writeFileSync(target, new Uint8Array([9, 8, 7]));
 
-    await expect(atomicWrite(target, new Uint8Array([4, 5, 6]), true, expectedHash)).rejects.toThrow(/cambiato su disco/);
+    await expect(atomicWrite(target, new Uint8Array([4, 5, 6]), { makeBackup: true, expectedHash })).rejects.toThrow(/cambiato su disco/);
     expect(Array.from(readFileSync(target))).toEqual([9, 8, 7]);
   });
 
@@ -256,7 +256,7 @@ describe('parità della migrazione Rust → TypeScript', () => {
     const controller = await openFixture(bytes);
     controller.setTopicTitle('root', 'Modified');
 
-    await expect(controller.save()).rejects.toThrow(/adapter di filesystem/);
+    await expect(controller.save()).rejects.toThrow(/Accesso al disco non disponibile/);
     expect(controller.isDirty()).toBe(true);
   });
 });

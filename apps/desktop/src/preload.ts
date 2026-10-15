@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+/** Esito di un salvataggio sotto guardia (vedi `guardedSave` in @xmap/core/node). */
+export type SaveOutcome =
+  | { ok: true; backup?: string; bytes: number }
+  | { ok: false; code: string; message: string; processes?: string[] };
+
+export type SaveBytesOutcome =
+  | { path: string }
+  | { ok: false; code: string; message: string; processes?: string[]; path: string };
+
 export interface ElectronAPI {
   openFileDialog: () => Promise<{ path: string; name: string; bytes: number[] } | null>;
   openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: number[] } | null>;
@@ -11,13 +20,18 @@ export interface ElectronAPI {
   saveBytes: (
     suggestedName: string,
     bytes: number[],
-    options?: { description?: string; extensions?: string[] }
-  ) => Promise<{ path: string } | null>;
+    options?: {
+      description?: string;
+      extensions?: string[];
+      targetPath?: string;
+      force?: boolean;
+    }
+  ) => Promise<SaveBytesOutcome | null>;
   saveAtomic: (
     filePath: string,
     bytes: number[],
-    expectedHash?: string
-  ) => Promise<{ backup?: string; bytes: number }>;
+    options?: { expectedHash?: string; force?: boolean }
+  ) => Promise<SaveOutcome>;
   checkXMindRunning: () => Promise<string[]>;
   minimize: () => void;
   maximize: () => void;
@@ -36,8 +50,8 @@ const api: ElectronAPI = {
   saveFileDialog: (suggestedName?: string) => ipcRenderer.invoke('dialog:saveFile', suggestedName),
   saveBytes: (suggestedName, bytes, options) =>
     ipcRenderer.invoke('dialog:saveBytes', suggestedName, bytes, options),
-  saveAtomic: (filePath: string, bytes: number[], expectedHash?: string) =>
-    ipcRenderer.invoke('fs:saveAtomic', filePath, bytes, expectedHash),
+  saveAtomic: (filePath, bytes, options) =>
+    ipcRenderer.invoke('fs:saveAtomic', filePath, bytes, options),
   checkXMindRunning: () => ipcRenderer.invoke('safety:checkXMind'),
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),

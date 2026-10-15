@@ -1,6 +1,18 @@
+import {
+  CODE_FORMAT,
+  CODE_INVALID_INPUT,
+  CODE_IO,
+  CODE_LATEX,
+  CODE_NO_PATH,
+  CODE_NO_WORKBOOK,
+  CODE_TOPIC_NOT_FOUND,
+  CODE_VALIDATION,
+  CODE_XMIND_RUNNING,
+  XmapError,
+} from './errors.js';
 import { buildArchiveBytes, readArchive, sha256HexAsync } from './archive/archive.js';
-import { atomicWrite } from './archive/atomic.js';
 import { RawArchive } from './archive/types.js';
+import type { Platform } from './platform.js';
 import {
   addChild,
   addRelationship,
@@ -41,7 +53,6 @@ import { svgToPng } from './latex/raster.js';
 import { clearTask, writeTask, TaskData } from './task/task.js';
 import { isMarkerKnown } from './markers/catalog.js';
 import { refreshManifest, registerEntries } from './safety/manifest.js';
-import { xmindProcesses } from './safety/process.js';
 import { validateArchiveBytes, ValidationReport } from './safety/validate.js';
 import { toMarkdown } from './exporters/markdown.js';
 import { toOPML } from './exporters/opml.js';
@@ -60,6 +71,12 @@ import { cloneSheets, OpenWorkbook } from './state/workbook.js';
 
 export class AppController {
   private currentWorkbook: OpenWorkbook | null = null;
+
+  /**
+   * `platform` abilita lettura/scrittura su disco e il rilevamento di XMind;
+   * senza (es. nel browser) il salvataggio passa da `prepareArchiveBytes()`.
+   */
+  constructor(private readonly platform?: Platform) {}
 
   public workbook(): WorkbookDto | null {
     return this.currentWorkbook ? this.currentWorkbook.toDto() : null;
@@ -100,18 +117,18 @@ export class AppController {
 
   public async open(
     data: ArrayBuffer | Uint8Array,
-    path: string = 'workbook.xmind',
+    path?: string | null,
     fileName?: string
   ): Promise<WorkbookDto> {
     const archive = await readArchive(data);
     const contentBytes = archive.entries.get('content.json');
     if (!contentBytes) {
-      throw new Error('content.json assente');
+      throw new XmapError(CODE_FORMAT, 'content.json assente');
     }
     const contentStr = new TextDecoder('utf-8').decode(contentBytes);
     const parsedContent: unknown = JSON.parse(contentStr);
     if (!Array.isArray(parsedContent)) {
-      throw new Error('content.json non è un array di fogli');
+      throw new XmapError(CODE_FORMAT, 'content.json non è un array di fogli');
     }
     const content = parsedContent as Sheet[];
 
@@ -125,12 +142,16 @@ export class AppController {
       }
     }
 
-    const running = await xmindProcesses();
-    const name = fileName || path.split('/').pop() || 'workbook.xmind';
+    const running = this.platform ? await this.platform.xmindProcesses() : [];
+    // Senza percorso il workbook non ha una destinazione su disco: il primo
+    // salvataggio deve passare da "Salva con nome".
+    const resolvedPath = path ?? null;
+    const name =
+      fileName || (resolvedPath ? resolvedPath.split(/[\\/]/).pop() : '') || 'workbook.xmind';
 
     const originalHash = await sha256HexAsync(data instanceof Uint8Array ? data : new Uint8Array(data));
     this.currentWorkbook = new OpenWorkbook(
-      path,
+      resolvedPath,
       name,
       archive,
       content,
@@ -142,11 +163,10 @@ export class AppController {
   }
 
   public async openPath(filePath: string): Promise<WorkbookDto> {
-    const fs = await import('node:fs');
-    const pathMod = await import('node:path');
-    const resolved = pathMod.resolve(filePath);
-    const buffer = fs.readFileSync(resolved);
-    return await this.open(buffer, resolved, pathMod.basename(resolved));
+    const platform = this.requirePlatform();
+    const resolved = platform.resolvePath ? platform.resolvePath(filePath) : filePath;
+    const bytes = await platform.readFile(resolved);
+    return await this.open(bytes, resolved);
   }
 
   public preview(latex: string, emPx: number = 23.33) {
@@ -155,7 +175,7 @@ export class AppController {
 
   private ensureWorkbook(): OpenWorkbook {
     if (!this.currentWorkbook) {
-      throw new Error('Nessun workbook aperto');
+      throw new XmapError(CODE_NO_WORKBOOK, 'Nessun workbook aperto');
     }
     return this.currentWorkbook;
   }
@@ -172,7 +192,7 @@ export class AppController {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
     if (!topic) {
-      throw new Error(`Topic ${topicId} non trovato`);
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
     }
 
     const fontPx = options.fontSizePx ?? fontSizePx(topic);
@@ -191,7 +211,7 @@ export class AppController {
 
   public async applyBatch(specs: BatchSpec[]): Promise<BatchResultDto> {
     const wb = this.ensureWorkbook();
-    if (specs.length === 0) throw new Error('Nessuna equazione da applicare.');
+    if (specs.length === 0) throw new XmapError(CODE_INVALID_INPUT, 'Nessuna equazione da applicare.');
 
     const working = cloneSheets(wb.content);
     const pendingResources: Array<[string, Uint8Array]> = [];
@@ -239,7 +259,7 @@ export class AppController {
   public removeEquation(topicId: string, title?: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     removeEquation(topic, title);
     wb.pushHistory();
@@ -249,7 +269,7 @@ export class AppController {
   public setTopicTitle(topicId: string, title: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setTitle(topic, title);
     wb.pushHistory();
@@ -259,7 +279,7 @@ export class AppController {
   public setTopicNotes(topicId: string, text: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setNotes(topic, text);
     wb.pushHistory();
@@ -269,7 +289,7 @@ export class AppController {
   public setTopicNotesDisplay(topicId: string, display?: 'icon' | 'block' | null): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setNotesDisplay(topic, topic.notes ? display : null);
     wb.pushHistory();
@@ -279,7 +299,7 @@ export class AppController {
   public setTopicLabels(topicId: string, labels: string[]): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setLabels(topic, labels);
     wb.pushHistory();
@@ -289,15 +309,15 @@ export class AppController {
   public toggleTopicMarker(topicId: string, markerId: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     const id = markerId.trim();
     if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
-      throw new Error('Id marker non valido.');
+      throw new XmapError(CODE_INVALID_INPUT, 'Id marker non valido.');
     }
     const alreadyPresent = topic.markers?.some((marker) => marker.markerId === id) ?? false;
     if (!alreadyPresent && !isMarkerKnown(id)) {
-      throw new Error(`Marker sconosciuto: ${id}`);
+      throw new XmapError(CODE_INVALID_INPUT, `Marker sconosciuto: ${id}`);
     }
 
     toggleMarker(topic, id);
@@ -308,7 +328,7 @@ export class AppController {
   public setTopicHref(topicId: string, href?: string | null): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setHref(topic, href);
     wb.pushHistory();
@@ -318,7 +338,7 @@ export class AppController {
   public addTopic(parentId: string, title: string): { dto: WorkbookDto; newId: string } {
     const wb = this.ensureWorkbook();
     const parent = findTopic(wb.content, parentId);
-    if (!parent) throw new Error(`Parent topic ${parentId} non trovato`);
+    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
 
     const newId = addChild(parent, title);
     wb.pushHistory();
@@ -329,7 +349,7 @@ export class AppController {
     const wb = this.ensureWorkbook();
     const removed = removeTopic(wb.content, topicId);
     if (!removed) {
-      throw new Error(`Impossibile rimuovere il topic ${topicId} (o è la radice)`);
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Impossibile rimuovere il topic ${topicId} (o è la radice)`);
     }
     wb.pushHistory();
     return wb.toDto();
@@ -357,11 +377,11 @@ export class AppController {
   public addTopicRelationship(end1Id: string, end2Id: string, title?: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const sheetIdx = sheetIndexOf(wb.content, end1Id);
-    if (sheetIdx === -1) throw new Error(`Topic ${end1Id} non trovato`);
+    if (sheetIdx === -1) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${end1Id} non trovato`);
     const end2SheetIdx = sheetIndexOf(wb.content, end2Id);
-    if (end2SheetIdx === -1) throw new Error(`Topic ${end2Id} non trovato`);
+    if (end2SheetIdx === -1) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${end2Id} non trovato`);
     if (sheetIdx !== end2SheetIdx) {
-      throw new Error('I blocchi non appartengono allo stesso foglio.');
+      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi non appartengono allo stesso foglio.');
     }
     const sheet = wb.content[sheetIdx];
 
@@ -378,7 +398,7 @@ export class AppController {
         return wb.toDto();
       }
     }
-    throw new Error(`Relazione ${relationshipId} non trovata`);
+    throw new XmapError(CODE_TOPIC_NOT_FOUND, `Relazione ${relationshipId} non trovata`);
   }
 
   public addTopicBoundary(
@@ -389,7 +409,7 @@ export class AppController {
   ): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     const childCount = topic.children?.attached?.length ?? 0;
     const rangeStart = start ?? 0;
@@ -403,10 +423,10 @@ export class AppController {
   public removeTopicBoundary(topicId: string, boundaryId: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     if (!removeBoundary(topic, boundaryId)) {
-      throw new Error(`Boundary ${boundaryId} non trovato`);
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Boundary ${boundaryId} non trovato`);
     }
     wb.pushHistory();
     return wb.toDto();
@@ -420,7 +440,7 @@ export class AppController {
   ): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     const childCount = topic.children?.attached?.length ?? 0;
     const rangeStart = start ?? 0;
@@ -434,10 +454,10 @@ export class AppController {
   public removeTopicSummary(topicId: string, summaryTopicId: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     if (!removeSummary(topic, summaryTopicId)) {
-      throw new Error(`Summary ${summaryTopicId} non trovato`);
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Summary ${summaryTopicId} non trovato`);
     }
     wb.pushHistory();
     return wb.toDto();
@@ -446,7 +466,7 @@ export class AppController {
   public setTopicColor(topicId: string, color?: string | null): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setFillColor(topic, color);
     wb.pushHistory();
@@ -456,7 +476,7 @@ export class AppController {
   public setTopicTask(topicId: string, task: TaskData): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     writeTask(topic, task);
     wb.pushHistory();
@@ -466,7 +486,7 @@ export class AppController {
   public clearTopicTask(topicId: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     clearTask(topic);
     wb.pushHistory();
@@ -476,9 +496,9 @@ export class AppController {
   public attachFileToTopic(topicId: string, fileName: string, fileBytes: Uint8Array): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
-    if (fileBytes.length === 0) throw new Error('Il file da allegare è vuoto.');
+    if (fileBytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, 'Il file da allegare è vuoto.');
     const attachmentPath = `attachments/${newTopicId()}.bin`;
 
     wb.archive.entries.set(attachmentPath, fileBytes);
@@ -498,7 +518,7 @@ export class AppController {
       case 'outline':
         return toOutline(wb.content);
       default:
-        throw new Error(`Formato sconosciuto: ${format}`);
+        throw new XmapError(CODE_FORMAT, `Formato sconosciuto: ${format}`);
     }
   }
 
@@ -512,15 +532,15 @@ export class AppController {
   ): Promise<{ bytes: Uint8Array; mime: string; extension: string }> {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     const latex = topicLatex(topic);
-    if (!latex) throw new Error('Il blocco selezionato non contiene un\'equazione');
+    if (!latex) throw new XmapError(CODE_LATEX, 'Il blocco selezionato non contiene un\'equazione');
 
     const fontPx = fontSizePx(topic);
     const emPx = fontPx ? fontPx * 1.25 : 23.33;
     const render = renderLatexToSvg(latex, emPx);
-    if (render.error) throw new Error(`LaTeX non valido: ${render.error}`);
+    if (render.error) throw new XmapError(CODE_LATEX, `LaTeX non valido: ${render.error}`);
 
     if (format === 'svg') {
       return {
@@ -550,7 +570,7 @@ export class AppController {
   public async importOutline(
     format: 'markdown' | 'opml' | string,
     text: string,
-    options: { asNewSheet?: boolean } = { asNewSheet: true }
+    options: { asNewSheet?: boolean } = {}
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
     const importedSheet = await importToSheet(format, text, async (t, latex) => {
@@ -558,18 +578,17 @@ export class AppController {
       wb.archive.resources.set(outcome.resource, png);
     });
 
-    if (options.asNewSheet || wb.content.length === 0) {
+    const asNewSheet = options.asNewSheet ?? true;
+    const root = wb.content[0]?.rootTopic;
+    if (asNewSheet || !root || !importedSheet.rootTopic) {
+      // Mai sovrascrivere il primo foglio: se non c'è una radice a cui
+      // agganciare l'import, lo si aggiunge come foglio nuovo.
       wb.content.push(importedSheet);
     } else {
       // Inserisci come figlio della radice del primo sheet
-      const root = wb.content[0].rootTopic;
-      if (root && importedSheet.rootTopic) {
-        if (!root.children) root.children = {};
-        if (!root.children.attached) root.children.attached = [];
-        root.children.attached.push(importedSheet.rootTopic);
-      } else {
-        wb.content[0] = importedSheet;
-      }
+      if (!root.children) root.children = {};
+      if (!root.children.attached) root.children.attached = [];
+      root.children.attached.push(importedSheet.rootTopic);
     }
 
     wb.pushHistory();
@@ -581,10 +600,10 @@ export class AppController {
     await validateArchiveBytes(otherBytes);
     const otherArchive = await readArchive(otherBytes);
     const otherContentBytes = otherArchive.entries.get('content.json');
-    if (!otherContentBytes) throw new Error('content.json assente nel file da unire');
+    if (!otherContentBytes) throw new XmapError(CODE_FORMAT, 'content.json assente nel file da unire');
 
     const otherSheets: Sheet[] = JSON.parse(new TextDecoder().decode(otherContentBytes));
-    if (otherSheets.length === 0) throw new Error('Il file da unire non contiene fogli');
+    if (otherSheets.length === 0) throw new XmapError(CODE_FORMAT, 'Il file da unire non contiene fogli');
 
     // Riassegna gli id per evitare collisioni tra file indipendenti.
     remapIds(otherSheets);
@@ -596,7 +615,7 @@ export class AppController {
     const attachmentsToCopy: Array<[string, Uint8Array]> = [];
     for (const sourcePath of attachmentRefs) {
       const bytes = otherArchive.entries.get(sourcePath);
-      if (!bytes) throw new Error(`Allegato referenziato ma assente: ${sourcePath}`);
+      if (!bytes) throw new XmapError(CODE_VALIDATION, `Allegato referenziato ma assente: ${sourcePath}`);
 
       const existing = wb.archive.entries.get(sourcePath);
       if (!existing || bytesEqual(existing, bytes)) {
@@ -640,7 +659,7 @@ export class AppController {
   public async splitTopic(topicId: string): Promise<Uint8Array> {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new Error(`Topic ${topicId} non trovato`);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     const root = JSON.parse(JSON.stringify(topic)) as Topic;
 
@@ -663,7 +682,7 @@ export class AppController {
     for (const ref of resourceRefs) {
       const resPath = `resources/${ref}`;
       const bytes = wb.archive.resources.get(resPath);
-      if (!bytes) throw new Error(`Risorsa referenziata ma assente: ${resPath}`);
+      if (!bytes) throw new XmapError(CODE_VALIDATION, `Risorsa referenziata ma assente: ${resPath}`);
       newArchive.resources.set(resPath, bytes);
     }
 
@@ -671,7 +690,7 @@ export class AppController {
     collectAttachmentRefs(standalone, attachmentRefs);
     for (const attachment of attachmentRefs) {
       const bytes = wb.archive.entries.get(attachment);
-      if (!bytes) throw new Error(`Allegato referenziato ma assente: ${attachment}`);
+      if (!bytes) throw new XmapError(CODE_VALIDATION, `Allegato referenziato ma assente: ${attachment}`);
       newArchive.entries.set(attachment, bytes);
     }
 
@@ -699,27 +718,31 @@ export class AppController {
   public async prepareArchiveBytes(): Promise<{ bytes: Uint8Array; validation: ValidationReport }> {
     const wb = this.ensureWorkbook();
 
+    // Si lavora su una copia: se la validazione fallisce il workbook vivo
+    // resta intatto (i byte delle entry sono condivisi, mai modificati).
+    const archive: RawArchive = {
+      entries: new Map(wb.archive.entries),
+      resources: new Map(wb.archive.resources),
+    };
+
     // Rimuove thumbnail obsoleta (Regola 9)
-    wb.archive.entries.delete('Thumbnails/thumbnail.png');
+    archive.entries.delete('Thumbnails/thumbnail.png');
 
-    // Aggiorna manifest con tutte le risorse attuali e dropThumbnail
-    const updatedManifest = refreshManifest(wb.manifest, wb.archive.resources.keys(), true);
+    // refreshManifest/registerEntries mutano il loro input: clone profondo.
+    const manifest = refreshManifest(
+      JSON.parse(JSON.stringify(wb.manifest ?? {})) as Record<string, unknown>,
+      archive.resources.keys(),
+      true
+    );
     registerEntries(
-      updatedManifest,
-      Array.from(wb.archive.entries.keys()).filter((name) => name.startsWith('attachments/'))
-    );
-    wb.manifest = updatedManifest;
-
-    wb.archive.entries.set(
-      'manifest.json',
-      new TextEncoder().encode(JSON.stringify(updatedManifest))
-    );
-    wb.archive.entries.set(
-      'content.json',
-      new TextEncoder().encode(JSON.stringify(wb.content))
+      manifest,
+      Array.from(archive.entries.keys()).filter((name) => name.startsWith('attachments/'))
     );
 
-    const bytes = await buildArchiveBytes(wb.archive);
+    archive.entries.set('manifest.json', new TextEncoder().encode(JSON.stringify(manifest)));
+    archive.entries.set('content.json', new TextEncoder().encode(JSON.stringify(wb.content)));
+
+    const bytes = await buildArchiveBytes(archive);
     const validation = await validateArchiveBytes(bytes);
 
     return { bytes, validation };
@@ -740,32 +763,33 @@ export class AppController {
     return wb.toDto();
   }
 
-  public async save(
-    force: boolean = false,
-    desktopFs: boolean = false,
-    targetPath?: string
-  ): Promise<SaveResultDto> {
+  public async save(force: boolean = false, targetPath?: string): Promise<SaveResultDto> {
     const wb = this.ensureWorkbook();
-    if (!desktopFs || typeof process === 'undefined' || !process.versions?.node) {
-      throw new Error('Usa prepareArchiveBytes() e l’adapter di filesystem per salvare questo workbook.');
+    const platform = this.requirePlatform();
+    const target = targetPath ?? wb.path;
+    if (!target) {
+      throw new XmapError(CODE_NO_PATH, 'La mappa non ha ancora un file: usa "Salva con nome".');
     }
 
     if (!force) {
-      const running = await xmindProcesses();
+      const running = await platform.xmindProcesses();
       if (running.length > 0) {
-        throw new Error(
-          `XMind è in esecuzione in background (${running.join(', ')}). Chiudi XMind o forza il salvataggio.`
+        throw new XmapError(
+          CODE_XMIND_RUNNING,
+          `XMind è in esecuzione in background (${running.join(', ')}). Chiudi XMind o forza il salvataggio.`,
+          { processes: running }
         );
       }
     }
 
-    const { bytes, validation } = await this.prepareArchiveBytes();
-    const target = targetPath ?? wb.path;
+    const { bytes } = await this.prepareArchiveBytes();
+    // Il controllo di conflitto vale solo se si riscrive il file che abbiamo aperto.
     const expectedHash = target === wb.path ? wb.originalHash : undefined;
-    const report = await atomicWrite(target, bytes, true, expectedHash);
-    const fs = await import('node:fs');
-    const writtenBytes = fs.readFileSync(target);
-    const writtenValidation = await validateArchiveBytes(writtenBytes);
+    const report = await platform.atomicWrite(target, bytes, { makeBackup: true, expectedHash });
+
+    // Rilegge e rivalida ciò che è finito su disco prima di dichiararlo salvato.
+    const writtenBytes = await platform.readFile(target);
+    const validation = await validateArchiveBytes(writtenBytes);
     const contentHash = await sha256HexAsync(writtenBytes);
     wb.markSaved(target, contentHash);
 
@@ -773,17 +797,23 @@ export class AppController {
       path: target,
       backup: report.backup,
       bytes: bytes.length,
-      validation: writtenValidation ?? validation,
+      validation,
     };
   }
 
-  public async saveAs(
-    newPath: string,
-    force: boolean = false,
-    desktopFs: boolean = false
-  ): Promise<SaveResultDto> {
+  public async saveAs(newPath: string, force: boolean = false): Promise<SaveResultDto> {
     this.ensureWorkbook();
-    return await this.save(force, desktopFs, newPath);
+    return await this.save(force, newPath);
+  }
+
+  private requirePlatform(): Platform {
+    if (!this.platform) {
+      throw new XmapError(
+        CODE_IO,
+        'Accesso al disco non disponibile in questo ambiente: usa prepareArchiveBytes() e l’adapter di filesystem.'
+      );
+    }
+    return this.platform;
   }
 }
 
@@ -796,7 +826,7 @@ function validateChildRange(start: number, end: number, childCount: number): voi
     end < start ||
     end >= childCount
   ) {
-    throw new Error('Intervallo non valido per i sotto-blocchi collegati.');
+    throw new XmapError(CODE_INVALID_INPUT, 'Intervallo non valido per i sotto-blocchi collegati.');
   }
 }
 
