@@ -23,3 +23,8 @@ src-tauri/resources/renderer/package-lock.json
 *.swp
 *.swo
 .DS_Store
+
+# Dipendenze Node e progetto web locale (non fanno parte dell'app desktop)
+node_modules/
+/apps/
+/packages/
