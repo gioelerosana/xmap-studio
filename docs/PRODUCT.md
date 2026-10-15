@@ -29,21 +29,17 @@ webview. La promessa è **offline, nativa, sicura, gratuita**.
 | Nome prodotto | XMind Equation Studio | **XMap Studio** |
 | Repo / cartella | `xmind-LaTeX` | repo GitLab rinominato in `xmap-studio`; cartella locale invariata |
 | `APP_ID` | `org.joel.xmind_equation_studio` | `org.joel.xmap_studio` |
-| Crate / binario | `xmind-equation-studio` | `xmap-studio` |
-| Lib | `xmind_equation_studio_lib` | `xmap_studio_lib` |
-| AppImage | `XMind_Equation_Studio-*` | `XMap_Studio-*` |
-| `.desktop` Name | XMind Equation Studio | XMap Studio |
+| Pacchetti | — | workspace `@xmap/*` |
 | Cartella backup | `.xmind-equation-studio/` | `.xmap-studio/` |
-| Cache renderer/appimagetool | `~/.cache/xmind-equation-studio/` | `~/.cache/xmap-studio/` |
 
 > **Stato:** attuato in Fase 0 (branch `refactor/xmap-studio-rebrand`).
 
 Note di attuazione:
 
-- **`safety.rs`**: il rilevamento dei processi XMind *non va indebolito*. Il
+- **`safety/process.ts`** (`isXmindInvocation`): il rilevamento dei processi XMind *non va indebolito*. Il
   filtro che esclude la nostra app ora cerca `xmap-studio` **mantenendo** i
-  pattern vecchi (`xmind-equation-studio`, `xmind-latex`), così un'AppImage o
-  un branch precedente non viene scambiato per XMind.
+  pattern vecchi (`xmind-equation-studio`, `xmind-latex`), così una build
+  o un branch precedente non viene scambiato per XMind.
 - **Compatibilità di percorso**: i vecchi backup in
   `.xmind-equation-studio/` non vanno cancellati; il nuovo nome convive, o si
   fa migrazione/fallback in lettura.
@@ -127,11 +123,11 @@ non toccano lo schema: leggiamo il modello già in memoria.
 | Feature | Lock Free | Stato | Priorità |
 |---|---|---|---|
 | Export SVG | sì | Rinviato: l'anteprima grafica (Fase 6) disegna il layout, ma l'export SVG su file resta da fare | Media |
-| Export Markdown / OPML | sì | **Fatto** (Fase 2): `export.rs`, un `#` per sheet, `$latex$`/note/etichette; OPML con `_note`/`_equation`/`_labels` | **Alta** |
+| Export Markdown / OPML | sì | **Fatto** (Fase 2): `exporters/markdown.ts`, `exporters/opml.ts`, un `#` per sheet, `$latex$`/note/etichette; OPML con `_note`/`_equation`/`_labels` | **Alta** |
 | Export PNG senza watermark | watermark in Free | Fattibile (il layout della Fase 6 è la base) | Media |
-| Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `import.rs`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
-| Merge di file `.xmind` | sì | **Fatto** (Fase 2): `merge.rs`, sheet accodate con id riassegnati | Media |
-| Split mappa per ramo principale | sì | **Fatto** (Fase 2): `merge.rs`, ramo → mappa autonoma validata | Bassa |
+| Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `exporters/import.ts`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
+| Merge di file `.xmind` | sì | **Fatto** (Fase 2): `AppController.mergeWorkbook`, sheet accodate con id riassegnati | Media |
+| Split mappa per ramo principale | sì | **Fatto** (Fase 2): `AppController.splitTopic`, ramo → mappa autonoma validata | Bassa |
 | Export PDF senza watermark | watermark in Free | Fattibile (serve libreria PDF: dipendenza) | Bassa |
 | Export Excel / Word | sì | Non prioritario (dipendenza pesante) | — |
 
@@ -149,7 +145,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 ### 3.6 Trappole trasversali (valide per tutte le fasi)
 
 1. **HTML escaping: all'opposto di come sembra.** XMind vuole `&`, `<`, `>`
-   **letterali** dentro le stringhe JSON e `serde_json` fa già la cosa giusta
+   **letterali** dentro le stringhe JSON e `JSON.stringify` fa già la cosa giusta
    (escapa solo `"`, `\` e i caratteri di controllo, non `<`/`>`/`&`). Non
    introdurre quindi un encoder HTML: il rischio è doppio-escaping. L'unica
    attenzione vera è il contenuto di `realHTML`, che è XHTML e deve avere le
@@ -165,8 +161,8 @@ non toccano lo schema: leggiamo il modello già in memoria.
 3. **Doppie rappresentazioni.** Notes (`plain` + `realHTML`), Summary
    (`topic.summaries` + `children.summary`), link (`href` + `attributedTitle`):
    se si scrive una sola metà, XMind può desincronizzarsi.
-4. **`extra` è intoccabile.** Ogni nuovo campo passa da struct con
-   `#[serde(flatten)] extra` e `skip_serializing_if`, mai `null` aggiunti.
+4. **`extra` è intoccabile.** Ogni nuovo campo passa da interfacce con firma
+   d'indice `[key: string]: unknown` (`model/types.ts`), mai `null` aggiunti.
 
 ## 4. Roadmap proposta
 
@@ -183,9 +179,9 @@ dipendenze)**. Ogni fase è spedibile da sola, su branch dedicato, MR verso
 | 5 | Produttività (task, outliner, ricerca, temi) | Medio | Medio | Basso/medio | No |
 
 ### Fase 0 — Rebranding (fatto)
-Rinomina token (§2), icona, docs, `.desktop`, AppImage, test string.
+Rinomina token (§2), icona, docs, test string.
 **Done:** nessun riferimento all'ex brand salvo le esclusioni legacy in
-`safety.rs`; i file `.xmind` restano byte-compatibili.
+`safety/process.ts`; i file `.xmind` restano byte-compatibili.
 
 ### Fase 0.5 — Verifica dei lock e dei provider (fatta offline)
 Campo e provider di §3 sono stati confermati **senza** dipendere da una licenza
@@ -202,13 +198,12 @@ topic link).
 **Perché prima:** sono additive, coprono i bisogni di studio/appunti, non
 toccano l'archivio se non per nessuna risorsa, e sono le più probabili a essere
 bloccate in Free. Riusano `extra` e la validazione esistenti.
-**Dove:** `model.rs` (struct tipizzate + helper), `edit.rs` (applica/rimuovi) e
-`markers.rs` (catalogo), `controller.rs`, `state.rs` per il DTO, pannello
-laterale topic in `gui.rs`.
+**Dove:** `model/` (tipi + `edit.ts`), `markers/catalog.ts` (catalogo),
+`controller.ts`, `state/types.ts` per il DTO, `Inspector` in `apps/web`.
 **Done:** round-trip fedele con note/label/marker/href; apertura in XMind con i
-valori visibili e modificabili; `cargo fmt && clippy && test` verdi.
-**Stato:** fatto. `model.rs`/`markers.rs`/`edit.rs` + pannello «Contenuto del
-blocco» in `gui.rs`; note scritte con entrambe le metà (plain + realHTML
+valori visibili e modificabili; `pnpm build && pnpm test` verdi.
+**Stato:** fatto. `model/`, `markers/` + pannello «Contenuto del
+blocco» nell'`Inspector`; note scritte con entrambe le metà (plain + realHTML
 escapato), catalogo marker di 173 id verificato dal binario.
 
 ### Fase 2 — Interoperabilità (nessuno schema, massimo distacco da Free)
@@ -216,8 +211,8 @@ escapato), catalogo marker di 173 id verificato dal binario.
 split per ramo principale.
 **Perché seconda:** è il distacco più visibile da XMind Free e non tocca il
 formato: si legge il modello in memoria.
-**Dove:** `export.rs` (Markdown/OPML) e `import.rs` (parser senza dipendenze),
-azioni nel menu ☰ in `gui.rs`, tutto in `spawn_blocking`.
+**Dove:** `exporters/` (Markdown/OPML/outliner e import, parser senza
+dipendenze), `ExportModal`/`ImportModal` in `apps/web`.
 **Done:** export/import confrontati su mappe reali; nessuna dipendenza nuova.
 **Stato:** **fatto**. Markdown/OPML (import che crea una nuova sheet, equazioni
 `$…$` native), **merge** di file `.xmind` (sheet accodate con id e riferimenti
@@ -231,12 +226,12 @@ usano il layout della Fase 6 e restano da completare come export su file.
 **Perché terza:** alto valore per mappe concettuali, ma richiede una vista
 dedicata (le relazioni vivono a livello sheet, boundary/summary sui figli) e la
 doppia rappresentazione va gestita con attenzione.
-**Dove:** `model.rs` (`relationships`, `boundaries`, `summaries`), nuovo
-`graph.rs`, rendering/editing relazioni in `gui.rs`.
+**Dove:** `model/types.ts` (`relationships`, `boundaries`, `summaries`),
+`model/edit.ts`, rendering in `MapView`, editing nell'`Inspector`.
 **Done:** relazioni e summary creati sopravvivono al round-trip e si vedono in
 XMind; nessun riferimento orfano dopo l'eliminazione di un topic.
-**Stato:** **fatto**. Struct tipizzate in `model.rs` (`Relationship`,
-`Boundary`, `Summary`), operazioni in `edit.rs` con riallineamento dei range e
+**Stato:** **fatto**. Tipi in `model/types.ts` (`Relationship`,
+`Boundary`, `Summary`), operazioni in `model/edit.ts` con riallineamento dei range e
 pulizia dei riferimenti orfani, sezione «Struttura» nel pannello del blocco
 (collega a un altro blocco, cornice e sommario sui sotto-blocchi). Il callout e
 il riposizionamento dei floating topic restano fuori da questa fase.
@@ -244,16 +239,15 @@ il riposizionamento dei floating topic restano fuori da questa fase.
 ### Fase 4 — Media
 **Feature:** Attachment (allegare file esistenti), poi Audio Notes solo in
 modalità "allega file".
-**Perché quarta:** richiede estensione di `archive.rs`/`validate.rs` per le entry
+**Perché quarta:** richiede estensione di `archive/` e `safety/` per le entry
 non-risorsa (`attachments/`) e una risorsa audio in `resources/`. L'audio con
 registrazione/codec è probabile fuori scope.
-**Dove:** `archive.rs` (entry `attachments/`), `validate.rs` (manifest),
-`media.rs`.
+**Dove:** `archive/` (entry `attachments/`), `safety/validate.ts` (manifest),
+`AppController.attachFileToTopic`.
 **Done:** allegato presente in `attachments/<id>.bin`, registrato nel manifest,
 link `xap:attachments/…` sul topic, apribile da XMind; le risorse orfane restano
 (scelta di sicurezza).
-**Stato:** **fatto** per gli allegati generici (`media.rs`, voce di menu «Allega
-un file…»). Le Audio Notes restano fuori scope in questa fase: il provider è
+**Stato:** **fatto** per gli allegati generici (`AppController.attachFileToTopic`). Le Audio Notes restano fuori scope in questa fase: il provider è
 confermato, ma servono codec/registrazione.
 
 ### Fase 5 — Produttività
@@ -261,23 +255,22 @@ confermato, ma servono codec/registrazione.
 Outliner, ricerca/filtro, temi/stili e colored branch.
 **Perché ultima:** sono molto UI-heavy (temi, editor task, rich text) con valore
 inferiore rispetto alle fasi precedenti; il formato è ormai confermato.
-**Dove:** `gui.rs` (outliner, ricerca), `topic_meta.rs` (task), `theme.rs`
-(stili).
-**Stato:** **fatto** per task (`task.rs`: priorità, avanzamento, date; estensione
+**Dove:** `OutlineView`, `TopicTree` (ricerca), `task/task.ts` (task),
+`model/utils.ts` (colore).
+**Stato:** **fatto** per task (`task/task.ts`: priorità, avanzamento, date; estensione
 scritta con `dependencies` preservate), outliner in sola lettura, ricerca/filtro
 (già presenti) e colore del ramo (`svg:fill`). L'editor dei temi e il rich text
 restano da fare.
 
 ### Fase 6 — Anteprima grafica della mappa
 **Idea:** accanto all'outliner testuale, una vista grafica della mappa — blocchi,
-rami, marker, relazioni — disegnata da un canvas GTK (`DrawingArea` /
-`Snapshot`) a partire dal modello in memoria, **senza webview**. Riusa i DTO già
+rami, marker, relazioni — disegnata come SVG in React a partire dal modello in memoria. Riusa i DTO già
 esistenti; il costo vero è il layout dei rami e la resa del testo.
 **Perché dopo:** è una feature di presentazione, non di formato: non sblocca
 nulla in XMind e ha complessità di layout alta.
-**Stato:** **fatto** in versione base: `layout.rs` calcola il tidy tree
-(orizzontale) senza GTK, `gui.rs` disegna rettangoli/connettori con cairo e
-sovrappone `Label` per il testo, colore del ramo incluso. Restano marker,
+**Stato:** **fatto** in versione base: `layout/layout.ts` calcola il tidy tree
+(orizzontale) in modo puro, `MapView` disegna nodi e connettori, colore del
+ramo incluso. Restano marker,
 relazioni/archi curvi e l'export SVG su file.
 
 ### Fase 7 — Vista mappa ad albero (la feature centrale)
@@ -286,14 +279,13 @@ orizzontale stile XMind (radice a sinistra, rami a destra), sempre aggiornato,
 con selezione sincronizzata all'editor testuale, collapse/expand e pan/zoom.
 L'editing **resta testuale**: la mappa orienta e seleziona, non edita.
 **Perché ora:** è la feature che dà all'app la sua identità; la Fase 6 ne ha già
-posto le basi (layout puro + canvas cairo).
-**Dove:** `layout.rs` (input dai DTO, `NodeMetrics`, collapse, bounds), nuovo
-`map_view.rs` (canvas GTK/cairo + Pango), `gui.rs` (Stack Mappa/Testo,
-switcher, sincronia selezione, `refresh`).
+posto le basi (layout puro + canvas).
+**Dove:** `packages/core/src/layout/` (input dai DTO, `NodeMetrics`, collapse,
+bounds), `MapView` e `App` in `apps/web` (sincronia selezione).
 **Stato:** **completata**. Dettagli in
 [`MAP-VIEW.md`](MAP-VIEW.md). Decisioni: layout alimentato dai DTO, equazioni
 renderizzate con cache, interazione v1 = selezione + collapse + zoom, nessuna
-webview e nessuna dipendenza nuova reale.
+dipendenza nuova.
 
 ### Fuori scope (per scelta)
 Cloud/account/collaborazione/AI; Set Password (cifratura ZIP); sticker e
@@ -305,13 +297,17 @@ IconFinder proprietari (asset XMind, licenza); export Word/Excel e PDF nativi
 Valgono tutte quelle di [`AGENTS.md`](../AGENTS.md). In particolare, con
 l'arrivo di nuove feature:
 
-1. Ogni nuovo campo resta dentro struct con `#[serde(flatten)] extra`, e nessun
+1. Ogni nuovo campo resta dentro interfacce con firma d'indice
+   (`[key: string]: unknown`), e nessun
    campo sconosciuto si perde (§"Mai distruggere dati dell'utente").
 2. Le nuove feature **non** introducono scritture dirette: si passa sempre da
-   `archive::atomic_write` e da `validate::validate_archive_bytes`.
-3. Il backend resta senza GTK (`controller.rs` testabile headless).
-4. Nessuna nuova dipendenza se std o un crate esistente bastano.
-5. La UI non fa lavoro pesante: tutto passa da `gui::spawn_blocking`.
+   `atomicWrite` (`archive/atomic.ts`) e da `validateArchiveBytes`
+   (`safety/validate.ts`).
+3. Il core resta senza dipendenze dalla UI (`controller.ts` testabile headless).
+4. Nessuna nuova dipendenza se le API standard o una dipendenza esistente
+   bastano.
+5. Il processo principale Electron è l'unico a scrivere su disco; il renderer
+   non ha accesso Node diretto.
 
 ## 6. Rischi
 
@@ -320,7 +316,7 @@ l'arrivo di nuove feature:
 | Drift del formato tra versioni XMind | Feature scritte male = file rotto | Validazione + test E2E su XMind reale a ogni feature |
 | Provider/campi non verificati | Implementazione inutile | Verifica offline dal binario XMind (§3, Fase 0.5); resta il solo lock Free |
 | Doppie rappresentazioni (notes/summary/link) | XMind desincronizza o perde dati | Scrivere entrambe le metà, test E2E |
-| Doppio escaping in `realHTML` (`&`/`<`/`>`) | Contenuto HTML corrotto | Lasciare `serde_json` (scrive `<`/`>`/`&` letterali), nessun encoder HTML, test di round-trip |
+| Doppio escaping in `realHTML` (`&`/`<`/`>`) | Contenuto HTML corrotto | Lasciare `JSON.stringify` (scrive `<`/`>`/`&` letterali), nessun encoder HTML, test di round-trip |
 | Confusione col marchio XMind | Legale | Nome proprio, solo "compatibile con" |
 | Audio/cifratura/sticker | Complessità, dipendenze, licenza | Scope ridotto / fuori scope |
 | Vecchi backup/percorsi | Perdita storico utente | Fallback in lettura, nessuna cancellazione |
@@ -353,7 +349,7 @@ l'arrivo di nuove feature:
 8. **Fase 6 — anteprima grafica**: fatta in versione base; export SVG su file e
    resa di marker/relazioni da completare.
 9. **Fase 7 — vista mappa ad albero**: completata! Piano in
-   [`MAP-VIEW.md`](MAP-VIEW.md). Layout ad albero puro (`layout.rs`), vista interattiva
-   con pan/zoom/collapse (`map_view.rs`) e integrazione primaria in UI (`gui.rs`).
+   [`MAP-VIEW.md`](MAP-VIEW.md). Layout ad albero puro (`packages/core/src/layout/`), vista interattiva
+   con pan/zoom/collapse (`MapView`) e integrazione primaria in UI.
 10. **Ogni fase**: branch dedicato (`feat/<slug>`), MR verso `main`, test e
     verifica in XMind prima dell'unione.

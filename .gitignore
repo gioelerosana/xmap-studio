@@ -1,15 +1,12 @@
-# Build Rust (copre anche src-tauri/target e xtask/target)
-target/
+# Node & PNPM
+node_modules/
+**/node_modules/
+.pnpm-store/
 
 # Artefatti di distribuzione
 dist/
+**/dist/
 *.AppImage
-
-# Renderer MathJax: rigenerato automaticamente da build.rs
-# (copiato dall'oracolo ~/.local/share/xmind-latex oppure via `npm install`)
-src-tauri/resources/renderer/node_modules/
-src-tauri/resources/renderer/package.json
-src-tauri/resources/renderer/package-lock.json
 
 # Backup e file temporanei generati dall'app durante il salvataggio
 .xmap-studio/
@@ -23,3 +20,6 @@ src-tauri/resources/renderer/package-lock.json
 *.swp
 *.swo
 .DS_Store
+
+# worktree dei sotto-agenti (lavoro parallelo)
+.claude/worktrees/

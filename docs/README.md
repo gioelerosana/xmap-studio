@@ -5,13 +5,15 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 
 | Documento | Contenuto |
 |---|---|
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Moduli Rust, flusso dati, threading, confini tra UI e backend |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Monorepo TypeScript e flusso dati |
+| [`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md) | Storico della migrazione a TypeScript, difetti corretti e limiti residui |
 | [`XMIND-FORMAT.md`](XMIND-FORMAT.md) | Struttura `.xmind`, schema MathJax verificato e trappole |
-| [`DEVELOPMENT.md`](DEVELOPMENT.md) | Prerequisiti, build, run, renderer incorporato, AppImage |
-| [`TESTING.md`](TESTING.md) | Strategia di test, comandi, test su mappa reale |
+| [`DEVELOPMENT.md`](DEVELOPMENT.md) | Prerequisiti, build e avvio del monorepo TypeScript |
+| [`TESTING.md`](TESTING.md) | Test del core TypeScript e verifica in XMind |
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
 | [`PRODUCT.md`](PRODUCT.md) | Posizionamento, feature precluse a XMind Free, roadmap |
 | [`MAP-VIEW.md`](MAP-VIEW.md) | Piano della vista mappa ad albero (Fase 7) |
+| [`DESIGN-SYSTEM.md`](DESIGN-SYSTEM.md) | Design system T3 Code: token, classi Tailwind e API di `@xmap/ui-kit` |
 
 Per le regole di lavoro destinate agli agenti (e ai contributor) vedi
 [`AGENTS.md`](../AGENTS.md) nella radice.

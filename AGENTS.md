@@ -6,7 +6,7 @@ tecnico vedi [`docs/`](docs/README.md).
 
 ## Cos'è questo progetto
 
-**XMap Studio** è un'app desktop Linux nativa, companion di XMind gratuito.
+**XMap Studio** è un'app desktop Linux, companion di XMind gratuito.
 Apre un file `.xmind`, mostra la mappa come lista di blocchi, permette di
 **modificare il contenuto** dei blocchi — testo, aggiunta di sotto-blocchi,
 eliminazione, spostamento con drag & drop — e di sostituire il contenuto di un
@@ -19,12 +19,22 @@ Obiettivo: fare ciò che XMind gratuito non consente, restando compatibili con i
 formato. Posizionamento, inventario delle feature e roadmap in
 [`docs/PRODUCT.md`](docs/PRODUCT.md).
 
-Niente account, niente telemetria, niente webview. Apre, mostra, modifica, salva.
+Niente account, niente telemetria. Apre, mostra, modifica, salva.
 
-- Stack: Rust + GTK4/libadwaita, resvg/tiny-skia, `mathjax-full` via Node.
+- Stack: monorepo **TypeScript** gestito con **pnpm**:
+  - `packages/core` — motore (modello, archivio, sicurezza, LaTeX/MathJax,
+    export, layout). Non dipende dalla UI.
+  - `packages/ui-kit` — design system (vedi
+    [`docs/DESIGN-SYSTEM.md`](docs/DESIGN-SYSTEM.md)).
+  - `apps/web` — UI React.
+  - `apps/desktop` — shell Electron (main process + preload).
 - Documentazione: [`README.md`](README.md) (utente), [`docs/`](docs/README.md)
   (tecnica).
 - Repository: privato su GitLab (`gitlab.com`).
+
+L'implementazione Rust/GTK originale è stata rimossa al completamento della
+migrazione (storico in [`docs/TS-MIGRATION-PARITY.md`](docs/TS-MIGRATION-PARITY.md)
+e nella cronologia git).
 
 ## Regole non negoziabili
 
@@ -32,17 +42,19 @@ Queste sono le invarianti del progetto. Una modifica che le viola è un bug, non
 una scelta di stile.
 
 1. **Mai distruggere dati dell'utente.** In `content.json` ogni campo sconosciuto
-   deve sopravvivere al round-trip. Le struct hanno sempre
-   `#[serde(flatten)] extra` (`src-tauri/src/model.rs`). Non rimuovere mai
-   `extra`, non usare `serde(default)` senza `skip_serializing_if`.
-2. **Il disco si tocca solo in `archive::atomic_write`** (`archive.rs:209`):
-   temp nella stessa directory → `fsync` → backup datato nella cartella nascosta
-   `.xmap-studio/backups/` (ultimi 5 per file) → `rename` → `fsync`
-   della directory. Non aggiungere altre scritture dirette sul file `.xmind`.
-3. **Si valida prima di scrivere.** `validate_archive_bytes` (`validate.rs:28`)
-   deve passare in memoria prima di sovrascrivere. Se fallisce, il file originale
-   resta intatto.
-4. **Il salvataggio è bloccato mentre XMind è aperto** (`safety.rs:12`), non
+   deve sopravvivere al round-trip. I tipi in `packages/core/src/model/types.ts`
+   ammettono campi extra arbitrari: non ricostruire mai gli oggetti da zero
+   scartando le chiavi che non conosci.
+2. **Il disco si tocca solo in `atomicWrite`**
+   (`packages/core/src/archive/atomic.ts`): temp nella stessa directory →
+   `fsync` → backup datato nella cartella nascosta `.xmap-studio/backups/`
+   (ultimi 5 per file) → `rename` → `fsync` della directory. Non aggiungere
+   altre scritture dirette sul file `.xmind`.
+3. **Si valida prima di scrivere.** `validateArchiveBytes`
+   (`packages/core/src/safety/validate.ts`) deve passare in memoria prima di
+   sovrascrivere. Se fallisce, il file originale resta intatto.
+4. **Il salvataggio è bloccato mentre XMind è aperto**
+   (`packages/core/src/safety/process.ts`, controllo in `controller.ts`), non
    semplicemente avvisato; la forzatura è sempre esplicita (`force`).
 5. **Lo schema MathJax è sacro.** Rispetta le 12 regole in
    [`docs/XMIND-FORMAT.md`](docs/XMIND-FORMAT.md). In particolare: `image` è un
@@ -50,67 +62,115 @@ una scelta di stile.
    `org.xmind.ui.mathJax`, nome risorsa = SHA-256 del PNG, risorsa registrata
    nel manifest.
 6. **La UI non fa lavoro pesante.** Apertura, rendering, applicazione,
-   salvataggio ed esportazione passano da `gui::spawn_blocking` (`gui.rs:785`) e
-   rientrano con `glib::MainContext::spawn_local`.
-7. **Il backend non dipende da GTK.** `controller.rs` e i moduli sottostanti non
-   importano nulla di GTK: restano testabili anche senza display.
+   salvataggio ed esportazione non bloccano il thread della UI: sono asincroni
+   e, nell'app desktop, l'I/O su file passa dal main process Electron via IPC
+   (`apps/desktop/src/main.ts`, `preload.ts`).
+7. **Il core non dipende dalla UI.** `packages/core` non importa React,
+   Electron né `ui-kit`: resta testabile senza display. I moduli Node
+   (`node:fs`, …) vi si caricano solo con `import()` dinamico, così il core
+   resta importabile anche nel browser.
 8. **Niente nuove dipendenze senza necessità.** Il punto di forza è la
-   compattezza. Prima di aggiungere un crate, chiediti se la std o una dipendenza
-   esistente bastano.
+   compattezza. Prima di aggiungere un pacchetto npm, chiediti se la piattaforma
+   o una dipendenza esistente bastano.
+
+## Modalità di lavoro: orchestratore e sotto-agenti
+
+**L'agente principale è un orchestratore, non un esecutore.** L'utente parla
+con un solo agente principale; quell'agente pianifica, scompone, delega e
+integra, ma il grosso del lavoro sul codice lo svolgono **sotto-agenti con
+modelli inferiori al suo**. Esempio: se l'agente principale è Claude Opus,
+delega a **Sonnet** e **Haiku**, mai ad altre istanze di Opus.
+
+### Scelta del modello per i sotto-agenti
+
+| Modello | Quando usarlo |
+|---|---|
+| **Haiku** (preferito, costa meno) | lavoro meccanico e ben specificato: rinomini, restyle, migrazioni ripetitive, aggiornamento di import/doc, test su pattern esistenti, ricerche nella codebase |
+| **Sonnet** | lavoro che richiede giudizio: componenti fondanti, logica nuova in `packages/core`, formato `.xmind`, debugging non banale, refactoring trasversali |
+| Modello principale | **solo** orchestrazione: piano, contratti condivisi, revisione e integrazione finale |
+
+Parti da Haiku; sali a Sonnet solo se il compito lo richiede davvero o se Haiku
+ha fallito. Non delegare compiti banali (una modifica di poche righe): falli
+direttamente, uno spawn costa più del lavoro.
+
+### Responsabilità dell'orchestratore
+
+1. **Contratto prima del fan-out.** Scrivi tu le parti condivise da cui
+   dipendono gli altri (tipi, API, token del design system, firme delle
+   funzioni) e committale o fissale prima di lanciare i sotto-agenti.
+2. **Compiti a file disgiunti.** Ogni sotto-agente riceve un insieme esplicito
+   di file/cartelle che può toccare; due agenti in parallelo non modificano lo
+   stesso file. File condivisi "caldi" (`package.json`, `pnpm-lock.yaml`,
+   `packages/core/src/index.ts`, `docs/`) li tocca solo l'orchestratore.
+3. **Prompt autosufficienti.** Il sotto-agente parte senza contesto: indica
+   obiettivo, file ammessi, contratto da rispettare, regole non negoziabili
+   rilevanti e il comando di verifica da eseguire prima di chiudere.
+4. **Parallelismo reale.** Lancia insieme (nello stesso turno) i compiti
+   indipendenti; serializza solo quelli che dipendono da un risultato.
+5. **Verifica a freddo.** Al rientro, l'orchestratore rilegge i diff, esegue
+   `pnpm build` e `pnpm test` come li eseguirebbe l'utente e, per la UI,
+   controlla l'app avviata. Il lavoro di un sotto-agente non è "fatto" finché
+   l'orchestratore non l'ha verificato.
+
+### Lavoro parallelo e isolamento
+
+- Per modifiche concorrenti sostanziose usa **worktree git isolati** (un
+  worktree per sotto-agente, sotto `.claude/worktrees/`, non versionato). In un
+  worktree nuovo esegui `pnpm install --frozen-lockfile` prima di buildare.
+- Ogni sotto-agente lavora su un branch proprio
+  (`feat/<slug>-<parte>`); l'orchestratore integra i branch nel branch di
+  lavoro e risolve i conflitti.
+- Nessun sotto-agente aggiunge dipendenze, fa commit su `main`, push o apre MR:
+  sono decisioni dell'orchestratore (e, per push/MR, dell'utente).
+- I sotto-agenti rispettano le regole non negoziabili sotto: nel prompt di
+  delega richiamale esplicitamente quando il compito tocca salvataggio,
+  formato `.xmind` o MathJax.
 
 ## Ambiente e prerequisiti
 
-- Rust edizione 2021, `rust-version = 1.77`.
-- `gtk4` e `libadwaita` di **sistema**; `node` nel `PATH`; `npm` come fallback.
-- `curl` + FUSE solo per generare l'AppImage.
+- Node.js (LTS) e **pnpm**.
+- Per l'app desktop: Electron, installato da `pnpm install`.
 
 ```bash
-sudo apt install libgtk-4-dev libadwaita-1-dev nodejs npm
+pnpm install
 ```
 
 ## Comandi essenziali
 
 ```bash
-cargo run                 # avvio in sviluppo
-cargo build --release     # binario in target/release/
-cargo test                # 90 unit + 7 end-to-end (gli skip sono attesi)
-cargo fmt                 # formattazione
-cargo clippy --all-targets
-cargo xtask appimage      # AppImage in dist/
+pnpm dev:web        # UI nel browser (Vite)
+pnpm dev:desktop    # app Electron (avvia da solo il server web)
+pnpm build          # core → ui-kit → web → desktop
+pnpm test           # test di packages/core (Vitest)
 ```
-
-Alias `cargo xtask` definito in `.cargo/config.toml`.
 
 ### Definizione di "fatto"
 
 Prima di considerare concluso un cambiamento:
 
-1. `cargo fmt`
-2. `cargo clippy --all-targets` pulito (niente nuovi warning)
-3. `cargo test` verde (gli skip sono accettabili e motivati)
-4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale in XMind
-   con il file generato da `examples/inject.rs` (vedi
-   [`docs/TESTING.md`](docs/TESTING.md))
+1. `pnpm build` senza errori di tipo
+2. `pnpm test` verde
+3. per modifiche alla UI: app avviata e controllata (`pnpm dev:web` /
+   `pnpm dev:desktop`)
+4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale in
+   XMind con un file salvato dall'app (vedi [`docs/TESTING.md`](docs/TESTING.md))
 
 ## Struttura del repository
 
 ```
-xmind-LaTeX/
-├── Cargo.toml                    # workspace: src-tauri + xtask, profilo di release
-├── .cargo/config.toml            # alias `cargo xtask`
-├── .gitignore
+xmap-studio/
+├── package.json / pnpm-workspace.yaml / pnpm-lock.yaml
 ├── AGENTS.md                     # questo file
 ├── README.md                     # documentazione utente
-├── assets/                       # icona (PNG 256/512 generati da icon.svg)
-├── docs/                         # documentazione tecnica
+├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata
-├── src-tauri/
-│   ├── build.rs                  # prepara e incorpora il renderer MathJax
-│   ├── resources/renderer/       # gen_equation.mjs (+ node_modules, NON versionato)
-│   ├── examples/inject.rs        # CLI di supporto
-│   ├── tests/e2e_real_map.rs     # test end-to-end su mappa reale
-│   └── src/                      # sorgenti (mappa dei moduli in docs/ARCHITECTURE.md)
-└── xtask/                        # `cargo xtask appimage`
+├── docs/                         # documentazione tecnica
+├── packages/
+│   ├── core/                     # motore: src/{model,archive,safety,latex,…}, tests/
+│   └── ui-kit/                   # design system
+└── apps/
+    ├── web/                      # UI React
+    └── desktop/                  # Electron (main, preload, scripts/dev.mjs)
 ```
 
 Mappa dei moduli e flusso dati: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -119,29 +179,24 @@ Mappa dei moduli e flusso dati: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 - **Lingua:** commenti e doc-comment in **italiano**, identificatori e API in
   inglese. I messaggi di errore mostrati all'utente sono in italiano.
-- **Doc-comment di modulo** (`//!`) obbligatorio in cima a ogni file: spiega il
-  *perché*, non il *cosa*.
-- **Errori:** usa `Result` + `anyhow` con `with_context`; converti in
-  `ErrorPayload { code, message }` al confine col controller (`error.rs`). Usa i
-  codici esistenti (`CODE_*`), non stringhe letterali.
-- **Niente `unwrap()`** su input utente, I/O o parsing: solo dove l'invariante è
-  ovvia (es. `self.renderer.as_ref().unwrap()` dopo `ensure_renderer()`).
-- **Test:** aggiungi test per nuova logica. I test che richiedono risorse esterne
-  si saltano con `eprintln!`, non con `#[ignore]` (vedi `mathjax.rs`,
-  `e2e_real_map.rs`).
+- **TypeScript strict:** niente `any` dove un tipo è esprimibile; niente
+  asserzioni non-null (`!`) su input utente, I/O o parsing.
+- **Errori:** lancia `Error` con messaggio comprensibile all'utente; non
+  inghiottire eccezioni in silenzio.
+- **Test:** aggiungi test (Vitest, `packages/core/tests/`) per nuova logica. I
+  test che richiedono risorse esterne si saltano esplicitamente, non falliscono.
 - **Niente commenti ovunque:** commenta il non-ovvio, non ripetere il codice.
 
 ## Cosa non committare mai
 
 `.gitignore` copre già:
 
-- `target/` (root, `src-tauri/`, `xtask/`)
-- `dist/` e `*.AppImage`
-- `src-tauri/resources/renderer/node_modules/` e i `package*.json` generati
+- `node_modules/`, `dist/` e `*.AppImage`
 - cartella backup `.xmap-studio/`, `*.backup.*.xmind` e temp `.xmind-eq-*.tmp`
+- worktree dei sotto-agenti `.claude/worktrees/`
 - log e file editor/OS
 
-`Cargo.lock` è **versionato** (è un'applicazione, non una libreria). Non
+`pnpm-lock.yaml` è **versionato** (è un'applicazione, non una libreria). Non
 aggiungere file di build o cache al repository.
 
 ## Git e GitLab
@@ -171,31 +226,6 @@ glab mr create --fill --target-branch main
 ```
 
 ## Ricette rapide
-
-### Aprire una variabile d'ambiente del renderer
-
-| Variabile | Effetto |
-|---|---|
-| `XMIND_LATEX_RENDERER` | directory esplicita del renderer |
-| `XMIND_LATEX_NODE` | binario Node |
-| `XMIND_LATEX_ORACLE` | origine della copia a tempo di build |
-| `XMIND_TEST_MAP` | mappa per i test E2E |
-
-### Rigenerare il renderer / svuotare la cache
-
-```bash
-rm -rf ~/.cache/xmap-studio/renderer
-cargo build   # build.rs ricostruisce e reincorpora il renderer
-```
-
-### Generare un file di prova e aprirlo in XMind
-
-```bash
-cargo run --example inject -- \
-  "$XMIND_TEST_MAP" \
-  demo/Relazioni.xmap-studio.xmind \
-  "Unione" 'A \cup B = B \iff A \subseteq B'
-```
 
 ### Verificare un campo di formato su XMind reale
 
@@ -228,7 +258,8 @@ punto da verificare in UI.
 
 1. Leggi [`docs/XMIND-FORMAT.md`](docs/XMIND-FORMAT.md) e verifica il campo
    reale con la ricetta §"Verificare un campo di formato su XMind reale".
-2. Implementa la modifica minima in `model.rs` / `equation.rs` / `validate.rs`.
+2. Implementa la modifica minima in `packages/core/src/model`,
+   `packages/core/src/latex` o `packages/core/src/safety/validate.ts`.
 3. Aggiungi un test che dimostri la regola.
 4. Aggiorna `docs/XMIND-FORMAT.md` e, se serve, il `README.md`.
 5. Verifica in XMind che il file si apra e l'equazione sia editabile.
@@ -236,10 +267,9 @@ punto da verificare in UI.
 ## Limiti noti (non introdurre regressioni)
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 non è supportato.
-- Il rendering richiede Node.js nel `PATH`.
-- Editing: testo dei blocchi, aggiunta di sotto-blocchi, eliminazione (con i
-  figli) e spostamento (riordino/riannidamento) via drag & drop nell'albero.
-  Restano fuori scope note, marker e temi.
-- L'AppImage non include GTK4/libadwaita né Node.
+- Editing: testo, note, marker e task dei blocchi, aggiunta di sotto-blocchi,
+  eliminazione (con i figli) e spostamento (riordino/riannidamento) via drag &
+  drop nell'albero. Restano fuori scope i temi. Inventario aggiornato in
+  [`docs/PRODUCT.md`](docs/PRODUCT.md).
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della
   sicurezza dei dati e dell'undo).

@@ -1,0 +1,5 @@
+@import '@xmap/ui-kit/theme.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
