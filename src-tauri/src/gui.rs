@@ -2618,6 +2618,7 @@ mod tests {
             custom_width: None,
             boundaries: Vec::new(),
             summaries: Vec::new(),
+            structure_class: None,
         }
     }
 

@@ -206,3 +206,42 @@ Export SVG/PNG su file riusando `Layout` (già previsto in
 Menu contestuale sulla mappa, drag & drop dei nodi nel canvas (resta nella
 lista), editing inline, rendering di relazioni/boundary/summary, export file
 (rimandato a 7.5), temi personalizzati.
+
+## 12. Navigazione, Tree Chart e sommari (aggiornamento)
+
+### Zoom e pan fluidi
+
+- **Pinch sul touchpad/touchscreen** con `gtk::GestureZoom`: il gesto nativo
+  di GTK dà una scala continua, ancorata al punto fra le dita (che può anche
+  spostarsi durante il gesto).
+- **Ctrl+scorrimento**: col touchpad (`ScrollUnit::Surface`) lo zoom segue i
+  delta in modo continuo (`exp(-dy · 0.012)`); con la rotella del mouse ogni
+  scatto è animato e scatti ravvicinati si sommano al bersaglio. Lo zoom è
+  ancorato al puntatore, non al centro della vista.
+- **Pan**: il touchpad scorre 1:1 con inerzia (`KINETIC` + `decelerate`); il
+  trascinamento col mouse ha inerzia al rilascio.
+- Le animazioni (`ViewAnim`) avanzano nel tick callback del frame clock, che si
+  spegne a fine animazione. Pulsanti +/−, "adatta" e "porta in vista il nodo
+  selezionato" sono animati; quest'ultimo non sposta la vista se il nodo è già
+  visibile.
+- Testo senza hinting (`HintMetrics::Off`) sia in misura sia in disegno: con
+  l'hinting le larghezze dei glifi si agganciano ai pixel e il testo "trema"
+  durante lo zoom continuo.
+
+### Tree Chart (`org.xmind.ui.tree.right`)
+
+Se il topic centrale dichiara questa struttura, la radice sta in alto a
+sinistra e i rami di primo livello scendono lungo un tronco verticale
+(`EdgeKind::Tree`, `LayoutNode::trunk_x`); i sottoalberi restano in stile
+Logic Chart. Le altre strutture usano la Logic Chart.
+
+### Sommari
+
+I topic del gruppo `summary` non stanno più nella colonna dei figli: sono
+abbinati al descrittore `summaries[]` del genitore (stesso id) e il loro
+`range` `(start,end)` decide i figli raccolti. Una graffa (`LayoutSummary`)
+abbraccia l'intervallo a destra del sottoalbero più largo e il topic di
+sommario è centrato sulla sua punta. Se il sommario è più alto
+dell'intervallo, la colonna si allarga attorno all'intervallo per non
+sovrapporsi ai fratelli. Senza descrittore valido il sommario abbraccia tutti
+i figli.

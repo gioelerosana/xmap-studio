@@ -127,6 +127,9 @@ pub struct TopicView {
     pub custom_width: Option<f64>,
     /// Colore di riempimento del ramo (`svg:fill`), se impostato.
     pub fill_color: Option<String>,
+    /// Struttura XMind dichiarata sul topic (`structureClass`), es.
+    /// `org.xmind.ui.tree.right` per la Tree Chart.
+    pub structure_class: Option<String>,
 }
 
 impl OpenWorkbook {
@@ -420,7 +423,10 @@ fn visit(
         display_title: display_title(topic),
         kind: kind_of(topic),
         latex: topic.latex().map(str::to_string),
-        image_src: topic.image_src().map(str::to_string).or_else(|| topic.latex().map(|l| format!("latex:{}", l))),
+        image_src: topic
+            .image_src()
+            .map(str::to_string)
+            .or_else(|| topic.latex().map(|l| format!("latex:{}", l))),
         image_w: topic.image_size_px().map(|(w, _)| w),
         image_h: topic.image_size_px().map(|(_, h)| h),
         notes: topic.notes_text().map(str::to_string).unwrap_or_default(),
@@ -455,6 +461,7 @@ fn visit(
         position: topic.position(),
         custom_width: topic.custom_width(),
         fill_color: topic.fill_color().map(str::to_string),
+        structure_class: topic.structure_class.clone(),
     });
 
     ancestors.push(display_title(topic));

@@ -11,6 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::model::parse_range;
 use crate::state::{SheetDto, TopicView};
 
 pub const DEFAULT_NODE_W: f64 = 180.0;
@@ -49,7 +50,21 @@ pub struct MapNode {
     pub sheet_index: usize,
     pub position: Option<(f64, f64)>,
     pub custom_width: Option<f64>,
+    pub structure_class: Option<String>,
+    /// Figli disposti in colonna (`attached`, `callout`).
     pub children: Vec<MapNode>,
+    /// Sommari: topic del gruppo `summary` con l'intervallo di figli che
+    /// raccolgono. Non stanno nella colonna: si agganciano a una graffa.
+    pub summaries: Vec<MapSummary>,
+}
+
+/// Un sommario XMind: la graffa abbraccia i figli `start..=end` (indici nella
+/// colonna di `children`) e il topic di sommario sta alla sua destra.
+#[derive(Debug, Clone)]
+pub struct MapSummary {
+    pub start: usize,
+    pub end: usize,
+    pub node: MapNode,
 }
 
 /// Un blocco posizionato nel piano del layout (coordinate in px logici).
@@ -79,21 +94,52 @@ pub struct LayoutNode {
     pub sheet_index: usize,
     pub position: Option<(f64, f64)>,
     pub custom_width: Option<f64>,
+    /// Vero per il topic centrale di una Tree Chart: i figli scendono sotto di
+    /// lui lungo un tronco verticale invece di uscire dal lato destro.
+    pub children_below: bool,
 }
 
+/// Distanza massima del tronco della Tree Chart dal bordo sinistro della radice.
+const TREE_TRUNK_INSET: f64 = 36.0;
+/// Tratto orizzontale fra il tronco e i rami di primo livello.
+const TREE_STUB: f64 = 30.0;
+/// Spazio fra il fondo della radice e il primo ramo nella Tree Chart.
+const TREE_TOP_GAP: f64 = 26.0;
+/// Larghezza della graffa di un sommario e spazi attorno.
+pub const SUMMARY_BRACE_W: f64 = 14.0;
+const SUMMARY_GAP_BEFORE: f64 = 16.0;
+const SUMMARY_GAP_AFTER: f64 = 22.0;
+
 impl LayoutNode {
-    /// Rettangolo del pulsante di espansione/collasso sul lato destro del blocco.
-    /// Presente solo se il nodo ha figli. (x, y, w, h).
-    pub fn collapse_indicator_rect(&self) -> Option<(f64, f64, f64, f64)> {
-        if self.child_count > 0 {
-            let r = 6.0;
-            let cx = self.x + self.w + 8.0;
-            let cy = self.y + self.h / 2.0;
-            Some((cx - r, cy - r, r * 2.0, r * 2.0))
-        } else {
-            None
-        }
+    /// Ascissa del tronco verticale di una Tree Chart (vale per `children_below`).
+    pub fn trunk_x(&self) -> f64 {
+        self.x + (self.w / 2.0).min(TREE_TRUNK_INSET)
     }
+
+    /// Rettangolo del pulsante di espansione/collasso: sul lato destro del
+    /// blocco, o sotto di esso alla base del tronco per la radice di una Tree
+    /// Chart. Presente solo se il nodo ha figli. (x, y, w, h).
+    pub fn collapse_indicator_rect(&self) -> Option<(f64, f64, f64, f64)> {
+        if self.child_count == 0 {
+            return None;
+        }
+        let r = 6.0;
+        let (cx, cy) = if self.children_below {
+            (self.trunk_x(), self.y + self.h + 8.0)
+        } else {
+            (self.x + self.w + 8.0, self.y + self.h / 2.0)
+        };
+        Some((cx - r, cy - r, r * 2.0, r * 2.0))
+    }
+}
+
+/// Forma del connettore fra genitore e figlio.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeKind {
+    /// Gomito dal lato destro del genitore (Logic Chart).
+    Logic,
+    /// Dal tronco verticale sotto il genitore (Tree Chart).
+    Tree,
 }
 
 /// Un collegamento fra due nodi, per indice in `Layout::nodes`.
@@ -102,6 +148,18 @@ pub struct LayoutEdge {
     pub parent: usize,
     pub child: usize,
     pub group: String,
+    pub kind: EdgeKind,
+}
+
+/// Graffa di un sommario: verticale in `x`, da `y1` a `y2`, con la punta
+/// rivolta verso il topic di sommario `topic`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayoutSummary {
+    pub x: f64,
+    pub y1: f64,
+    pub y2: f64,
+    pub topic: usize,
+    pub accent: Option<String>,
 }
 
 /// Un collegamento fra due nodi arbitrari (relazione / "collegamento" XMind).
@@ -118,6 +176,7 @@ pub struct LayoutRelationship {
 pub struct Layout {
     pub nodes: Vec<LayoutNode>,
     pub edges: Vec<LayoutEdge>,
+    pub summaries: Vec<LayoutSummary>,
     pub relationships: Vec<LayoutRelationship>,
     pub width: f64,
     pub height: f64,
@@ -135,7 +194,7 @@ impl Layout {
             .position(|n| x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h)
     }
 
-    /// Hit test per l'indicatore di collapse (pulsantino tondo sul lato destro).
+    /// Hit test per l'indicatore di collapse (pulsantino tondo).
     pub fn collapse_handle_at(&self, x: f64, y: f64) -> Option<usize> {
         self.nodes.iter().position(|n| {
             if let Some((bx, by, bw, bh)) = n.collapse_indicator_rect() {
@@ -248,9 +307,14 @@ impl Default for LayoutOpts {
     }
 }
 
-/// Ricostruisce l'albero `MapNode` dai DTO di una sheet, ereditando il colore di
-/// ramo (esplicito o dalla palette Snowbrush per i rami di primo livello).
-/// Ricostruisce gli alberi della sheet dai DTO.
+/// Vero se la struttura dichiarata è una Tree Chart verso destra: radice in
+/// alto e rami che scendono lungo un tronco verticale.
+fn is_tree_right(structure_class: Option<&str>) -> bool {
+    structure_class == Some("org.xmind.ui.tree.right")
+}
+
+/// Ricostruisce gli alberi della sheet dai DTO, ereditando il colore di ramo
+/// (esplicito o dalla palette Snowbrush per i rami di primo livello).
 /// Ritorna una tupla `(alberi_principali, topic_fluttuanti_detached)`.
 pub fn build_sheet_trees(sheet: &SheetDto) -> (Vec<MapNode>, Vec<MapNode>) {
     let mut children_map: HashMap<String, Vec<&TopicView>> = HashMap::new();
@@ -295,26 +359,51 @@ fn build_node_recursive(
     let accent = explicit_fill
         .map(str::to_string)
         .or_else(|| branch_accent.map(str::to_string));
-    let children: Vec<MapNode> = children_map
+    let list = children_map
         .get(&topic.id)
-        .map(|list| {
-            list.iter()
-                .enumerate()
-                .map(|(i, c)| {
-                    // Il fill esplicito del figlio definisce da solo il suo ramo;
-                    // i figli del topic centrale prendono la palette per ramo; gli
-                    // altri ereditano l'accento del ramo corrente.
-                    let child_branch = if topic.depth == 0 && c.fill_color.is_none() {
-                        Some(BRANCH_COLORS[i % BRANCH_COLORS.len()])
-                    } else {
-                        accent.as_deref()
-                    };
-                    build_node_recursive(c, children_map, child_branch)
-                })
-                .collect()
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let mut children: Vec<MapNode> = Vec::new();
+    let mut summary_topics: Vec<MapNode> = Vec::new();
+    for (i, c) in list.iter().enumerate() {
+        // Il fill esplicito del figlio definisce da solo il suo ramo; i figli
+        // del topic centrale prendono la palette per ramo; gli altri ereditano
+        // l'accento del ramo corrente.
+        let child_branch = if topic.depth == 0 && c.fill_color.is_none() {
+            Some(BRANCH_COLORS[i % BRANCH_COLORS.len()])
+        } else {
+            accent.as_deref()
+        };
+        let node = build_node_recursive(c, children_map, child_branch);
+        if c.group == "summary" {
+            summary_topics.push(node);
+        } else {
+            children.push(node);
+        }
+    }
+
+    // Abbina ogni topic di sommario al suo descrittore sul genitore (stesso id);
+    // senza descrittore valido il sommario abbraccia l'intera colonna.
+    let last = children.len().saturating_sub(1);
+    let summaries: Vec<MapSummary> = summary_topics
+        .into_iter()
+        .map(|node| {
+            let range = topic
+                .summaries
+                .iter()
+                .find(|s| s.id == node.id)
+                .and_then(|s| parse_range(&s.range))
+                .map(|(a, b)| (a.min(last), b.min(last)))
+                .unwrap_or((0, last));
+            MapSummary {
+                start: range.0,
+                end: range.1,
+                node,
+            }
         })
-        .unwrap_or_default();
-    let child_count = topic.child_count.max(children.len());
+        .collect();
+
+    let child_count = topic.child_count.max(children.len() + summaries.len());
 
     MapNode {
         id: topic.id.clone(),
@@ -338,16 +427,21 @@ fn build_node_recursive(
         sheet_index: topic.sheet_index,
         position: topic.position,
         custom_width: topic.custom_width,
+        structure_class: topic.structure_class.clone(),
         children,
+        summaries,
     }
 }
 
 /// Costruisce il layout dell'intera sequenza di sheet.
 ///
-/// Stile "Logic Chart" di XMind: la colonna dei rami di primo livello è
-/// centrata verticalmente rispetto alla radice; i sottoalberi si sviluppano a destra
-/// con ogni genitore centrato sui propri figli.
-/// I topic liberi (detached) sono posizionati a lato e connessi con le relazioni XMind.
+/// Stile "Logic Chart" di XMind: ogni genitore è centrato verticalmente sulla
+/// colonna dei propri figli, che si sviluppano a destra. Se il topic centrale
+/// dichiara la Tree Chart (`org.xmind.ui.tree.right`) la radice sta in alto e i
+/// rami di primo livello scendono lungo un tronco verticale; i sottoalberi
+/// restano in stile Logic Chart. I sommari si agganciano con una graffa ai
+/// figli che raccolgono. I topic liberi (detached) sono posizionati a lato e
+/// connessi con le relazioni XMind.
 pub fn layout(
     sheets: &[SheetDto],
     collapsed: &HashSet<String>,
@@ -356,64 +450,26 @@ pub fn layout(
 ) -> Layout {
     let mut out = Layout::default();
     let mut top = 20.0;
+    let left = 20.0;
 
     for sheet in sheets {
         let (trees, floating_nodes) = build_sheet_trees(sheet);
         for tree in &trees {
             let mut sizes = HashMap::new();
             compute_sizes(tree, collapsed, metrics, &opts, &mut sizes);
-            let (root_w, root_h) = metrics.measure(tree);
-            let root_collapsed = collapsed.contains(&tree.id) || tree.children.is_empty();
-
-            let children_h: f64 = if root_collapsed {
-                0.0
-            } else {
-                tree.children
-                    .iter()
-                    .enumerate()
-                    .map(|(i, c)| {
-                        let ch = sizes.get(&c.id).map(|s| s.1).unwrap_or(0.0);
-                        ch + if i > 0 { opts.v_gap } else { 0.0 }
-                    })
-                    .sum()
-            };
-            let total_h = if root_collapsed {
-                root_h
-            } else {
-                root_h.max(children_h)
+            let ctx = PlaceCtx {
+                collapsed,
+                metrics,
+                opts: &opts,
+                sizes: &sizes,
             };
 
-            // La radice è perfettamente centrata verticalmente rispetto ai rami di primo livello.
-            let root_y = top + (total_h - root_h) / 2.0;
-            let root_index = push_layout_node(
-                &mut out,
-                tree,
-                20.0,
-                root_y,
-                root_w,
-                root_h,
-                collapsed.contains(&tree.id),
-            );
-
-            if !root_collapsed {
-                let child_x = 20.0 + root_w + opts.h_gap;
-                let mut cur = top + (total_h - children_h) / 2.0;
-                for child in &tree.children {
-                    let ch = sizes.get(&child.id).map(|s| s.1).unwrap_or(0.0);
-                    place_subtree(
-                        child,
-                        child_x,
-                        cur,
-                        Some(root_index),
-                        collapsed,
-                        metrics,
-                        &opts,
-                        &sizes,
-                        &mut out,
-                    );
-                    cur += ch + opts.v_gap;
-                }
-            }
+            let total_h = if is_tree_right(tree.structure_class.as_deref()) {
+                place_tree_root(tree, left, top, &ctx, &mut out)
+            } else {
+                place_subtree(tree, left, top, None, &ctx, &mut out);
+                sizes.get(&tree.id).map(|s| s.1).unwrap_or(0.0)
+            };
 
             top += total_h + opts.sheet_gap;
         }
@@ -426,7 +482,7 @@ pub fn layout(
             for float_node in &floating_nodes {
                 let mut float_sizes = HashMap::new();
                 compute_sizes(float_node, collapsed, metrics, &opts, &mut float_sizes);
-                let (fw, fh) = metrics.measure(float_node);
+                let (_, fh) = metrics.measure(float_node);
                 let float_sub_h = float_sizes.get(&float_node.id).map(|s| s.1).unwrap_or(fh);
 
                 // Cerca se esiste una relationship collegata a questo topic fluttuante
@@ -457,27 +513,13 @@ pub fn layout(
 
                 float_y_cursor = fy + float_sub_h + opts.v_gap;
 
-                let is_collapsed = collapsed.contains(&float_node.id);
-                let float_idx = push_layout_node(&mut out, float_node, fx, fy, fw, fh, is_collapsed);
-                if !is_collapsed && !float_node.children.is_empty() {
-                    let child_x = fx + fw + opts.h_gap;
-                    let mut cur = fy;
-                    for child in &float_node.children {
-                        let ch = float_sizes.get(&child.id).map(|s| s.1).unwrap_or(0.0);
-                        place_subtree(
-                            child,
-                            child_x,
-                            cur,
-                            Some(float_idx),
-                            collapsed,
-                            metrics,
-                            &opts,
-                            &float_sizes,
-                            &mut out,
-                        );
-                        cur += ch + opts.v_gap;
-                    }
-                }
+                let ctx = PlaceCtx {
+                    collapsed,
+                    metrics,
+                    opts: &opts,
+                    sizes: &float_sizes,
+                };
+                place_subtree(float_node, fx, fy, None, &ctx, &mut out);
             }
         }
 
@@ -526,12 +568,11 @@ pub fn layout_single_sheet(
 fn push_layout_node(
     out: &mut Layout,
     node: &MapNode,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
+    rect: (f64, f64, f64, f64),
     is_collapsed: bool,
+    children_below: bool,
 ) -> usize {
+    let (x, y, w, h) = rect;
     let index = out.nodes.len();
     out.nodes.push(LayoutNode {
         id: node.id.clone(),
@@ -558,13 +599,80 @@ fn push_layout_node(
         sheet_index: node.sheet_index,
         position: node.position,
         custom_width: node.custom_width,
+        children_below,
     });
     index
 }
 
+/// Colonna dei figli di un nodo: offset verticale di ciascun figlio rispetto
+/// alla cima della colonna e altezza totale. Se un sommario è più alto dei figli
+/// che raccoglie, la colonna si allarga attorno all'intervallo così che il topic
+/// di sommario non invada i fratelli vicini.
+struct Column {
+    tops: Vec<f64>,
+    height: f64,
+}
+
+fn column(node: &MapNode, sizes: &HashMap<String, (f64, f64)>, opts: &LayoutOpts) -> Column {
+    let n = node.children.len();
+    let child_h = |i: usize| sizes.get(&node.children[i].id).map(|s| s.1).unwrap_or(0.0);
+    let mut pad_before = vec![0.0_f64; n];
+    let mut pad_after = vec![0.0_f64; n];
+    for s in &node.summaries {
+        if s.end >= n {
+            continue;
+        }
+        let range_h: f64 =
+            (s.start..=s.end).map(child_h).sum::<f64>() + opts.v_gap * (s.end - s.start) as f64;
+        let sum_h = sizes.get(&s.node.id).map(|v| v.1).unwrap_or(0.0);
+        if sum_h > range_h {
+            let extra = (sum_h - range_h) / 2.0;
+            pad_before[s.start] = pad_before[s.start].max(extra);
+            pad_after[s.end] = pad_after[s.end].max(extra);
+        }
+    }
+    let mut tops = Vec::with_capacity(n);
+    let mut cur = 0.0;
+    for i in 0..n {
+        if i > 0 {
+            cur += opts.v_gap;
+        }
+        cur += pad_before[i];
+        tops.push(cur);
+        cur += child_h(i) + pad_after[i];
+    }
+    Column { tops, height: cur }
+}
+
+/// Larghezza occupata a destra della colonna dei figli, sommari compresi.
+fn column_width(node: &MapNode, sizes: &HashMap<String, (f64, f64)>) -> f64 {
+    let child_w = |c: &MapNode| sizes.get(&c.id).map(|s| s.0).unwrap_or(0.0);
+    let mut width = node.children.iter().map(child_w).fold(0.0, f64::max);
+    for s in &node.summaries {
+        let range_w = node
+            .children
+            .get(s.start..=s.end)
+            .map(|cs| cs.iter().map(child_w).fold(0.0, f64::max))
+            .unwrap_or(0.0);
+        let summary_w = sizes.get(&s.node.id).map(|v| v.0).unwrap_or(0.0);
+        width = width.max(range_w + summary_offset() + summary_w);
+    }
+    width
+}
+
+/// Distanza orizzontale fra il bordo destro dei figli raccolti e il topic di
+/// sommario (graffa compresa).
+fn summary_offset() -> f64 {
+    SUMMARY_GAP_BEFORE + SUMMARY_BRACE_W + SUMMARY_GAP_AFTER
+}
+
+fn has_visible_children(node: &MapNode, collapsed: &HashSet<String>) -> bool {
+    !collapsed.contains(&node.id) && !(node.children.is_empty() && node.summaries.is_empty())
+}
+
 /// Prima passata: dimensioni (larghezza × altezza) di ogni sotto-albero. In
 /// orizzontale la larghezza è il blocco più il sottoalbero più largo; l'altezza
-/// è la somma in colonna dei sottoalberi dei figli (o l'altezza del blocco).
+/// è quella della colonna dei figli (o l'altezza del blocco).
 fn compute_sizes(
     node: &MapNode,
     collapsed: &HashSet<String>,
@@ -573,82 +681,155 @@ fn compute_sizes(
     sizes: &mut HashMap<String, (f64, f64)>,
 ) -> (f64, f64) {
     let (w, h) = metrics.measure(node);
-    let size = if collapsed.contains(&node.id) || node.children.is_empty() {
-        (w, h)
-    } else {
-        let mut col_h: f64 = 0.0;
-        let mut max_cw: f64 = 0.0;
-        for (i, child) in node.children.iter().enumerate() {
-            let (cw, ch) = compute_sizes(child, collapsed, metrics, opts, sizes);
-            if i > 0 {
-                col_h += opts.v_gap;
-            }
-            col_h += ch;
-            max_cw = max_cw.max(cw);
+    let size = if has_visible_children(node, collapsed) {
+        for child in &node.children {
+            compute_sizes(child, collapsed, metrics, opts, sizes);
         }
-        (w + opts.h_gap + max_cw, h.max(col_h))
+        for s in &node.summaries {
+            compute_sizes(&s.node, collapsed, metrics, opts, sizes);
+        }
+        let col = column(node, sizes, opts);
+        (
+            w + opts.h_gap + column_width(node, sizes),
+            h.max(col.height),
+        )
+    } else {
+        (w, h)
     };
     sizes.insert(node.id.clone(), size);
     size
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Parametri condivisi dalla seconda passata (posizionamento).
+struct PlaceCtx<'a> {
+    collapsed: &'a HashSet<String>,
+    metrics: &'a dyn NodeMetrics,
+    opts: &'a LayoutOpts,
+    sizes: &'a HashMap<String, (f64, f64)>,
+}
+
+/// Posiziona un sotto-albero nella fascia che inizia in (`left`, `top`) e ne
+/// ritorna l'indice del nodo radice.
 fn place_subtree(
     node: &MapNode,
     left: f64,
     top: f64,
-    parent: Option<usize>,
-    collapsed: &HashSet<String>,
-    metrics: &dyn NodeMetrics,
-    opts: &LayoutOpts,
-    sizes: &HashMap<String, (f64, f64)>,
+    parent: Option<(usize, EdgeKind)>,
+    ctx: &PlaceCtx,
     out: &mut Layout,
-) {
-    let (w, h) = metrics.measure(node);
-    let sub_h = sizes.get(&node.id).map(|s| s.1).unwrap_or(h);
-    let is_collapsed = collapsed.contains(&node.id);
+) -> usize {
+    let (w, h) = ctx.metrics.measure(node);
+    let sub_h = ctx.sizes.get(&node.id).map(|s| s.1).unwrap_or(h);
+    let is_collapsed = ctx.collapsed.contains(&node.id);
 
     // Il blocco è centrato verticalmente nella fascia del proprio sotto-albero.
     let y = top + (sub_h - h) / 2.0;
-    let index = push_layout_node(out, node, left, y, w, h, is_collapsed);
+    let index = push_layout_node(out, node, (left, y, w, h), is_collapsed, false);
 
-    if let Some(parent_idx) = parent {
+    if let Some((parent_idx, kind)) = parent {
         out.edges.push(LayoutEdge {
             parent: parent_idx,
             child: index,
             group: node.group.clone(),
+            kind,
         });
     }
 
-    if is_collapsed || node.children.is_empty() {
-        return;
+    if has_visible_children(node, ctx.collapsed) {
+        let col = column(node, ctx.sizes, ctx.opts);
+        let col_top = top + (sub_h - col.height) / 2.0;
+        place_children(
+            node,
+            index,
+            left + w + ctx.opts.h_gap,
+            col_top,
+            &col,
+            EdgeKind::Logic,
+            ctx,
+            out,
+        );
     }
+    index
+}
 
-    let children_h: f64 = node
-        .children
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let ch = sizes.get(&c.id).map(|s| s.1).unwrap_or(0.0);
-            ch + if i > 0 { opts.v_gap } else { 0.0 }
-        })
-        .sum();
-    let mut cur = top + (sub_h - children_h) / 2.0;
-    let child_x = left + w + opts.h_gap;
-    for child in &node.children {
-        let ch = sizes.get(&child.id).map(|s| s.1).unwrap_or(0.0);
+/// Radice di una Tree Chart: blocco in alto, rami di primo livello in colonna
+/// sotto di esso e spostati a destra del tronco. Ritorna l'altezza occupata.
+fn place_tree_root(node: &MapNode, left: f64, top: f64, ctx: &PlaceCtx, out: &mut Layout) -> f64 {
+    let (w, h) = ctx.metrics.measure(node);
+    let is_collapsed = ctx.collapsed.contains(&node.id);
+    let index = push_layout_node(out, node, (left, top, w, h), is_collapsed, true);
+    if !has_visible_children(node, ctx.collapsed) {
+        return h;
+    }
+    let trunk_x = out.nodes[index].trunk_x();
+    let col = column(node, ctx.sizes, ctx.opts);
+    let col_top = top + h + TREE_TOP_GAP;
+    place_children(
+        node,
+        index,
+        trunk_x + TREE_STUB,
+        col_top,
+        &col,
+        EdgeKind::Tree,
+        ctx,
+        out,
+    );
+    h + TREE_TOP_GAP + col.height
+}
+
+/// Dispone la colonna dei figli di `node` (già nel layout come `index`) e i
+/// suoi sommari, con le graffe a destra dei figli che raccolgono.
+#[allow(clippy::too_many_arguments)]
+fn place_children(
+    node: &MapNode,
+    index: usize,
+    child_x: f64,
+    col_top: f64,
+    col: &Column,
+    kind: EdgeKind,
+    ctx: &PlaceCtx,
+    out: &mut Layout,
+) {
+    for (child, offset) in node.children.iter().zip(&col.tops) {
         place_subtree(
             child,
             child_x,
-            cur,
-            Some(index),
-            collapsed,
-            metrics,
-            opts,
-            sizes,
+            col_top + offset,
+            Some((index, kind)),
+            ctx,
             out,
         );
-        cur += ch + opts.v_gap;
+    }
+
+    for s in &node.summaries {
+        if s.end >= node.children.len() {
+            continue;
+        }
+        let height_of = |c: &MapNode| ctx.sizes.get(&c.id).map(|v| v.1).unwrap_or(0.0);
+        let y1 = col_top + col.tops[s.start];
+        let y2 = col_top + col.tops[s.end] + height_of(&node.children[s.end]);
+        let range_w = node.children[s.start..=s.end]
+            .iter()
+            .map(|c| ctx.sizes.get(&c.id).map(|v| v.0).unwrap_or(0.0))
+            .fold(0.0, f64::max);
+        let brace_x = child_x + range_w + SUMMARY_GAP_BEFORE;
+        let sum_h = height_of(&s.node);
+        let sum_top = (y1 + y2) / 2.0 - sum_h / 2.0;
+        let topic = place_subtree(
+            &s.node,
+            brace_x + SUMMARY_BRACE_W + SUMMARY_GAP_AFTER,
+            sum_top,
+            None,
+            ctx,
+            out,
+        );
+        out.summaries.push(LayoutSummary {
+            x: brace_x,
+            y1,
+            y2,
+            topic,
+            accent: s.node.accent.clone().or_else(|| node.accent.clone()),
+        });
     }
 }
 
@@ -689,6 +870,7 @@ mod tests {
                     position: None,
                     custom_width: None,
                     fill_color: Some("#ff0000".to_string()),
+                    structure_class: None,
                 },
                 TopicView {
                     id: "a".to_string(),
@@ -716,6 +898,7 @@ mod tests {
                     position: None,
                     custom_width: None,
                     fill_color: None,
+                    structure_class: None,
                 },
                 TopicView {
                     id: "a1".to_string(),
@@ -743,6 +926,7 @@ mod tests {
                     position: None,
                     custom_width: None,
                     fill_color: None,
+                    structure_class: None,
                 },
                 TopicView {
                     id: "a2".to_string(),
@@ -770,6 +954,7 @@ mod tests {
                     position: None,
                     custom_width: None,
                     fill_color: Some("#00ff00".to_string()), // ridefinisce il colore
+                    structure_class: None,
                 },
                 TopicView {
                     id: "b".to_string(),
@@ -797,6 +982,7 @@ mod tests {
                     position: None,
                     custom_width: None,
                     fill_color: None,
+                    structure_class: None,
                 },
             ],
             relationships: vec![],
@@ -819,8 +1005,18 @@ mod tests {
         let root = &l.nodes[0];
         let a = l.nodes.iter().find(|n| n.id == "a").unwrap();
         assert!(a.x > root.x, "i figli si sviluppano a destra del genitore");
-        let children_top = l.nodes.iter().filter(|n| n.id != "root").map(|n| n.y).fold(f64::INFINITY, f64::min);
-        let children_bottom = l.nodes.iter().filter(|n| n.id != "root").map(|n| n.y + n.h).fold(0.0, f64::max);
+        let children_top = l
+            .nodes
+            .iter()
+            .filter(|n| n.id != "root")
+            .map(|n| n.y)
+            .fold(f64::INFINITY, f64::min);
+        let children_bottom = l
+            .nodes
+            .iter()
+            .filter(|n| n.id != "root")
+            .map(|n| n.y + n.h)
+            .fold(0.0, f64::max);
         let children_mid = (children_top + children_bottom) / 2.0;
         assert!(
             (root.y + root.h / 2.0 - children_mid).abs() < 1.0,
@@ -992,6 +1188,7 @@ mod tests {
             position: None,
             custom_width: None,
             fill_color: None,
+            structure_class: None,
         });
         sheet.relationships.push(RelationshipView {
             id: "rel1".to_string(),
@@ -1017,5 +1214,171 @@ mod tests {
         assert_eq!(l.relationships[0].title.as_deref(), Some("collega"));
         assert_eq!(l.nodes[l.relationships[0].from].id, "a");
         assert_eq!(l.nodes[l.relationships[0].to].id, "det1");
+    }
+
+    fn plain(id: &str, parent: Option<&str>, depth: usize, group: &str) -> TopicView {
+        let mut t = sample_sheet().topics[2].clone();
+        t.id = id.to_string();
+        t.title = id.to_string();
+        t.display_title = id.to_string();
+        t.parent_id = parent.map(str::to_string);
+        t.depth = depth;
+        t.group = group.to_string();
+        t.child_count = 0;
+        t
+    }
+
+    fn by_id<'a>(l: &'a Layout, id: &str) -> &'a LayoutNode {
+        l.nodes.iter().find(|n| n.id == id).unwrap()
+    }
+
+    #[test]
+    fn tree_chart_puts_root_on_top_with_vertical_trunk() {
+        let mut sheet = sample_sheet();
+        sheet.topics[0].structure_class = Some("org.xmind.ui.tree.right".to_string());
+        let l = layout(
+            &[sheet],
+            &HashSet::new(),
+            &FixedMetrics::default(),
+            LayoutOpts::default(),
+        );
+        let root = by_id(&l, "root");
+        let a = by_id(&l, "a");
+        let b = by_id(&l, "b");
+        assert!(root.children_below);
+        assert!(
+            a.y > root.y + root.h,
+            "i rami di primo livello stanno sotto la radice"
+        );
+        assert!(b.y > a.y);
+        assert!(
+            a.x > root.trunk_x() && (a.x - b.x).abs() < 0.5,
+            "colonna a destra del tronco"
+        );
+        for e in &l.edges {
+            let expected = if l.nodes[e.parent].id == "root" {
+                EdgeKind::Tree
+            } else {
+                EdgeKind::Logic
+            };
+            assert_eq!(e.kind, expected, "solo il primo livello pende dal tronco");
+        }
+        // I sottoalberi restano in stile Logic Chart: "a" è centrato sui figli.
+        let a1 = by_id(&l, "a1");
+        let a2 = by_id(&l, "a2");
+        let mid = (a1.y + a1.h / 2.0 + a2.y + a2.h / 2.0) / 2.0;
+        assert!((a.y + a.h / 2.0 - mid).abs() < 0.5);
+        let (_, by, _, _) = root.collapse_indicator_rect().unwrap();
+        assert!(
+            by > root.y + root.h - 1.0,
+            "il pulsante di collasso sta alla base del tronco"
+        );
+    }
+
+    fn summary_sheet() -> SheetDto {
+        let mut sheet = sample_sheet();
+        // "a" riceve un terzo figlio e un sommario sui primi due (a1, a2).
+        sheet
+            .topics
+            .insert(4, plain("a3", Some("a"), 2, "attached"));
+        sheet
+            .topics
+            .insert(5, plain("sum", Some("a"), 2, "summary"));
+        sheet.topics[1].summaries = vec![crate::state::SummaryView {
+            id: "sum".to_string(),
+            range: "(0,1)".to_string(),
+        }];
+        sheet
+    }
+
+    #[test]
+    fn summary_is_braced_next_to_its_range() {
+        let l = layout(
+            &[summary_sheet()],
+            &HashSet::new(),
+            &FixedMetrics::default(),
+            LayoutOpts::default(),
+        );
+        let a1 = by_id(&l, "a1");
+        let a2 = by_id(&l, "a2");
+        let a3 = by_id(&l, "a3");
+        let sum = by_id(&l, "sum");
+        assert!(
+            !l.edges.iter().any(|e| l.nodes[e.child].id == "sum"),
+            "niente connettore normale"
+        );
+        assert_eq!(l.summaries.len(), 1);
+        let brace = &l.summaries[0];
+        assert_eq!(l.nodes[brace.topic].id, "sum");
+        assert!((brace.y1 - a1.y).abs() < 0.5 && (brace.y2 - (a2.y + a2.h)).abs() < 0.5);
+        assert!(brace.x > a1.x + a1.w && sum.x > brace.x + SUMMARY_BRACE_W);
+        let mid = (brace.y1 + brace.y2) / 2.0;
+        assert!(
+            (sum.y + sum.h / 2.0 - mid).abs() < 0.5,
+            "il sommario è centrato sulla graffa"
+        );
+        assert!(sum.y + sum.h < a3.y + 0.5, "a3 resta fuori dall'intervallo");
+        assert_eq!(
+            sum.accent, a1.accent,
+            "graffa e sommario col colore del ramo"
+        );
+    }
+
+    #[test]
+    fn tall_summary_widens_its_range_instead_of_overlapping() {
+        let mut sheet = summary_sheet();
+        // Sommario su un solo figlio ma con due figli propri: più alto del range.
+        sheet.topics[1].summaries[0].range = "(2,2)".to_string();
+        sheet
+            .topics
+            .insert(6, plain("s1", Some("sum"), 3, "attached"));
+        sheet
+            .topics
+            .insert(7, plain("s2", Some("sum"), 3, "attached"));
+        let l = layout(
+            &[sheet],
+            &HashSet::new(),
+            &FixedMetrics::default(),
+            LayoutOpts::default(),
+        );
+        let s1 = by_id(&l, "s1");
+        let s2 = by_id(&l, "s2");
+        let a2 = by_id(&l, "a2");
+        let b = by_id(&l, "b");
+        assert!(
+            s1.y >= a2.y + a2.h,
+            "il sottoalbero del sommario non invade a2"
+        );
+        assert!(s2.y + s2.h <= b.y, "né il ramo successivo");
+    }
+
+    #[test]
+    fn summary_without_descriptor_spans_all_children() {
+        let mut sheet = summary_sheet();
+        sheet.topics[1].summaries.clear();
+        let l = layout(
+            &[sheet],
+            &HashSet::new(),
+            &FixedMetrics::default(),
+            LayoutOpts::default(),
+        );
+        let brace = &l.summaries[0];
+        assert!((brace.y1 - by_id(&l, "a1").y).abs() < 0.5);
+        let a3 = by_id(&l, "a3");
+        assert!((brace.y2 - (a3.y + a3.h)).abs() < 0.5);
+    }
+
+    #[test]
+    fn collapsed_parent_hides_its_summaries() {
+        let mut collapsed = HashSet::new();
+        collapsed.insert("a".to_string());
+        let l = layout(
+            &[summary_sheet()],
+            &collapsed,
+            &FixedMetrics::default(),
+            LayoutOpts::default(),
+        );
+        assert!(l.summaries.is_empty());
+        assert!(l.find_node_by_id("sum").is_none());
     }
 }

@@ -131,6 +131,61 @@ struct MapViewState {
     surfaces: RefCell<HashMap<String, Option<gtk::cairo::ImageSurface>>>,
     on_select: RefCell<Option<SelectCallback>>,
     pending_fit: Cell<bool>,
+    /// Etichetta della percentuale di zoom, aggiornata anche dalle animazioni.
+    zoom_label: RefCell<Option<gtk::Label>>,
+    /// Ultima posizione del puntatore sull'area (àncora di Ctrl+rotella).
+    pointer: Cell<Option<(f64, f64)>>,
+    /// Zoom iniziale e punto del mondo sotto le dita all'inizio del pinch.
+    pinch_origin: Cell<(f64, f64, f64)>,
+    /// Vero se l'ultimo scorrimento era uno zoom (niente inerzia al termine).
+    scroll_zooming: Cell<bool>,
+    /// Ultimi campioni del trascinamento (tempo µs, offset) per l'inerzia.
+    drag_samples: RefCell<Vec<(i64, f64, f64)>>,
+    /// Animazione di vista in corso e flag del tick callback attivo.
+    anim: RefCell<Option<ViewAnim>>,
+    ticking: Cell<bool>,
+}
+
+/// Limiti dello zoom.
+const ZOOM_MIN: f64 = 0.1;
+const ZOOM_MAX: f64 = 4.0;
+/// Sensibilità dello zoom con Ctrl+scorrimento continuo (touchpad): fattore
+/// `exp(-dy · rate)` per pixel di scorrimento.
+const SMOOTH_ZOOM_RATE: f64 = 0.012;
+/// Fattore per scatto di rotella e per i pulsanti +/−.
+const WHEEL_ZOOM_STEP: f64 = 1.18;
+const BUTTON_ZOOM_STEP: f64 = 1.25;
+/// Pixel di pan per scatto di rotella.
+const WHEEL_PAN_STEP: f64 = 48.0;
+/// Durate delle animazioni (µs).
+const ZOOM_ANIM_US: i64 = 170_000;
+const VIEW_ANIM_US: i64 = 260_000;
+/// Attrito dell'inerzia (1/s) e velocità sotto cui si ferma (px/s).
+const KINETIC_FRICTION: f64 = 4.5;
+const KINETIC_STOP: f64 = 15.0;
+
+/// Animazione della vista, avanzata dal tick callback del frame clock così da
+/// muoversi alla frequenza dello schermo.
+#[derive(Debug, Clone, Copy)]
+enum ViewAnim {
+    /// Zoom verso `to` tenendo fermo il punto del mondo `world` sotto `anchor`.
+    Zoom {
+        anchor: (f64, f64),
+        world: (f64, f64),
+        from: f64,
+        to: f64,
+        start: i64,
+    },
+    /// Passaggio a zoom e pan dati (adatta, centra nodo).
+    View {
+        from_zoom: f64,
+        to_zoom: f64,
+        from_pan: (f64, f64),
+        to_pan: (f64, f64),
+        start: i64,
+    },
+    /// Scorrimento inerziale con velocità in px/s.
+    Kinetic { velocity: (f64, f64), last: i64 },
 }
 
 /// Misuratore di nodi con Pango e cache in memoria.
@@ -193,6 +248,17 @@ fn surface_for(
         surfaces.borrow_mut().insert(src.to_string(), decoded);
     }
     surfaces.borrow().get(src).and_then(|s| s.clone())
+}
+
+/// Opzioni font senza hinting: con l'hinting le larghezze dei glifi si
+/// agganciano ai pixel del dispositivo e, durante uno zoom continuo, il testo
+/// "trema" e cambia larghezza. Misura e disegno devono usare le stesse opzioni.
+fn apply_smooth_font_options(ctx: &pango::Context) {
+    if let Ok(mut options) = gtk::cairo::FontOptions::new() {
+        options.set_hint_metrics(gtk::cairo::HintMetrics::Off);
+        options.set_hint_style(gtk::cairo::HintStyle::None);
+        pangocairo::functions::context_set_font_options(ctx, Some(&options));
+    }
 }
 
 /// Porta `(w, h)` dentro i limiti `(max_w, max_h)` conservando le proporzioni.
@@ -274,10 +340,13 @@ impl<'a> NodeMetrics for CanvasMetrics<'a> {
         // del testo; poi si ri-impagina alla larghezza effettiva scelta, così
         // misura e disegno coincidono riga per riga.
         layout.set_width((max_text_w * pango::SCALE as f64) as i32);
-        let (pw, _ph_at_max) = layout.pixel_size();
+        // Larghezza in unità Pango arrotondata per eccesso (+1 px di margine):
+        // `pixel_size` arrotonda al pixel più vicino e, reimpaginando a quella
+        // larghezza, l'ultima lettera può finire a capo ("Binari-e").
+        let pw = (layout.size().0 as f64 / pango::SCALE as f64).ceil() + 1.0;
         let (pad_x, pad_y, min_w, min_h) = node_insets(node.depth, boxed);
         let min_content = (min_w - pad_x * 2.0).max(0.0);
-        let content_w = (pw as f64).clamp(min_content, max_text_w);
+        let content_w = pw.clamp(min_content, max_text_w);
         layout.set_width((content_w * pango::SCALE as f64) as i32);
         let (_pw2, ph) = layout.pixel_size();
 
@@ -303,7 +372,6 @@ pub struct MapView {
     area: gtk::DrawingArea,
     sheet_drop: gtk::DropDown,
     sheet_store: gtk::StringList,
-    zoom_label: gtk::Label,
     state: Rc<MapViewState>,
 }
 
@@ -326,6 +394,13 @@ impl MapView {
             surfaces: RefCell::new(HashMap::new()),
             on_select: RefCell::new(Some(Box::new(on_select))),
             pending_fit: Cell::new(false),
+            zoom_label: RefCell::new(None),
+            pointer: Cell::new(None),
+            pinch_origin: Cell::new((1.0, 0.0, 0.0)),
+            scroll_zooming: Cell::new(false),
+            drag_samples: RefCell::new(Vec::new()),
+            anim: RefCell::new(None),
+            ticking: Cell::new(false),
         });
 
         let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -364,6 +439,7 @@ impl MapView {
             .xalign(0.5)
             .build();
         toolbar.append(&zoom_label);
+        *state.zoom_label.borrow_mut() = Some(zoom_label.clone());
 
         let zoom_in_btn = gtk::Button::builder()
             .icon_name("zoom-in-symbolic")
@@ -402,26 +478,27 @@ impl MapView {
         {
             let state = state.clone();
             let area_weak = area.downgrade();
-            let zoom_lbl = zoom_label.clone();
             area.set_draw_func(move |_area, cr, width, height| {
                 if state.pending_fit.get() && width > 20 && height > 20 {
                     state.pending_fit.set(false);
                     if let Some(a) = area_weak.upgrade() {
-                        fit_to_view_internal(&state, &a, &zoom_lbl);
+                        fit_to_view_internal(&state, &a, false);
                     }
                 }
                 draw_map(cr, width as f64, height as f64, &state);
             });
         }
 
-        // Gesture Drag: Pan della mappa
+        // Trascinamento col mouse: pan, con inerzia al rilascio.
         {
             let drag = gtk::GestureDrag::new();
             let state_begin = state.clone();
             drag.connect_drag_begin(move |_, _, _| {
+                stop_animation(&state_begin);
                 state_begin
                     .drag_start_pan
                     .set((state_begin.pan_x.get(), state_begin.pan_y.get()));
+                state_begin.drag_samples.borrow_mut().clear();
             });
             let state_update = state.clone();
             let area_update = area.clone();
@@ -429,45 +506,114 @@ impl MapView {
                 let (sx, sy) = state_update.drag_start_pan.get();
                 state_update.pan_x.set(sx + offset_x);
                 state_update.pan_y.set(sy + offset_y);
+                push_drag_sample(&state_update, offset_x, offset_y);
                 area_update.queue_draw();
+            });
+            let state_end = state.clone();
+            let area_end = area.clone();
+            drag.connect_drag_end(move |_, _, _| {
+                if let Some(velocity) = drag_release_velocity(&state_end) {
+                    start_kinetic(&state_end, &area_end, velocity);
+                }
             });
             area.add_controller(drag);
         }
 
-        // Controller Scroll: Zoom con Ctrl+rotella, Pan con rotella
+        // Posizione del puntatore: àncora dello zoom con Ctrl+rotella.
         {
-            let scroll =
-                gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
+            let motion = gtk::EventControllerMotion::new();
+            let state_motion = state.clone();
+            motion.connect_motion(move |_, x, y| state_motion.pointer.set(Some((x, y))));
+            let state_leave = state.clone();
+            motion.connect_leave(move |_| state_leave.pointer.set(None));
+            area.add_controller(motion);
+        }
+
+        // Rotella e touchpad: pan con lo scorrimento (inerziale sul touchpad),
+        // zoom con Ctrl. Il touchpad invia delta continui in pixel e va seguito
+        // 1:1; la rotella del mouse invia scatti e si anima verso il bersaglio.
+        {
+            let scroll = gtk::EventControllerScroll::new(
+                gtk::EventControllerScrollFlags::BOTH_AXES
+                    | gtk::EventControllerScrollFlags::KINETIC,
+            );
             let state_scroll = state.clone();
             let area_scroll = area.clone();
-            let zoom_lbl_scroll = zoom_label.clone();
             scroll.connect_scroll(move |scroll, dx, dy| {
-                let event_state = scroll.current_event_state();
-                let is_ctrl = event_state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                let is_ctrl = scroll
+                    .current_event_state()
+                    .contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                let smooth = scroll.unit() == gtk::gdk::ScrollUnit::Surface;
+                state_scroll.scroll_zooming.set(is_ctrl);
 
                 if is_ctrl {
-                    let old_zoom = state_scroll.zoom.get();
-                    let factor = if dy < 0.0 { 1.15 } else { 1.0 / 1.15 };
-                    let new_zoom = (old_zoom * factor).clamp(0.2, 3.0);
-
-                    let mx = area_scroll.width() as f64 / 2.0;
-                    let my = area_scroll.height() as f64 / 2.0;
-                    let new_pan_x = mx - (mx - state_scroll.pan_x.get()) * (new_zoom / old_zoom);
-                    let new_pan_y = my - (my - state_scroll.pan_y.get()) * (new_zoom / old_zoom);
-
-                    state_scroll.pan_x.set(new_pan_x);
-                    state_scroll.pan_y.set(new_pan_y);
-                    state_scroll.zoom.set(new_zoom);
-                    zoom_lbl_scroll.set_label(&format!("{}%", (new_zoom * 100.0).round() as i64));
-                    area_scroll.queue_draw();
+                    let anchor = pointer_or_center(&state_scroll, &area_scroll);
+                    if smooth {
+                        stop_animation(&state_scroll);
+                        let target = state_scroll.zoom.get() * (-dy * SMOOTH_ZOOM_RATE).exp();
+                        set_zoom_at(&state_scroll, target, anchor);
+                        sync_zoom_label(&state_scroll);
+                        area_scroll.queue_draw();
+                    } else {
+                        animate_zoom_by(
+                            &state_scroll,
+                            &area_scroll,
+                            WHEEL_ZOOM_STEP.powf(-dy),
+                            anchor,
+                        );
+                    }
                 } else {
-                    state_scroll.pan_x.set(state_scroll.pan_x.get() - dx * 24.0);
-                    state_scroll.pan_y.set(state_scroll.pan_y.get() - dy * 24.0);
+                    stop_animation(&state_scroll);
+                    let k = if smooth { 1.0 } else { WHEEL_PAN_STEP };
+                    state_scroll.pan_x.set(state_scroll.pan_x.get() - dx * k);
+                    state_scroll.pan_y.set(state_scroll.pan_y.get() - dy * k);
                     area_scroll.queue_draw();
                 }
                 glib::Propagation::Stop
             });
+            let state_dec = state.clone();
+            let area_dec = area.clone();
+            scroll.connect_decelerate(move |_, vx, vy| {
+                if !state_dec.scroll_zooming.get() {
+                    start_kinetic(&state_dec, &area_dec, (-vx, -vy));
+                }
+            });
             area.add_controller(scroll);
+        }
+
+        // Pinch-to-zoom (touchpad e touchscreen): gesto nativo di GTK, continuo e
+        // ancorato al punto fra le dita, che può anche spostarsi durante il gesto.
+        {
+            let pinch = gtk::GestureZoom::new();
+            let state_begin = state.clone();
+            let area_begin = area.clone();
+            pinch.connect_begin(move |gesture, _| {
+                stop_animation(&state_begin);
+                let (cx, cy) = gesture
+                    .bounding_box_center()
+                    .unwrap_or_else(|| pointer_or_center(&state_begin, &area_begin));
+                let z = state_begin.zoom.get();
+                state_begin.pinch_origin.set((
+                    z,
+                    (cx - state_begin.pan_x.get()) / z,
+                    (cy - state_begin.pan_y.get()) / z,
+                ));
+            });
+            let state_scale = state.clone();
+            let area_scale = area.clone();
+            pinch.connect_scale_changed(move |gesture, scale| {
+                let (z0, wx, wy) = state_scale.pinch_origin.get();
+                let (cx, cy) = gesture
+                    .bounding_box_center()
+                    .unwrap_or_else(|| pointer_or_center(&state_scale, &area_scale));
+                let z = (z0 * scale).clamp(ZOOM_MIN, ZOOM_MAX);
+                state_scale.zoom.set(z);
+                state_scale.pan_x.set(cx - wx * z);
+                state_scale.pan_y.set(cy - wy * z);
+                sync_zoom_label(&state_scale);
+                area_scale.queue_draw();
+            });
+            area.add_controller(pinch);
         }
 
         // Gesture Click: Selezione con click singolo, Collasso con doppio click o click sull'indicatore
@@ -512,51 +658,26 @@ impl MapView {
         {
             let state = state.clone();
             let area_clone = area.clone();
-            let zoom_lbl = zoom_label.clone();
             zoom_in_btn.connect_clicked(move |_| {
-                let old_z = state.zoom.get();
-                let new_z = (old_z * 1.2).clamp(0.2, 3.0);
-                let cx = area_clone.width() as f64 / 2.0;
-                let cy = area_clone.height() as f64 / 2.0;
-                state
-                    .pan_x
-                    .set(cx - (cx - state.pan_x.get()) * (new_z / old_z));
-                state
-                    .pan_y
-                    .set(cy - (cy - state.pan_y.get()) * (new_z / old_z));
-                state.zoom.set(new_z);
-                zoom_lbl.set_label(&format!("{}%", (new_z * 100.0).round() as i64));
-                area_clone.queue_draw();
+                let center = view_center(&area_clone);
+                animate_zoom_by(&state, &area_clone, BUTTON_ZOOM_STEP, center);
             });
         }
 
         {
             let state = state.clone();
             let area_clone = area.clone();
-            let zoom_lbl = zoom_label.clone();
             zoom_out_btn.connect_clicked(move |_| {
-                let old_z = state.zoom.get();
-                let new_z = (old_z / 1.2).clamp(0.2, 3.0);
-                let cx = area_clone.width() as f64 / 2.0;
-                let cy = area_clone.height() as f64 / 2.0;
-                state
-                    .pan_x
-                    .set(cx - (cx - state.pan_x.get()) * (new_z / old_z));
-                state
-                    .pan_y
-                    .set(cy - (cy - state.pan_y.get()) * (new_z / old_z));
-                state.zoom.set(new_z);
-                zoom_lbl.set_label(&format!("{}%", (new_z * 100.0).round() as i64));
-                area_clone.queue_draw();
+                let center = view_center(&area_clone);
+                animate_zoom_by(&state, &area_clone, 1.0 / BUTTON_ZOOM_STEP, center);
             });
         }
 
         {
             let state = state.clone();
             let area_clone = area.clone();
-            let zoom_lbl = zoom_label.clone();
             fit_btn.connect_clicked(move |_| {
-                fit_to_view_internal(&state, &area_clone, &zoom_lbl);
+                fit_to_view_internal(&state, &area_clone, true);
             });
         }
 
@@ -582,13 +703,12 @@ impl MapView {
         {
             let state = state.clone();
             let area_clone = area.clone();
-            let zoom_lbl = zoom_label.clone();
             sheet_drop.connect_selected_notify(move |drop| {
                 let idx = drop.selected() as usize;
                 if state.active_sheet.get() != idx {
                     state.active_sheet.set(idx);
                     recompute_layout(&state, &area_clone);
-                    fit_to_view_internal(&state, &area_clone, &zoom_lbl);
+                    fit_to_view_internal(&state, &area_clone, false);
                 }
             });
         }
@@ -598,7 +718,6 @@ impl MapView {
             area,
             sheet_drop,
             sheet_store,
-            zoom_label,
             state,
         }
     }
@@ -715,7 +834,7 @@ impl MapView {
 
     /// Adatta la mappa intera alla dimensione corrente della finestra.
     pub fn fit_to_view(&self) {
-        fit_to_view_internal(&self.state, &self.area, &self.zoom_label);
+        fit_to_view_internal(&self.state, &self.area, false);
     }
 
     /// Imposta il tema scuro o chiaro per la palette della mappa.
@@ -739,8 +858,10 @@ fn recompute_layout(state: &MapViewState, area: &gtk::DrawingArea) {
         return;
     };
     let collapsed = state.collapsed.borrow();
+    let pango_ctx = area.create_pango_context();
+    apply_smooth_font_options(&pango_ctx);
     let metrics = CanvasMetrics {
-        pango_ctx: area.pango_context(),
+        pango_ctx,
         cache: &state.metrics_cache,
         images: &state.images,
         surfaces: &state.surfaces,
@@ -781,8 +902,9 @@ fn collapse_all_nodes(state: &MapViewState, area: &gtk::DrawingArea) {
     area.queue_draw();
 }
 
-/// Centra il nodo `id` nella vista.
-fn scroll_to_node(state: &MapViewState, area: &gtk::DrawingArea, id: &str) {
+/// Porta in vista il nodo `id` con un'animazione, solo se non è già visibile
+/// per intero: selezionare un nodo sulla mappa non deve far saltare la vista.
+fn scroll_to_node(state: &Rc<MapViewState>, area: &gtk::DrawingArea, id: &str) {
     let l = state.layout.borrow();
     let Some(idx) = l.find_node_by_id(id) else {
         return;
@@ -794,15 +916,25 @@ fn scroll_to_node(state: &MapViewState, area: &gtk::DrawingArea, id: &str) {
         return;
     }
     let z = state.zoom.get();
+    let (px, py) = (state.pan_x.get(), state.pan_y.get());
+    let margin = 24.0;
+    let visible = node.x * z + px >= margin
+        && node.y * z + py >= margin
+        && (node.x + node.w) * z + px <= view_w - margin
+        && (node.y + node.h) * z + py <= view_h - margin;
+    if visible {
+        return;
+    }
     let node_cx = (node.x + node.w / 2.0) * z;
     let node_cy = (node.y + node.h / 2.0) * z;
-    state.pan_x.set(view_w / 2.0 - node_cx);
-    state.pan_y.set(view_h / 2.0 - node_cy);
-    area.queue_draw();
+    let target = (view_w / 2.0 - node_cx, view_h / 2.0 - node_cy);
+    drop(l);
+    animate_view_to(state, area, z, target);
 }
 
-/// Adatta zoom e pan della mappa al rettangolo visibile dell'area.
-fn fit_to_view_internal(state: &MapViewState, area: &gtk::DrawingArea, zoom_label: &gtk::Label) {
+/// Adatta zoom e pan della mappa al rettangolo visibile dell'area, con o senza
+/// animazione.
+fn fit_to_view_internal(state: &Rc<MapViewState>, area: &gtk::DrawingArea, animate: bool) {
     let l = state.layout.borrow();
     if l.is_empty() {
         return;
@@ -816,8 +948,17 @@ fn fit_to_view_internal(state: &MapViewState, area: &gtk::DrawingArea, zoom_labe
 
     let min_x = l.nodes.iter().map(|n| n.x).fold(f64::INFINITY, f64::min);
     let min_y = l.nodes.iter().map(|n| n.y).fold(f64::INFINITY, f64::min);
-    let max_x = l.nodes.iter().map(|n| n.x + n.w).fold(f64::NEG_INFINITY, f64::max);
-    let max_y = l.nodes.iter().map(|n| n.y + n.h).fold(f64::NEG_INFINITY, f64::max);
+    let max_x = l
+        .nodes
+        .iter()
+        .map(|n| n.x + n.w)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let max_y = l
+        .nodes
+        .iter()
+        .map(|n| n.y + n.h)
+        .fold(f64::NEG_INFINITY, f64::max);
+    drop(l);
 
     let content_w = (max_x - min_x).max(10.0);
     let content_h = (max_y - min_y).max(10.0);
@@ -827,13 +968,211 @@ fn fit_to_view_internal(state: &MapViewState, area: &gtk::DrawingArea, zoom_labe
     let scale_y = (view_h - margin * 2.0) / content_h;
     let new_zoom = scale_x.min(scale_y).clamp(0.2, 1.8);
 
-    state.zoom.set(new_zoom);
     let center_x = (min_x + max_x) / 2.0;
     let center_y = (min_y + max_y) / 2.0;
-    state.pan_x.set(view_w / 2.0 - center_x * new_zoom);
-    state.pan_y.set(view_h / 2.0 - center_y * new_zoom);
-    zoom_label.set_label(&format!("{}%", (new_zoom * 100.0).round() as i64));
-    area.queue_draw();
+    let pan = (
+        view_w / 2.0 - center_x * new_zoom,
+        view_h / 2.0 - center_y * new_zoom,
+    );
+    if animate {
+        animate_view_to(state, area, new_zoom, pan);
+    } else {
+        stop_animation(state);
+        state.zoom.set(new_zoom);
+        state.pan_x.set(pan.0);
+        state.pan_y.set(pan.1);
+        sync_zoom_label(state);
+        area.queue_draw();
+    }
+}
+
+/// Tempo del frame clock in µs (monotono), con ripiego sull'orologio di GLib
+/// quando l'area non è ancora realizzata.
+fn now_us(area: &gtk::DrawingArea) -> i64 {
+    area.frame_clock()
+        .map(|c| c.frame_time())
+        .unwrap_or_else(glib::monotonic_time)
+}
+
+fn view_center(area: &gtk::DrawingArea) -> (f64, f64) {
+    (area.width() as f64 / 2.0, area.height() as f64 / 2.0)
+}
+
+fn pointer_or_center(state: &MapViewState, area: &gtk::DrawingArea) -> (f64, f64) {
+    state.pointer.get().unwrap_or_else(|| view_center(area))
+}
+
+/// Imposta lo zoom tenendo fermo il punto del mondo che sta sotto `anchor`.
+fn set_zoom_at(state: &MapViewState, zoom: f64, anchor: (f64, f64)) {
+    let old = state.zoom.get();
+    let zoom = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+    let wx = (anchor.0 - state.pan_x.get()) / old;
+    let wy = (anchor.1 - state.pan_y.get()) / old;
+    state.zoom.set(zoom);
+    state.pan_x.set(anchor.0 - wx * zoom);
+    state.pan_y.set(anchor.1 - wy * zoom);
+}
+
+fn sync_zoom_label(state: &MapViewState) {
+    if let Some(label) = state.zoom_label.borrow().as_ref() {
+        label.set_label(&format!("{}%", (state.zoom.get() * 100.0).round() as i64));
+    }
+}
+
+fn stop_animation(state: &MapViewState) {
+    state.anim.borrow_mut().take();
+}
+
+/// Zoom animato di un fattore attorno ad `anchor`. Scatti ravvicinati si
+/// sommano al bersaglio dell'animazione in corso invece di ripartire dallo
+/// zoom attuale, così la rotella resta reattiva e senza scatti.
+fn animate_zoom_by(
+    state: &Rc<MapViewState>,
+    area: &gtk::DrawingArea,
+    factor: f64,
+    anchor: (f64, f64),
+) {
+    let current = state.zoom.get();
+    let base = match *state.anim.borrow() {
+        Some(ViewAnim::Zoom { to, .. }) => to,
+        _ => current,
+    };
+    let to = (base * factor).clamp(ZOOM_MIN, ZOOM_MAX);
+    let world = (
+        (anchor.0 - state.pan_x.get()) / current,
+        (anchor.1 - state.pan_y.get()) / current,
+    );
+    *state.anim.borrow_mut() = Some(ViewAnim::Zoom {
+        anchor,
+        world,
+        from: current,
+        to,
+        start: now_us(area),
+    });
+    ensure_ticking(state, area);
+}
+
+fn animate_view_to(state: &Rc<MapViewState>, area: &gtk::DrawingArea, zoom: f64, pan: (f64, f64)) {
+    *state.anim.borrow_mut() = Some(ViewAnim::View {
+        from_zoom: state.zoom.get(),
+        to_zoom: zoom.clamp(ZOOM_MIN, ZOOM_MAX),
+        from_pan: (state.pan_x.get(), state.pan_y.get()),
+        to_pan: pan,
+        start: now_us(area),
+    });
+    ensure_ticking(state, area);
+}
+
+fn start_kinetic(state: &Rc<MapViewState>, area: &gtk::DrawingArea, velocity: (f64, f64)) {
+    if velocity.0.hypot(velocity.1) < KINETIC_STOP * 4.0 {
+        return;
+    }
+    *state.anim.borrow_mut() = Some(ViewAnim::Kinetic {
+        velocity,
+        last: now_us(area),
+    });
+    ensure_ticking(state, area);
+}
+
+/// Registra un campione del trascinamento (ultimi 100 ms).
+fn push_drag_sample(state: &MapViewState, x: f64, y: f64) {
+    let now = glib::monotonic_time();
+    let mut samples = state.drag_samples.borrow_mut();
+    samples.push((now, x, y));
+    samples.retain(|(t, _, _)| now - t <= 100_000);
+}
+
+/// Velocità (px/s) al rilascio del trascinamento, se il gesto era ancora in
+/// movimento: un rilascio da fermo non deve far scivolare la mappa.
+fn drag_release_velocity(state: &MapViewState) -> Option<(f64, f64)> {
+    let samples = state.drag_samples.borrow();
+    let &(t1, x1, y1) = samples.last()?;
+    let &(t0, x0, y0) = samples.first()?;
+    let dt = (t1 - t0) as f64 / 1_000_000.0;
+    if dt < 0.01 || glib::monotonic_time() - t1 > 50_000 {
+        return None;
+    }
+    Some(((x1 - x0) / dt, (y1 - y0) / dt))
+}
+
+/// Avvia (una sola volta) il tick callback che fa avanzare l'animazione a ogni
+/// frame; si spegne da solo a fine animazione per non tenere sveglio il
+/// frame clock.
+fn ensure_ticking(state: &Rc<MapViewState>, area: &gtk::DrawingArea) {
+    if state.ticking.replace(true) {
+        return;
+    }
+    let state = state.clone();
+    area.add_tick_callback(move |area, clock| {
+        let running = step_animation(&state, clock.frame_time());
+        sync_zoom_label(&state);
+        area.queue_draw();
+        if running {
+            glib::ControlFlow::Continue
+        } else {
+            state.ticking.set(false);
+            glib::ControlFlow::Break
+        }
+    });
+}
+
+fn ease_out_cubic(t: f64) -> f64 {
+    1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
+}
+
+/// Fa avanzare l'animazione all'istante `now` (µs). Ritorna `false` quando non
+/// resta nulla da animare.
+fn step_animation(state: &MapViewState, now: i64) -> bool {
+    let Some(anim) = *state.anim.borrow() else {
+        return false;
+    };
+    let (next, running) = match anim {
+        ViewAnim::Zoom {
+            anchor,
+            world,
+            from,
+            to,
+            start,
+        } => {
+            let t = (now - start) as f64 / ZOOM_ANIM_US as f64;
+            // Interpolazione geometrica: la velocità percepita resta costante.
+            let z = from * (to / from).powf(ease_out_cubic(t));
+            state.zoom.set(z);
+            state.pan_x.set(anchor.0 - world.0 * z);
+            state.pan_y.set(anchor.1 - world.1 * z);
+            (Some(anim), t < 1.0)
+        }
+        ViewAnim::View {
+            from_zoom,
+            to_zoom,
+            from_pan,
+            to_pan,
+            start,
+        } => {
+            let e = ease_out_cubic((now - start) as f64 / VIEW_ANIM_US as f64);
+            state.zoom.set(from_zoom * (to_zoom / from_zoom).powf(e));
+            state.pan_x.set(from_pan.0 + (to_pan.0 - from_pan.0) * e);
+            state.pan_y.set(from_pan.1 + (to_pan.1 - from_pan.1) * e);
+            (Some(anim), e < 1.0)
+        }
+        ViewAnim::Kinetic { velocity, last } => {
+            let dt = ((now - last) as f64 / 1_000_000.0).clamp(0.0, 0.05);
+            state.pan_x.set(state.pan_x.get() + velocity.0 * dt);
+            state.pan_y.set(state.pan_y.get() + velocity.1 * dt);
+            let decay = (-KINETIC_FRICTION * dt).exp();
+            let velocity = (velocity.0 * decay, velocity.1 * decay);
+            let running = velocity.0.hypot(velocity.1) > KINETIC_STOP;
+            (
+                Some(ViewAnim::Kinetic {
+                    velocity,
+                    last: now,
+                }),
+                running,
+            )
+        }
+    };
+    *state.anim.borrow_mut() = if running { next } else { None };
+    running
 }
 
 /// Traccia un rettangolo con angoli arrotondati in Cairo.
@@ -950,8 +1289,6 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
             continue;
         }
 
-        let x1 = p.x + p.w;
-        let y1 = p.y + p.h / 2.0;
         let x2 = c.x;
         let y2 = c.y + c.h / 2.0;
 
@@ -966,7 +1303,48 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
             cr.set_source_rgba(pal.edge_r, pal.edge_g, pal.edge_b, 0.70);
         }
 
-        elbow(cr, x1, y1, x2, y2, 18.0);
+        match edge.kind {
+            layout::EdgeKind::Logic => elbow(cr, p.x + p.w, p.y + p.h / 2.0, x2, y2, 18.0),
+            layout::EdgeKind::Tree => {
+                // Il tronco è condiviso da tutti i rami: neutro, altrimenti
+                // prenderebbe il colore dell'ultimo ramo disegnato.
+                let _ = cr.save();
+                cr.set_source_rgba(pal.edge_r, pal.edge_g, pal.edge_b, 0.85);
+                cr.move_to(p.trunk_x(), p.y + p.h);
+                cr.line_to(p.trunk_x(), y2);
+                let _ = cr.stroke();
+                let _ = cr.restore();
+                trunk_branch(cr, p.trunk_x(), p.y + p.h, x2, y2);
+            }
+        }
+        let _ = cr.stroke();
+    }
+
+    // 4a. Graffe dei sommari, col colore del ramo, collegate al topic di sommario.
+    for summary in &l.summaries {
+        let Some(topic) = l.nodes.get(summary.topic) else {
+            continue;
+        };
+        if summary.x > vx2 || topic.x + topic.w < vx1 || summary.y2 < vy1 || summary.y1 > vy2 {
+            continue;
+        }
+        if let Some((r, g, b)) = summary.accent.as_deref().and_then(parse_hex_color) {
+            cr.set_source_rgba(r, g, b, 0.85);
+        } else {
+            cr.set_source_rgba(pal.edge_r, pal.edge_g, pal.edge_b, 0.80);
+        }
+        cr.set_line_width(1.6_f64.max(1.0 / zoom));
+        cr.set_line_cap(gtk::cairo::LineCap::Round);
+        brace(
+            cr,
+            summary.x,
+            summary.y1,
+            summary.y2,
+            layout::SUMMARY_BRACE_W,
+        );
+        let mid = (summary.y1 + summary.y2) / 2.0;
+        cr.move_to(summary.x + layout::SUMMARY_BRACE_W, mid);
+        cr.line_to(topic.x, topic.y + topic.h / 2.0);
         let _ = cr.stroke();
     }
 
@@ -983,7 +1361,8 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
         let max_rx = (from_node.x + from_node.w).max(to_node.x + to_node.w);
         let min_ry = from_node.y.min(to_node.y);
         let max_ry = (from_node.y + from_node.h).max(to_node.y + to_node.h);
-        if max_rx + 40.0 < vx1 || min_rx - 40.0 > vx2 || max_ry + 40.0 < vy1 || min_ry - 40.0 > vy2 {
+        if max_rx + 40.0 < vx1 || min_rx - 40.0 > vx2 || max_ry + 40.0 < vy1 || min_ry - 40.0 > vy2
+        {
             continue;
         }
 
@@ -1008,6 +1387,8 @@ fn draw_map(cr: &gtk::cairo::Context, view_w: f64, view_h: f64, state: &MapViewS
     let font_leaf = title_font(2);
 
     let pango_layout = pangocairo::functions::create_layout(cr);
+    apply_smooth_font_options(&pango_layout.context());
+    pango_layout.context_changed();
     pango_layout.set_wrap(pango::WrapMode::WordChar);
     pango_layout.set_ellipsize(pango::EllipsizeMode::None);
 
@@ -1289,6 +1670,42 @@ fn elbow(cr: &gtk::cairo::Context, x1: f64, y1: f64, x2: f64, y2: f64, stub: f64
     cr.line_to(x2, y2);
 }
 
+/// Ramo della Tree Chart: dal tronco verticale in `trunk_x` (che parte dal
+/// fondo del genitore in `y1` ed è disegnato a parte) piega ad angolo
+/// arrotondato verso il figlio.
+fn trunk_branch(cr: &gtk::cairo::Context, trunk_x: f64, y1: f64, x2: f64, y2: f64) {
+    let rr = 8.0_f64
+        .min((x2 - trunk_x).abs())
+        .min((y2 - y1).abs())
+        .max(0.0);
+    cr.move_to(trunk_x, y2 - rr);
+    cr.curve_to(
+        trunk_x,
+        y2 - rr * 0.45,
+        trunk_x + rr * 0.45,
+        y2,
+        trunk_x + rr,
+        y2,
+    );
+    cr.line_to(x2, y2);
+}
+
+/// Traccia una graffa chiusa verso destra ("}") alta da `y1` a `y2`, con la
+/// punta a metà altezza in `x + w`: è il segno dei sommari di XMind.
+fn brace(cr: &gtk::cairo::Context, x: f64, y1: f64, y2: f64, w: f64) {
+    let mid = (y1 + y2) / 2.0;
+    let half = w / 2.0;
+    let r = half.min((y2 - y1) / 4.0).max(0.0);
+    let xm = x + half;
+    cr.move_to(x, y1);
+    cr.curve_to(xm, y1, xm, y1, xm, y1 + r);
+    cr.line_to(xm, mid - r);
+    cr.curve_to(xm, mid, xm, mid, x + w, mid);
+    cr.curve_to(xm, mid, xm, mid, xm, mid + r);
+    cr.line_to(xm, y2 - r);
+    cr.curve_to(xm, y2, xm, y2, x, y2);
+}
+
 /// Disegna un'immagine (equazione o foto) centrata e ridimensionata nell'area.
 fn draw_image(
     cr: &gtk::cairo::Context,
@@ -1361,9 +1778,17 @@ fn draw_relationship(
     };
 
     let dx = (ex - sx).abs() * 0.45;
-    let cp1x = if ex >= sx { sx + dx.max(30.0) } else { sx - dx.max(30.0) };
+    let cp1x = if ex >= sx {
+        sx + dx.max(30.0)
+    } else {
+        sx - dx.max(30.0)
+    };
     let cp1y = sy;
-    let cp2x = if ex >= sx { ex - dx.max(30.0) } else { ex + dx.max(30.0) };
+    let cp2x = if ex >= sx {
+        ex - dx.max(30.0)
+    } else {
+        ex + dx.max(30.0)
+    };
     let cp2y = ey;
 
     let _ = cr.save();
@@ -1524,6 +1949,7 @@ mod tests {
             fill_color: fill.map(str::to_string),
             position: None,
             custom_width: None,
+            structure_class: None,
         }
     }
 
@@ -1603,6 +2029,13 @@ mod tests {
             surfaces: RefCell::new(HashMap::new()),
             on_select: RefCell::new(None),
             pending_fit: Cell::new(false),
+            zoom_label: RefCell::new(None),
+            pointer: Cell::new(None),
+            pinch_origin: Cell::new((1.0, 0.0, 0.0)),
+            scroll_zooming: Cell::new(false),
+            drag_samples: RefCell::new(Vec::new()),
+            anim: RefCell::new(None),
+            ticking: Cell::new(false),
         };
 
         let width = 1500;
@@ -1611,6 +2044,7 @@ mod tests {
             gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, width, height).unwrap();
         let cr = gtk::cairo::Context::new(&surface).unwrap();
         let pango_ctx = pangocairo::functions::create_context(&cr);
+        apply_smooth_font_options(&pango_ctx);
 
         {
             let collapsed = state.collapsed.borrow();
@@ -1705,13 +2139,22 @@ mod tests {
             surfaces: RefCell::new(HashMap::new()),
             on_select: RefCell::new(None),
             pending_fit: Cell::new(false),
+            zoom_label: RefCell::new(None),
+            pointer: Cell::new(None),
+            pinch_origin: Cell::new((1.0, 0.0, 0.0)),
+            scroll_zooming: Cell::new(false),
+            drag_samples: RefCell::new(Vec::new()),
+            anim: RefCell::new(None),
+            ticking: Cell::new(false),
         };
 
         let width = 2400;
         let height = 1800;
-        let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, width, height).unwrap();
+        let surface =
+            gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, width, height).unwrap();
         let cr = gtk::cairo::Context::new(&surface).unwrap();
         let pango_ctx = pangocairo::functions::create_context(&cr);
+        apply_smooth_font_options(&pango_ctx);
 
         {
             let collapsed = state.collapsed.borrow();
@@ -1749,7 +2192,8 @@ mod tests {
 
     #[test]
     fn zoom_does_not_alter_text_wrapping_or_overflow() {
-        let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, 800, 600).unwrap();
+        let surface =
+            gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, 800, 600).unwrap();
         let cr = gtk::cairo::Context::new(&surface).unwrap();
 
         let long_title = "Questo è un titolo lungo di un nodo di test per verificare che lo zoom non alteri il testo né lo faccia sbordare.";
@@ -1785,5 +2229,94 @@ mod tests {
             h_zoomed <= h1 + 4,
             "L'altezza del testo non deve sbordare rispetto a zoom 1.0 (h1={h1}, h_zoomed={h_zoomed})"
         );
+    }
+
+    fn view_state() -> MapViewState {
+        MapViewState {
+            sheets: RefCell::new(Vec::new()),
+            active_sheet: Cell::new(0),
+            collapsed: RefCell::new(HashSet::new()),
+            selected: RefCell::new(None),
+            layout: RefCell::new(Layout::default()),
+            pan_x: Cell::new(0.0),
+            pan_y: Cell::new(0.0),
+            zoom: Cell::new(1.0),
+            drag_start_pan: Cell::new((0.0, 0.0)),
+            dark: Cell::new(false),
+            metrics_cache: RefCell::new(HashMap::new()),
+            images: RefCell::new(HashMap::new()),
+            surfaces: RefCell::new(HashMap::new()),
+            on_select: RefCell::new(None),
+            pending_fit: Cell::new(false),
+            zoom_label: RefCell::new(None),
+            pointer: Cell::new(None),
+            pinch_origin: Cell::new((1.0, 0.0, 0.0)),
+            scroll_zooming: Cell::new(false),
+            drag_samples: RefCell::new(Vec::new()),
+            anim: RefCell::new(None),
+            ticking: Cell::new(false),
+        }
+    }
+
+    /// Punto del mondo sotto la coordinata di schermo `p`.
+    fn world_at(state: &MapViewState, p: (f64, f64)) -> (f64, f64) {
+        let z = state.zoom.get();
+        ((p.0 - state.pan_x.get()) / z, (p.1 - state.pan_y.get()) / z)
+    }
+
+    #[test]
+    fn zoom_keeps_the_anchor_point_still() {
+        let state = view_state();
+        state.pan_x.set(37.0);
+        state.pan_y.set(-12.0);
+        let anchor = (300.0, 200.0);
+        let before = world_at(&state, anchor);
+        set_zoom_at(&state, 2.5, anchor);
+        let after = world_at(&state, anchor);
+        assert!((before.0 - after.0).abs() < 1e-9 && (before.1 - after.1).abs() < 1e-9);
+        set_zoom_at(&state, 100.0, anchor);
+        assert_eq!(state.zoom.get(), ZOOM_MAX, "lo zoom resta nei limiti");
+    }
+
+    #[test]
+    fn zoom_animation_is_monotonic_anchored_and_ends_on_target() {
+        let state = view_state();
+        let anchor = (120.0, 80.0);
+        let world = world_at(&state, anchor);
+        *state.anim.borrow_mut() = Some(ViewAnim::Zoom {
+            anchor,
+            world,
+            from: 1.0,
+            to: 2.0,
+            start: 0,
+        });
+        let mut last = 1.0;
+        let mut t = 0;
+        while step_animation(&state, t) {
+            let z = state.zoom.get();
+            assert!(z >= last, "lo zoom cresce senza ritorni");
+            last = z;
+            let w = world_at(&state, anchor);
+            assert!((w.0 - world.0).abs() < 1e-9 && (w.1 - world.1).abs() < 1e-9);
+            t += 16_000;
+            assert!(t < 10 * ZOOM_ANIM_US, "l'animazione deve terminare");
+        }
+        assert!((state.zoom.get() - 2.0).abs() < 1e-9);
+        assert!(state.anim.borrow().is_none());
+    }
+
+    #[test]
+    fn kinetic_scroll_moves_in_the_flick_direction_and_stops() {
+        let state = view_state();
+        *state.anim.borrow_mut() = Some(ViewAnim::Kinetic {
+            velocity: (800.0, -400.0),
+            last: 0,
+        });
+        let mut t = 0;
+        while step_animation(&state, t) {
+            t += 16_000;
+            assert!(t < 5_000_000, "l'inerzia deve esaurirsi");
+        }
+        assert!(state.pan_x.get() > 100.0 && state.pan_y.get() < -50.0);
     }
 }
