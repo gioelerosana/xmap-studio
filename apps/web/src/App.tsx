@@ -228,7 +228,7 @@ export const App: React.FC = () => {
       const res = await openLocalXmindFile();
       if (!res) return;
       await requestWorkbookReplacement(async () => {
-        const dto = await controller.open(res.data, res.name, res.name);
+        const dto = await controller.open(res.data, undefined, res.name);
         setWorkbook(dto);
         setFileHandle(res.handle);
         setActiveSheetIndex(0);
@@ -247,7 +247,7 @@ export const App: React.FC = () => {
       if (!response.ok) throw new Error('File demo non reperibile');
       const buffer = await response.arrayBuffer();
       await requestWorkbookReplacement(async () => {
-        const dto = await controller.open(new Uint8Array(buffer), 'Relazioni.xmap-studio.xmind');
+        const dto = await controller.open(new Uint8Array(buffer), undefined, 'Relazioni.xmap-studio.xmind');
         setWorkbook(dto);
         setFileHandle(undefined);
         setActiveSheetIndex(0);
@@ -289,7 +289,7 @@ export const App: React.FC = () => {
     };
     const bytes = await buildArchiveBytes(raw);
     await requestWorkbookReplacement(async () => {
-      const dto = await controller.open(bytes, 'senza_titolo.xmind');
+      const dto = await controller.open(bytes, undefined, 'senza_titolo.xmind');
       setWorkbook(dto);
       setFileHandle(undefined);
       setActiveSheetIndex(0);
@@ -318,8 +318,7 @@ export const App: React.FC = () => {
         }
 
         const { bytes, validation } = await controller.prepareArchiveBytes();
-        const hasDesktopPath =
-          isElectron && workbook.path !== 'senza_titolo.xmind' && workbook.path.includes('/');
+        const hasDesktopPath = isElectron && workbook.path !== null;
         const expectedHash =
           !saveAs && (hasDesktopPath || Boolean(fileHandle))
             ? controller.expectedFileHash()
@@ -328,7 +327,7 @@ export const App: React.FC = () => {
 
         if (isElectron && window.electronAPI) {
           let savePath = workbook.path;
-          if (saveAs || !savePath || savePath === 'senza_titolo.xmind' || !savePath.includes('/')) {
+          if (saveAs || !savePath) {
             const selected = await window.electronAPI.saveFileDialog(workbook.fileName || 'mappa.xmind');
             if (!selected) return false;
             savePath = selected;
@@ -697,7 +696,7 @@ export const App: React.FC = () => {
             onLoadDemo={handleLoadDemo}
             onDropFiles={async (file) => {
               const buffer = await file.arrayBuffer();
-              const dto = await controller.open(new Uint8Array(buffer), file.name);
+              const dto = await controller.open(new Uint8Array(buffer), undefined, file.name);
               setWorkbook(dto);
               setActiveSheetIndex(0);
               setCollapsedIds(new Set());

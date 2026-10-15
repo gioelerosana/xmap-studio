@@ -3,6 +3,7 @@ import {
   CODE_INVALID_INPUT,
   CODE_IO,
   CODE_LATEX,
+  CODE_NO_PATH,
   CODE_NO_WORKBOOK,
   CODE_TOPIC_NOT_FOUND,
   CODE_VALIDATION,
@@ -111,7 +112,7 @@ export class AppController {
 
   public async open(
     data: ArrayBuffer | Uint8Array,
-    path: string = 'workbook.xmind',
+    path?: string | null,
     fileName?: string
   ): Promise<WorkbookDto> {
     const archive = await readArchive(data);
@@ -137,11 +138,15 @@ export class AppController {
     }
 
     const running = await xmindProcesses();
-    const name = fileName || path.split('/').pop() || 'workbook.xmind';
+    // Senza percorso il workbook non ha una destinazione su disco: il primo
+    // salvataggio deve passare da "Salva con nome".
+    const resolvedPath = path ?? null;
+    const name =
+      fileName || (resolvedPath ? resolvedPath.split(/[\\/]/).pop() : '') || 'workbook.xmind';
 
     const originalHash = await sha256HexAsync(data instanceof Uint8Array ? data : new Uint8Array(data));
     this.currentWorkbook = new OpenWorkbook(
-      path,
+      resolvedPath,
       name,
       archive,
       content,
@@ -561,7 +566,7 @@ export class AppController {
   public async importOutline(
     format: 'markdown' | 'opml' | string,
     text: string,
-    options: { asNewSheet?: boolean } = { asNewSheet: true }
+    options: { asNewSheet?: boolean } = {}
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
     const importedSheet = await importToSheet(format, text, async (t, latex) => {
@@ -569,18 +574,17 @@ export class AppController {
       wb.archive.resources.set(outcome.resource, png);
     });
 
-    if (options.asNewSheet || wb.content.length === 0) {
+    const asNewSheet = options.asNewSheet ?? true;
+    const root = wb.content[0]?.rootTopic;
+    if (asNewSheet || !root || !importedSheet.rootTopic) {
+      // Mai sovrascrivere il primo foglio: se non c'è una radice a cui
+      // agganciare l'import, lo si aggiunge come foglio nuovo.
       wb.content.push(importedSheet);
     } else {
       // Inserisci come figlio della radice del primo sheet
-      const root = wb.content[0].rootTopic;
-      if (root && importedSheet.rootTopic) {
-        if (!root.children) root.children = {};
-        if (!root.children.attached) root.children.attached = [];
-        root.children.attached.push(importedSheet.rootTopic);
-      } else {
-        wb.content[0] = importedSheet;
-      }
+      if (!root.children) root.children = {};
+      if (!root.children.attached) root.children.attached = [];
+      root.children.attached.push(importedSheet.rootTopic);
     }
 
     wb.pushHistory();
@@ -710,27 +714,31 @@ export class AppController {
   public async prepareArchiveBytes(): Promise<{ bytes: Uint8Array; validation: ValidationReport }> {
     const wb = this.ensureWorkbook();
 
+    // Si lavora su una copia: se la validazione fallisce il workbook vivo
+    // resta intatto (i byte delle entry sono condivisi, mai modificati).
+    const archive: RawArchive = {
+      entries: new Map(wb.archive.entries),
+      resources: new Map(wb.archive.resources),
+    };
+
     // Rimuove thumbnail obsoleta (Regola 9)
-    wb.archive.entries.delete('Thumbnails/thumbnail.png');
+    archive.entries.delete('Thumbnails/thumbnail.png');
 
-    // Aggiorna manifest con tutte le risorse attuali e dropThumbnail
-    const updatedManifest = refreshManifest(wb.manifest, wb.archive.resources.keys(), true);
+    // refreshManifest/registerEntries mutano il loro input: clone profondo.
+    const manifest = refreshManifest(
+      JSON.parse(JSON.stringify(wb.manifest ?? {})) as Record<string, unknown>,
+      archive.resources.keys(),
+      true
+    );
     registerEntries(
-      updatedManifest,
-      Array.from(wb.archive.entries.keys()).filter((name) => name.startsWith('attachments/'))
-    );
-    wb.manifest = updatedManifest;
-
-    wb.archive.entries.set(
-      'manifest.json',
-      new TextEncoder().encode(JSON.stringify(updatedManifest))
-    );
-    wb.archive.entries.set(
-      'content.json',
-      new TextEncoder().encode(JSON.stringify(wb.content))
+      manifest,
+      Array.from(archive.entries.keys()).filter((name) => name.startsWith('attachments/'))
     );
 
-    const bytes = await buildArchiveBytes(wb.archive);
+    archive.entries.set('manifest.json', new TextEncoder().encode(JSON.stringify(manifest)));
+    archive.entries.set('content.json', new TextEncoder().encode(JSON.stringify(wb.content)));
+
+    const bytes = await buildArchiveBytes(archive);
     const validation = await validateArchiveBytes(bytes);
 
     return { bytes, validation };
@@ -774,6 +782,9 @@ export class AppController {
 
     const { bytes, validation } = await this.prepareArchiveBytes();
     const target = targetPath ?? wb.path;
+    if (!target) {
+      throw new XmapError(CODE_NO_PATH, 'La mappa non ha ancora un file: usa "Salva con nome".');
+    }
     const expectedHash = target === wb.path ? wb.originalHash : undefined;
     const report = await atomicWrite(target, bytes, true, expectedHash);
     const fs = await import('node:fs');

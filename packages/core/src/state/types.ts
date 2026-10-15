@@ -63,7 +63,8 @@ export interface SheetDto {
 }
 
 export interface WorkbookDto {
-  path: string;
+  /** Percorso su disco; `null` per mappe nuove o aperte senza percorso (browser). */
+  path: string | null;
   fileName: string;
   dirty: boolean;
   canUndo: boolean;

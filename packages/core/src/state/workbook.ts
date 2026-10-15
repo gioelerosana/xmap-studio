@@ -29,7 +29,7 @@ const MAX_HISTORY = 200;
 const UNREACHABLE = -1;
 
 export class OpenWorkbook {
-  public path: string;
+  public path: string | null;
   public fileName: string;
   public archive: RawArchive;
   public content: Sheet[];
@@ -41,7 +41,7 @@ export class OpenWorkbook {
   public originalHash: string;
 
   constructor(
-    path: string,
+    path: string | null,
     fileName: string,
     archive: RawArchive,
     content: Sheet[],

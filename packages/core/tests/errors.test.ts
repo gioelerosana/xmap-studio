@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import {
   AppController,
@@ -15,24 +14,7 @@ import {
   toErrorPayload,
   validateArchiveBytes,
 } from '../src/index.js';
-
-async function minimalXmind(): Promise<Uint8Array> {
-  const zip = new JSZip();
-  zip.file(
-    'content.json',
-    JSON.stringify([
-      {
-        id: 's1',
-        class: 'sheet',
-        title: 'Foglio',
-        rootTopic: { id: 'r', class: 'topic', title: 'Radice', children: { attached: [{ id: 'a', title: 'A' }] } },
-      },
-    ])
-  );
-  zip.file('manifest.json', JSON.stringify({ 'file-entries': { 'content.json': {}, 'metadata.json': {} } }));
-  zip.file('metadata.json', '{}');
-  return zip.generateAsync({ type: 'uint8array' });
-}
+import { minimalXmind } from './helpers.js';
 
 async function codeOf(fn: () => unknown): Promise<string | undefined> {
   try {
