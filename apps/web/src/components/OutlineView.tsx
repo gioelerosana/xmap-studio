@@ -1,4 +1,6 @@
 import React from 'react';
+import { Card, EmptyHint } from '@xmap/ui-kit';
+import { ListTree } from 'lucide-react';
 
 export interface OutlineViewProps {
   text: string;
@@ -11,16 +13,18 @@ export interface OutlineViewProps {
 export const OutlineView: React.FC<OutlineViewProps> = ({ text }) => {
   if (!text.trim()) {
     return (
-      <div className="flex-1 h-full flex items-center justify-center text-sm text-[var(--adw-muted-color)]">
-        Nessun contenuto da mostrare.
+      <div className="flex-1 flex items-center justify-center bg-background">
+        <EmptyHint icon={<ListTree className="size-4" />} title="Nessun contenuto da mostrare." />
       </div>
     );
   }
   return (
-    <div className="flex-1 h-full overflow-y-auto">
-      <pre className="max-w-3xl mx-auto px-8 py-6 text-[13px] leading-relaxed font-mono whitespace-pre-wrap text-[var(--adw-fg-color)]">
-        {text}
-      </pre>
+    <div className="flex-1 overflow-auto bg-background">
+      <div className="max-w-3xl mx-auto px-6 py-6">
+        <Card className="p-4">
+          <pre className="font-mono text-xs leading-5 text-foreground whitespace-pre-wrap">{text}</pre>
+        </Card>
+      </div>
     </div>
   );
 };

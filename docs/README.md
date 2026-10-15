@@ -13,6 +13,7 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
 | [`PRODUCT.md`](PRODUCT.md) | Posizionamento, feature precluse a XMind Free, roadmap |
 | [`MAP-VIEW.md`](MAP-VIEW.md) | Piano della vista mappa ad albero (Fase 7) |
+| [`DESIGN-SYSTEM.md`](DESIGN-SYSTEM.md) | Design system T3 Code: token, classi Tailwind e API di `@xmap/ui-kit` |
 
 Per le regole di lavoro destinate agli agenti (e ai contributor) vedi
 [`AGENTS.md`](../AGENTS.md) nella radice.

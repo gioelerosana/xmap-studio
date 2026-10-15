@@ -5,11 +5,18 @@ import {
   Minus,
   Maximize2,
   FileText,
-  Sparkles,
+  Sigma,
+  Network,
   Edit3,
   Trash2,
 } from 'lucide-react';
-import { cn } from '@xmap/ui-kit';
+import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+
+// MathJax produce SVG con colore letterale, non una variabile CSS: i valori
+// replicano il token foreground nei due temi. La radice ha sfondo "inchiostro"
+// (--map-root), quindi la sua formula usa il colore invertito rispetto al tema.
+const FORMULA_COLOR = { dark: '#f5f5f5', light: '#2b2b30' };
+const FORMULA_COLOR_ON_ROOT = { dark: '#0a0a0a', light: '#fcfcfc' };
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -71,13 +78,15 @@ export const MapView: React.FC<MapViewProps> = ({
     const cache = new Map<string, string>();
     if (!layout) return cache;
 
-    const color = darkMode ? '#ffffff' : '#1e1e1e';
+    const theme = darkMode ? 'dark' : 'light';
     for (const node of layout.nodes) {
       const latex = node.latex;
       if (latex) {
         try {
           const res = renderLatexToSvg(latex, 16);
           if (!res.error && res.svg) {
+            const onRootInk = node.depth === 0 && !node.fill;
+            const color = (onRootInk ? FORMULA_COLOR_ON_ROOT : FORMULA_COLOR)[theme];
             const coloredSvg = res.svg.replaceAll('currentColor', color);
             cache.set(node.id, coloredSvg);
           }
@@ -213,14 +222,17 @@ export const MapView: React.FC<MapViewProps> = ({
 
   if (!layout || layout.nodes.length === 0) {
     return (
-      <div className="flex-1 h-full flex flex-col items-center justify-center p-8 text-center select-none text-[var(--adw-muted-color)] bg-[var(--adw-bg-color)]">
-        <Sparkles className="w-8 h-8 text-[var(--adw-accent-color)] opacity-40 mb-2" />
-        <p className="text-sm font-medium">Nessuna mappa da visualizzare.</p>
+      <div className="flex-1 h-full flex flex-col items-center justify-center gap-3 p-8 text-center select-none bg-background">
+        <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
+          <Network className="size-5 text-muted-foreground" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium text-foreground">Nessuna mappa da visualizzare.</p>
+          <p className="text-xs text-muted-foreground">Apri un file .xmind o creane uno nuovo per iniziare.</p>
+        </div>
       </div>
     );
   }
-
-  const defaultAccent = '#3584e4';
 
   return (
     <div
@@ -230,44 +242,39 @@ export const MapView: React.FC<MapViewProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={stopPan}
       onMouseLeave={stopPan}
-      className="relative flex-1 h-full w-full overflow-hidden bg-[var(--adw-bg-color)] select-none cursor-grab active:cursor-grabbing transition-colors duration-150"
+      className="relative flex-1 h-full w-full overflow-hidden bg-background select-none cursor-grab active:cursor-grabbing transition-colors duration-150"
     >
-      {/* Controlli Zoom Flottanti in basso a destra */}
-      <div className="absolute bottom-5 right-5 z-20 flex items-center space-x-1 p-1 rounded-xl bg-[var(--adw-card-bg)]/90 backdrop-blur-md border border-[var(--adw-card-border)] shadow-md">
-        <button
-          type="button"
+      {/* Controlli zoom flottanti in basso a destra */}
+      <div className="absolute bottom-5 right-5 z-20 flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer">
+        <IconButton
+          size="sm"
+          variant="ghost"
+          label="Riduci zoom"
           onClick={() => setZoom((z) => Math.max(z * 0.85, 0.12))}
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-fg-color)] transition-colors"
-          title="Zoom Indietro"
         >
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-        <span className="text-[11px] font-semibold px-1 min-w-[38px] text-center font-mono text-[var(--adw-fg-color)]">
+          <Minus className="size-4" />
+        </IconButton>
+        <span className="text-2xs font-mono tabular-nums text-muted-foreground min-w-[3rem] text-center">
           {Math.round(zoom * 100)}%
         </span>
-        <button
-          type="button"
+        <IconButton
+          size="sm"
+          variant="ghost"
+          label="Aumenta zoom"
           onClick={() => setZoom((z) => Math.min(z * 1.15, 3.5))}
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-fg-color)] transition-colors"
-          title="Zoom Avanti"
         >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
-        <div className="w-[1px] h-3.5 bg-[var(--adw-card-border)] mx-0.5" />
-        <button
-          type="button"
-          onClick={fitToView}
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-accent-color)] transition-colors"
-          title="Adatta alla finestra (vista integrale)"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
+          <Plus className="size-4" />
+        </IconButton>
+        <Separator orientation="vertical" className="h-4 mx-0.5" />
+        <IconButton size="sm" variant="ghost" label="Adatta alla finestra" onClick={fitToView}>
+          <Maximize2 className="size-4" />
+        </IconButton>
       </div>
 
-      {/* Barra Contestuale Flottante sul Nodo Selezionato */}
+      {/* Barra contestuale flottante sul nodo selezionato */}
       {selectedNode && (
         <div
-          className="absolute z-20 pointer-events-auto flex items-center space-x-1 p-1 rounded-xl bg-[var(--adw-card-bg)]/95 backdrop-blur-md border border-[var(--adw-card-border)] shadow-lg text-xs"
+          className="absolute z-20 pointer-events-auto flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer"
           style={{
             left: `${pan.x + selectedNode.x * zoom}px`,
             top: `${pan.y + (selectedNode.y - 42) * zoom}px`,
@@ -275,56 +282,61 @@ export const MapView: React.FC<MapViewProps> = ({
           }}
         >
           {onAddChild && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Plus className="size-4" />}
               onClick={() => onAddChild(selectedNode.id)}
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-fg-color)] transition-colors"
               title="Aggiungi sotto-blocco"
             >
-              <Plus className="w-3.5 h-3.5 text-[var(--adw-accent-color)]" />
-              <span className="text-[11px] font-medium">Sotto-blocco</span>
-            </button>
+              Sotto-blocco
+            </Button>
           )}
           {onOpenLatex && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Sigma className="size-4" />}
               onClick={() => onOpenLatex(selectedNode.id)}
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-fg-color)] transition-colors"
               title="Modifica formula LaTeX"
             >
-              <Sparkles className="w-3.5 h-3.5 text-[var(--adw-accent-color)]" />
-              <span className="text-[11px] font-medium">Formula</span>
-            </button>
+              Formula
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Edit3 className="size-4" />}
             onClick={() => onOpenDetails(selectedNode.id)}
-            className="flex items-center space-x-1 px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--adw-fg-color)] transition-colors"
             title="Apri pannello dettagli"
           >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span className="text-[11px] font-medium">Dettagli</span>
-          </button>
+            Dettagli
+          </Button>
           {selectedNode.depth > 0 && onDeleteTopic && (
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm('Eliminare questo blocco?')) {
-                  onDeleteTopic(selectedNode.id);
-                }
-              }}
-              className="p-1 rounded-lg hover:bg-[var(--adw-destructive-color)]/15 text-[var(--adw-destructive-color)] transition-colors ml-0.5"
-              title="Elimina blocco"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            <>
+              <Separator orientation="vertical" className="h-4 mx-0.5" />
+              <IconButton
+                size="sm"
+                variant="ghost-destructive"
+                label="Elimina blocco"
+                onClick={() => {
+                  if (confirm('Eliminare questo blocco?')) {
+                    onDeleteTopic(selectedNode.id);
+                  }
+                }}
+              >
+                <Trash2 className="size-4" />
+              </IconButton>
+            </>
           )}
         </div>
       )}
 
-      {/* Canvas SVG Principale */}
+      {/* Canvas SVG principale */}
+      {/* overflow-visible: l'SVG ritaglia prima della trasformazione, quindi senza
+          questa classe a zoom < 1 la mappa verrebbe tagliata a una frazione del canvas. */}
       <svg
-        className="w-full h-full"
+        className="w-full h-full overflow-visible"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
       >
         <defs>
@@ -336,17 +348,11 @@ export const MapView: React.FC<MapViewProps> = ({
             height="24"
             patternUnits="userSpaceOnUse"
           >
-            <circle
-              cx="2"
-              cy="2"
-              r="1"
-              fill={darkMode ? '#ffffff' : '#000000'}
-              opacity={darkMode ? 0.12 : 0.08}
-            />
+            <circle cx="2" cy="2" r="1" fill="var(--map-grid-dot)" />
           </pattern>
 
           <marker id="rel-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e01b24" opacity="0.85" />
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--muted-foreground)" />
           </marker>
         </defs>
 
@@ -372,17 +378,16 @@ export const MapView: React.FC<MapViewProps> = ({
           const deltaX = Math.abs(endX - startX) * 0.55;
 
           const pathD = `M ${startX} ${startY} C ${startX + deltaX} ${startY}, ${endX - deltaX} ${endY}, ${endX} ${endY}`;
-          const strokeColor = c.accent || (c.depth === 1 ? '#3584e4' : darkMode ? '#5a5d64' : '#c4c9d2');
 
           return (
             <path
               key={`edge-${idx}`}
               d={pathD}
               fill="none"
-              stroke={strokeColor}
-              strokeWidth={p.depth === 0 ? 2.5 : 1.8}
+              stroke={c.accent || 'var(--map-link)'}
+              strokeWidth={1.5}
               strokeLinecap="round"
-              opacity={0.85}
+              opacity={c.accent ? 0.8 : 1}
             />
           );
         })}
@@ -398,35 +403,65 @@ export const MapView: React.FC<MapViewProps> = ({
           const ey = to.y + to.h / 2;
           const cx = (sx + ex) / 2 - (ey - sy) * 0.2;
           const cy = (sy + ey) / 2 + (ex - sx) * 0.2;
+          // Larghezza stimata della pillola: ~6px per carattere a 11px.
+          const labelW = rel.title ? rel.title.length * 6 + 14 : 0;
 
           return (
             <g key={`rel-${rel.id}`}>
               <path
                 d={`M ${sx} ${sy} Q ${cx} ${cy}, ${ex} ${ey}`}
                 fill="none"
-                stroke="#e01b24"
-                strokeWidth={1.8}
-                strokeDasharray="5,4"
+                stroke="var(--muted-foreground)"
+                strokeWidth={1.5}
+                strokeDasharray="5 4"
                 markerEnd="url(#rel-arrow)"
-                opacity={0.75}
+                opacity={0.8}
               />
               {rel.title && (
-                <text x={cx} y={cy - 6} fill="#e01b24" fontSize={10} textAnchor="middle" fontWeight={600}>
-                  {rel.title}
-                </text>
+                <>
+                  <rect
+                    x={cx - labelW / 2}
+                    y={cy - 18}
+                    width={labelW}
+                    height={16}
+                    rx={6}
+                    fill="var(--background)"
+                    stroke="var(--border)"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={cx}
+                    y={cy - 10}
+                    fill="var(--muted-foreground)"
+                    className="text-2xs font-medium"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {rel.title}
+                  </text>
+                </>
               )}
             </g>
           );
         })}
 
-        {/* Nodi della Mappa */}
+        {/* Nodi della mappa */}
         {layout.nodes.map((node) => {
           const isSelected = node.id === selectedTopicId;
           const isRoot = node.depth === 0;
-          const nodeAccent = node.accent || (isRoot ? defaultAccent : undefined);
+          const isBranch = node.depth === 1;
+          const nodeAccent = node.accent;
           const hasChildren = node.childCount > 0;
           const formulaSvg = formulaSvgCache.get(node.id);
           const hasImage = Boolean(node.imageSrc && resourceUrls.has(node.imageSrc));
+          // Radice su sfondo "inchiostro": testo e chip usano il colore invertito.
+          const onInk = isRoot && !node.fill;
+          // Il bordo della radice si confonde con l'inchiostro (o prende l'accento
+          // scelto dall'utente); lo style batte le classi `stroke-*` del rettangolo.
+          const rootStroke = !isSelected && isRoot ? nodeAccent || (onInk ? 'var(--map-root)' : undefined) : undefined;
+          const chipInkStyle = onInk
+            ? { backgroundColor: 'color-mix(in oklab, var(--map-root-foreground) 16%, transparent)' }
+            : undefined;
 
           return (
             <g
@@ -442,49 +477,37 @@ export const MapView: React.FC<MapViewProps> = ({
                 onOpenDetails(node.id);
               }}
             >
-              {/* Bordo di selezione luminoso */}
+              {/* Alone di selezione: anello esterno adiacente al bordo (3px, 24%) */}
               {isSelected && (
                 <rect
-                  x={-3}
-                  y={-3}
-                  width={node.w + 6}
-                  height={node.h + 6}
-                  rx={isRoot ? 15 : 11}
+                  x={-2.25}
+                  y={-2.25}
+                  width={node.w + 4.5}
+                  height={node.h + 4.5}
+                  rx={12.25}
                   fill="none"
-                  stroke="var(--adw-accent-color)"
-                  strokeWidth={2.5}
-                  opacity={0.9}
+                  stroke="color-mix(in oklab, var(--primary) 24%, transparent)"
+                  strokeWidth={3}
                 />
               )}
 
-              {/* Rettangolo Base della Card del Nodo */}
+              {/* Rettangolo base della card del nodo */}
               <rect
+                className={cn(
+                  'transition-colors duration-150',
+                  isSelected ? 'stroke-primary' : 'stroke-border group-hover:stroke-input'
+                )}
                 width={node.w}
                 height={node.h}
-                rx={isRoot ? 12 : 8}
-                fill={
-                  node.fill ||
-                  (isRoot
-                    ? 'var(--adw-accent-soft)'
-                    : darkMode
-                    ? '#2b2b2b'
-                    : '#ffffff')
-                }
-                stroke={
-                  isSelected
-                    ? 'var(--adw-accent-color)'
-                    : nodeAccent || 'var(--adw-card-border)'
-                }
-                strokeWidth={isSelected ? 2 : nodeAccent ? 1.8 : 1}
-                filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"
+                rx={10}
+                fill={node.fill || (isRoot ? 'var(--map-root)' : 'var(--card)')}
+                strokeWidth={isSelected || (isRoot && nodeAccent) ? 1.5 : 1}
+                style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.04))', stroke: rootStroke }}
               />
 
-              {/* Strip Accent Color a Sinistra */}
+              {/* Barretta d'accento a sinistra (colore scelto dall'utente) */}
               {!isRoot && nodeAccent && (
-                <path
-                  d={`M 0 8 Q 0 0 8 0 L 8 ${node.h} Q 0 ${node.h} 0 ${node.h - 8} Z`}
-                  fill={nodeAccent}
-                />
+                <rect x={5} y={8} width={3} height={Math.max(node.h - 16, 4)} rx={1.5} fill={nodeAccent} />
               )}
 
               {/* Immagine allegata se presente */}
@@ -496,12 +519,12 @@ export const MapView: React.FC<MapViewProps> = ({
                   width={Math.max(node.w - 16, 20)}
                   height={Math.max(node.h - 8, 20)}
                   preserveAspectRatio="xMidYMid meet"
-                  className={node.kind === 'equation' ? 'dark:invert' : undefined}
+                  className={node.kind === 'equation' && darkMode !== onInk ? 'invert' : undefined}
                 />
               )}
 
-              {/* Contenuto del Nodo: Formula SVG o Testo Integrale */}
-              {!hasImage && (
+              {/* Contenuto del nodo: formula SVG (ha la precedenza sul PNG allegato) o testo */}
+              {(!hasImage || formulaSvg) && (
                 <foreignObject
                   x={isRoot ? 12 : nodeAccent ? 14 : 10}
                   y={4}
@@ -511,10 +534,10 @@ export const MapView: React.FC<MapViewProps> = ({
                   <div
                     className={cn(
                       'w-full h-full flex flex-col justify-center select-none overflow-hidden',
-                      isRoot ? 'text-[var(--adw-accent-color)]' : 'text-[var(--adw-fg-color)]'
+                      onInk ? 'text-[color:var(--map-root-foreground)]' : 'text-foreground'
                     )}
                   >
-                    <div className="flex items-center space-x-1.5 overflow-hidden">
+                    <div className="flex items-center gap-1.5 overflow-hidden">
                       {formulaSvg ? (
                         <div
                           className="flex items-center max-w-full overflow-hidden shrink-0"
@@ -524,7 +547,11 @@ export const MapView: React.FC<MapViewProps> = ({
                         <span
                           className={cn(
                             'break-words whitespace-normal leading-snug',
-                            isRoot ? 'text-sm font-bold tracking-tight text-[var(--adw-accent-color)]' : 'text-xs font-semibold'
+                            isRoot
+                              ? 'text-sm font-semibold tracking-tight'
+                              : isBranch
+                              ? 'text-xs font-semibold'
+                              : 'text-xs font-medium'
                           )}
                           style={{
                             display: '-webkit-box',
@@ -541,23 +568,27 @@ export const MapView: React.FC<MapViewProps> = ({
                       {node.hasNotes && (
                         <FileText
                           className={cn(
-                            'w-3 h-3 shrink-0 self-center',
-                            isRoot ? 'opacity-80' : 'opacity-50'
+                            'size-3.5 shrink-0 self-center',
+                            onInk ? 'opacity-70' : 'text-muted-foreground'
                           )}
                         />
                       )}
                     </div>
 
-                    {/* Riga Inferiore: Etichette e Marker */}
+                    {/* Riga inferiore: etichette e marker */}
                     {(node.labels.length > 0 || node.markers.length > 0) && (
-                      <div className="flex items-center space-x-1 mt-0.5 overflow-hidden">
+                      <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
                         {node.markers.map((m) => {
                           const isPriority = m.startsWith('priority-');
                           const pNum = isPriority ? m.replace('priority-', '') : null;
                           return (
                             <span
                               key={m}
-                              className="inline-flex items-center justify-center px-1 rounded text-[9px] font-bold bg-black/10 dark:bg-white/15"
+                              className={cn(
+                                'inline-flex h-3.5 shrink-0 items-center justify-center rounded-sm px-1 text-3xs font-medium leading-none',
+                                !onInk && 'bg-muted text-muted-foreground'
+                              )}
+                              style={chipInkStyle}
                               title={m}
                             >
                               {pNum ? `P${pNum}` : m.slice(0, 4)}
@@ -567,7 +598,11 @@ export const MapView: React.FC<MapViewProps> = ({
                         {node.labels.map((lbl) => (
                           <span
                             key={lbl}
-                            className="px-1.5 py-0.2 rounded-full text-[9px] bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)] truncate max-w-[60px]"
+                            className={cn(
+                              'block h-3.5 max-w-[60px] truncate rounded-sm border px-1 text-3xs font-medium leading-[12px]',
+                              !onInk && 'text-muted-foreground'
+                            )}
+                            style={onInk ? { borderColor: 'color-mix(in oklab, var(--map-root-foreground) 32%, transparent)' } : undefined}
                           >
                             {lbl}
                           </span>
@@ -578,31 +613,28 @@ export const MapView: React.FC<MapViewProps> = ({
                 </foreignObject>
               )}
 
-              {/* Indicatore Comprimi / Espandi sul bordo destro */}
+              {/* Indicatore comprimi / espandi sul bordo destro */}
               {hasChildren && (
                 <g
                   transform={`translate(${node.w}, ${node.h / 2})`}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
                     onToggleCollapse(node.id);
                   }}
                 >
-                  <circle
-                    r={7}
-                    fill={nodeAccent || defaultAccent}
-                    stroke="var(--adw-bg-color)"
-                    strokeWidth={1.5}
-                  />
+                  <circle r={7} fill="var(--popover)" stroke="var(--input)" strokeWidth={1} />
                   {node.collapsed ? (
                     <path
-                      d="M -2.5 -3 L 2 0 L -2.5 3"
+                      d="M -2 -3 L 2 0 L -2 3"
                       fill="none"
-                      stroke="white"
+                      stroke="currentColor"
                       strokeWidth={1.5}
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                     />
                   ) : (
-                    <path d="M -3 0 L 3 0" stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+                    <path d="M -3 0 L 3 0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
                   )}
                 </g>
               )}

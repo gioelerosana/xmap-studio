@@ -1,19 +1,27 @@
-import React from 'react';
+/*
+ * Barra superiore dell'app (CSD in Electron, normale nel browser).
+ *
+ * Perché il titolo è un overlay centrato: deve restare al centro della finestra
+ * qualunque sia la larghezza dei gruppi di sinistra e destra, senza spingerli.
+ * Le regioni trascinabili sono gestite da `.app-drag-region` (theme.css): i
+ * gruppi interattivi sono `app-no-drag`, lo spazio vuoto in mezzo trascina.
+ */
+import type { ReactNode } from 'react';
 import { cn } from './utils.js';
-import { WindowControls, WindowControlsProps } from './WindowControls.js';
+import { WindowControls, type WindowControlsProps } from './WindowControls.js';
 
 export interface HeaderBarProps {
-  title?: React.ReactNode;
-  subtitle?: React.ReactNode;
-  leftContent?: React.ReactNode;
-  centerContent?: React.ReactNode;
-  rightContent?: React.ReactNode;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  leftContent?: ReactNode;
+  centerContent?: ReactNode;
+  rightContent?: ReactNode;
   showWindowControls?: boolean;
   windowControlProps?: WindowControlsProps;
   className?: string;
 }
 
-export const HeaderBar: React.FC<HeaderBarProps> = ({
+export function HeaderBar({
   title,
   subtitle,
   leftContent,
@@ -22,38 +30,33 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   showWindowControls = false,
   windowControlProps,
   className,
-}) => {
+}: HeaderBarProps) {
   return (
     <header
       className={cn(
-        'app-drag-region relative h-12 shrink-0 flex items-center gap-3 px-3 border-b select-none',
-        'bg-[var(--adw-headerbar-bg)] border-[var(--adw-headerbar-border)] text-[var(--adw-fg-color)]',
-        className
+        'app-drag-region relative flex h-topbar shrink-0 select-none items-center gap-3 border-b bg-background px-3 text-foreground',
+        className,
       )}
     >
       {/* Sinistra: identità file + azioni primarie */}
-      <div className="app-no-drag flex items-center gap-2 min-w-0">
-        {leftContent}
-      </div>
+      <div className="app-no-drag flex min-w-0 items-center gap-1.5">{leftContent}</div>
 
       {/* Destra: switcher, azioni secondarie, controlli finestra */}
-      <div className="app-no-drag flex items-center gap-2 min-w-0 ml-auto">
+      <div className="app-no-drag ml-auto flex min-w-0 items-center gap-1.5">
         {centerContent}
         {rightContent}
         {showWindowControls && <WindowControls {...windowControlProps} />}
       </div>
 
       {/* Titolo centrato in overlay, non occupa spazio nel flusso */}
-      {title && (
-        <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 flex flex-col items-center max-w-[40%]">
-          <span className="text-[13px] font-semibold truncate max-w-full">{title}</span>
-          {subtitle && (
-            <span className="text-[11px] text-[var(--adw-muted-color)] truncate max-w-full -mt-0.5">
-              {subtitle}
-            </span>
-          )}
+      {title ? (
+        <div className="pointer-events-none absolute left-1/2 flex max-w-[40%] -translate-x-1/2 flex-col items-center">
+          <span className="max-w-full truncate text-sm font-medium">{title}</span>
+          {subtitle ? (
+            <span className="max-w-full truncate text-2xs text-muted-foreground">{subtitle}</span>
+          ) : null}
         </div>
-      )}
+      ) : null}
     </header>
   );
-};
+}

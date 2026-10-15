@@ -55,7 +55,7 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
     minWidth: 720,
     minHeight: 520,
     frame: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#242424' : '#fafafa',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#fcfcfc',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

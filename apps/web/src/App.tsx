@@ -7,6 +7,7 @@ import {
   Menu,
   MenuItem,
   Modal,
+  Separator,
   ToastContainer,
   ToastMessage,
 } from '@xmap/ui-kit';
@@ -49,6 +50,7 @@ import {
 import { Sidebar } from './components/Sidebar.js';
 import { MapView } from './components/MapView.js';
 import { OutlineView } from './components/OutlineView.js';
+import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
 import { ExportModal } from './components/ExportModal.js';
 import { ImportModal } from './components/ImportModal.js';
@@ -571,13 +573,13 @@ export const App: React.FC = () => {
 
   const menuItems: MenuItem[] = workbook
     ? [
-        { id: 'save-as', label: 'Salva con nome…', icon: <Save className="w-3.5 h-3.5" />, shortcut: 'Ctrl+Shift+S', onSelect: handleSaveAs },
-        { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="w-3.5 h-3.5" />, separatorBefore: true, onSelect: () => setExportModalOpen(true) },
-        { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="w-3.5 h-3.5" />, onSelect: () => setImportModalOpen(true) },
+        { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', onSelect: handleSaveAs },
+        { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: () => setExportModalOpen(true) },
+        { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="size-4" />, onSelect: () => setImportModalOpen(true) },
         {
           id: 'export-svg',
           label: 'Esporta equazione SVG',
-          icon: <Sigma className="w-3.5 h-3.5" />,
+          icon: <Sigma className="size-4" />,
           separatorBefore: true,
           disabled: selectedTopic?.kind !== 'equation',
           onSelect: () => handleExportEquation('svg'),
@@ -585,56 +587,56 @@ export const App: React.FC = () => {
         {
           id: 'export-png',
           label: 'Esporta equazione PNG',
-          icon: <Sigma className="w-3.5 h-3.5" />,
+          icon: <Sigma className="size-4" />,
           disabled: selectedTopic?.kind !== 'equation',
           onSelect: () => handleExportEquation('png'),
         },
-        { id: 'attach', label: 'Allega file…', icon: <Paperclip className="w-3.5 h-3.5" />, separatorBefore: true, disabled: !selectedTopic, onSelect: handleAttach },
-        { id: 'merge', label: 'Unisci una mappa…', icon: <Merge className="w-3.5 h-3.5" />, onSelect: handleMerge },
-        { id: 'split', label: 'Estrai ramo come mappa…', icon: <Split className="w-3.5 h-3.5" />, disabled: !selectedTopic || selectedTopic.depth === 0, onSelect: handleSplit },
+        { id: 'attach', label: 'Allega file…', icon: <Paperclip className="size-4" />, separatorBefore: true, disabled: !selectedTopic, onSelect: handleAttach },
+        { id: 'merge', label: 'Unisci una mappa…', icon: <Merge className="size-4" />, onSelect: handleMerge },
+        { id: 'split', label: 'Estrai ramo come mappa…', icon: <Split className="size-4" />, disabled: !selectedTopic || selectedTopic.depth === 0, onSelect: handleSplit },
         {
           id: 'delete',
           label: 'Elimina blocco',
-          icon: <Trash2 className="w-3.5 h-3.5" />,
+          icon: <Trash2 className="size-4" />,
           danger: true,
           separatorBefore: true,
           disabled: !selectedTopic || selectedTopic.depth === 0,
           onSelect: handleDeleteSelected,
         },
-        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />, separatorBefore: true, onSelect: () => setDarkMode((v) => !v) },
-        { id: 'about', label: 'Informazioni', icon: <Info className="w-3.5 h-3.5" />, onSelect: () => setAboutOpen(true) },
+        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: true, onSelect: () => setDarkMode((v) => !v) },
+        { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ]
     : [
-        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />, onSelect: () => setDarkMode((v) => !v) },
-        { id: 'about', label: 'Informazioni', icon: <Info className="w-3.5 h-3.5" />, onSelect: () => setAboutOpen(true) },
+        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, onSelect: () => setDarkMode((v) => !v) },
+        { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ];
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--adw-bg-color)] text-[var(--adw-fg-color)] select-none">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground select-none">
       <HeaderBar
         title={workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio'}
         subtitle={workbook?.dirty ? 'Modifiche non salvate' : undefined}
         leftContent={
           <>
-            <Button variant="flat" size="sm" icon={<FolderOpen className="w-4 h-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
+            <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
               Apri
             </Button>
             <Button
-              variant={workbook?.dirty ? 'suggested' : 'flat'}
+              variant={workbook?.dirty ? 'default' : 'ghost'}
               size="sm"
-              icon={<Save className="w-4 h-4" />}
+              icon={<Save className="size-4" />}
               disabled={!workbook || busy}
               onClick={handleSave}
               title="Salva (Ctrl+S)"
             >
               Salva
             </Button>
-            <div className="w-px h-4 bg-[var(--adw-hairline)] mx-0.5" />
-            <IconButton size="sm" disabled={!workbook?.canUndo} onClick={() => { controller.undo(); refreshState(); }} title="Annulla (Ctrl+Z)">
-              <Undo2 className="w-4 h-4" />
+            <Separator orientation="vertical" className="h-4 mx-1" />
+            <IconButton size="sm" disabled={!workbook?.canUndo} onClick={() => { controller.undo(); refreshState(); }} label="Annulla (Ctrl+Z)">
+              <Undo2 className="size-4" />
             </IconButton>
-            <IconButton size="sm" disabled={!workbook?.canRedo} onClick={() => { controller.redo(); refreshState(); }} title="Ripeti (Ctrl+Shift+Z)">
-              <Redo2 className="w-4 h-4" />
+            <IconButton size="sm" disabled={!workbook?.canRedo} onClick={() => { controller.redo(); refreshState(); }} label="Ripeti (Ctrl+Shift+Z)">
+              <Redo2 className="size-4" />
             </IconButton>
           </>
         }
@@ -642,11 +644,12 @@ export const App: React.FC = () => {
           workbook && (
             <ViewSwitcher
               items={[
-                { id: 'map', label: 'Mappa', icon: <Network className="w-3.5 h-3.5" /> },
-                { id: 'outline', label: 'Outliner', icon: <ListTree className="w-3.5 h-3.5" /> },
+                { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
+                { id: 'outline', label: 'Outliner', icon: <ListTree className="size-4" /> },
               ]}
               activeId={viewMode}
               onChange={(id) => setViewMode(id as 'map' | 'outline')}
+              size="sm"
             />
           )
         }
@@ -661,17 +664,17 @@ export const App: React.FC = () => {
                   if (selectedTopicId) setSelectedTopicId(undefined);
                   else if (allTopics[0]) setSelectedTopicId(allTopics[0].id);
                 }}
-                title={selectedTopicId ? 'Chiudi pannello dettagli' : 'Apri pannello dettagli'}
+                label={selectedTopicId ? 'Chiudi pannello dettagli' : 'Apri pannello dettagli'}
               >
-                <PanelRight className="w-4 h-4" />
+                <PanelRight className="size-4" />
               </IconButton>
             )}
-            <IconButton size="sm" onClick={() => setDarkMode((v) => !v)} title="Cambia tema">
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            <IconButton size="sm" onClick={() => setDarkMode((v) => !v)} label="Cambia tema">
+              {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </IconButton>
-            <Menu items={menuItems} widthClass="w-64" trigger={
-              <IconButton size="sm" title="Menu">
-                <MoreVertical className="w-4 h-4" />
+            <Menu items={menuItems} widthClass="w-72" trigger={
+              <IconButton size="sm" label="Menu">
+                <MoreVertical className="size-4" />
               </IconButton>
             } />
           </>
@@ -741,24 +744,20 @@ export const App: React.FC = () => {
               )}
 
               {workbook.sheets.length > 1 && (
-                <div className="h-9 shrink-0 border-t border-[var(--adw-card-border)] bg-[var(--adw-sidebar-bg)] flex items-center gap-1 px-2 overflow-x-auto">
+                <div className="h-9 shrink-0 border-t bg-sidebar flex items-center gap-1 px-2 overflow-x-auto">
                   {workbook.sheets.map((sheet, idx) => (
-                    <button
+                    <Button
                       key={sheet.id || idx}
-                      type="button"
+                      size="xs"
+                      variant={idx === activeSheetIndex ? 'ghost' : 'ghost-muted'}
+                      className={idx === activeSheetIndex ? 'bg-sidebar-row-active shadow-control text-foreground font-medium' : undefined}
                       onClick={() => {
                         setActiveSheetIndex(idx);
                         setSelectedTopicId(undefined);
                       }}
-                      className={
-                        'px-2.5 h-6 rounded-md text-[12px] whitespace-nowrap transition-colors ' +
-                        (idx === activeSheetIndex
-                          ? 'bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)] font-medium'
-                          : 'text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)] hover:bg-[var(--adw-button-hover)]')
-                      }
                     >
                       {sheet.title}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -800,11 +799,14 @@ export const App: React.FC = () => {
         }}
       />
 
-      <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title="XMap Studio" maxWidth="max-w-sm">
-        <p className="text-[13px] leading-relaxed text-[var(--adw-muted-color)]">
-          Editor per mappe XMind con equazioni LaTeX native. Lossless, offline, scrittura atomica e validata.
-        </p>
-        <p className="text-[12px] mt-3 text-[var(--adw-muted-color)]">Versione 2.0 — TypeScript / React</p>
+      <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title="XMap Studio" size="sm">
+        <div className="flex flex-col gap-3">
+          <AppMark size={40} />
+          <p className="text-sm text-muted-foreground">
+            Editor per mappe XMind con equazioni LaTeX native. Lossless, offline, scrittura atomica e validata.
+          </p>
+          <p className="text-2xs text-muted-foreground font-mono">Versione 2.0 — TypeScript / React</p>
+        </div>
       </Modal>
 
       <Modal
@@ -812,12 +814,12 @@ export const App: React.FC = () => {
         onClose={() => setClosePrompt(null)}
         title="Salvare le modifiche?"
         description="Ci sono modifiche non salvate. Se chiudi senza salvare andranno perse."
-        maxWidth="max-w-sm"
+        size="sm"
         footer={
           <div className="flex items-center justify-end gap-2 w-full">
-            <Button variant="flat" size="sm" onClick={() => handleConfirmClose('cancel')}>Annulla</Button>
-            <Button variant="destructive" size="sm" onClick={() => handleConfirmClose('discard')}>Non salvare</Button>
-            <Button variant="suggested" size="sm" onClick={() => handleConfirmClose('save')}>Salva</Button>
+            <Button variant="secondary" onClick={() => handleConfirmClose('cancel')}>Annulla</Button>
+            <Button variant="destructive-outline" onClick={() => handleConfirmClose('discard')}>Non salvare</Button>
+            <Button variant="default" onClick={() => handleConfirmClose('save')}>Salva</Button>
           </div>
         }
       >
@@ -829,12 +831,12 @@ export const App: React.FC = () => {
         onClose={() => void handleConfirmReplacement('cancel')}
         title="Salvare prima di aprire un’altra mappa?"
         description="Le modifiche non salvate andranno perse se sostituisci la mappa aperta."
-        maxWidth="max-w-sm"
+        size="sm"
         footer={
           <div className="flex items-center justify-end gap-2 w-full">
-            <Button variant="flat" size="sm" onClick={() => void handleConfirmReplacement('cancel')}>Annulla</Button>
-            <Button variant="destructive" size="sm" onClick={() => void handleConfirmReplacement('discard')}>Non salvare</Button>
-            <Button variant="suggested" size="sm" onClick={() => void handleConfirmReplacement('save')}>Salva</Button>
+            <Button variant="secondary" onClick={() => void handleConfirmReplacement('cancel')}>Annulla</Button>
+            <Button variant="destructive-outline" onClick={() => void handleConfirmReplacement('discard')}>Non salvare</Button>
+            <Button variant="default" onClick={() => void handleConfirmReplacement('save')}>Salva</Button>
           </div>
         }
       >

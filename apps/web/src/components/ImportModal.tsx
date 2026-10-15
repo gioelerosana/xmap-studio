@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Button, cn } from '@xmap/ui-kit';
+import { Modal, Button, Checkbox, Field, SegmentedControl, Textarea } from '@xmap/ui-kit';
 import { Upload } from 'lucide-react';
 import { pickAnyFile } from '../adapters/fileSystem.js';
 
@@ -10,6 +10,11 @@ export interface ImportModalProps {
   onClose: () => void;
   onImport: (format: ImportFormat, text: string, asNewSheet: boolean) => void;
 }
+
+const FORMAT_ITEMS: { id: ImportFormat; label: string }[] = [
+  { id: 'markdown', label: 'Markdown' },
+  { id: 'opml', label: 'OPML' },
+];
 
 export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onImport }) => {
   const [format, setFormat] = useState<ImportFormat>('markdown');
@@ -38,65 +43,43 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onImp
       onClose={onClose}
       title="Importa outline"
       description="Il contenuto viene aggiunto come nuovo foglio della mappa aperta."
-      maxWidth="max-w-2xl"
+      size="lg"
       footer={
-        <div className="flex items-center justify-between w-full">
-          <label className="flex items-center gap-2 text-xs cursor-pointer select-none text-[var(--adw-muted-color)]">
-            <input
-              type="checkbox"
-              checked={asNewSheet}
-              onChange={(e) => setAsNewSheet(e.target.checked)}
-              className="rounded"
-            />
-            Importa in un nuovo foglio
-          </label>
+        <div className="flex w-full items-center justify-between gap-3">
+          <Checkbox checked={asNewSheet} onCheckedChange={setAsNewSheet} label="Importa in un nuovo foglio" />
           <div className="flex items-center gap-2">
-            <Button variant="flat" size="sm" onClick={onClose}>
+            <Button variant="secondary" onClick={onClose}>
               Annulla
             </Button>
-            <Button variant="suggested" size="sm" disabled={!text.trim()} onClick={handleSubmit}>
+            <Button variant="default" disabled={!text.trim()} onClick={handleSubmit}>
               Importa
             </Button>
           </div>
         </div>
       }
     >
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-1">
-            {(['markdown', 'opml'] as const).map((fmt) => (
-              <button
-                key={fmt}
-                type="button"
-                onClick={() => setFormat(fmt)}
-                className={cn(
-                  'px-3 h-7 rounded-md text-xs border transition-colors',
-                  format === fmt
-                    ? 'border-[var(--adw-accent-color)] bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)] font-medium'
-                    : 'border-[var(--adw-card-border)] text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
-                )}
-              >
-                {fmt === 'markdown' ? 'Markdown' : 'OPML'}
-              </button>
-            ))}
-          </div>
-
-          <Button variant="flat" size="sm" icon={<Upload className="w-3.5 h-3.5" />} onClick={handleFile}>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <SegmentedControl items={FORMAT_ITEMS} activeId={format} onChange={setFormat} />
+          <Button variant="ghost" icon={<Upload className="size-4" />} onClick={handleFile}>
             Carica file…
           </Button>
         </div>
 
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={
-            format === 'markdown'
-              ? '# Argomento principale\n- Sotto-argomento\n  - Dettaglio $\\int x\\,dx$'
-              : '<opml version="2.0">…'
-          }
-          rows={12}
-          className="w-full px-3 py-2 text-xs font-mono rounded-md border border-[var(--adw-card-border)] bg-[var(--adw-surface)] text-[var(--adw-fg-color)] focus:outline-none resize-none"
-        />
+        <Field label="Contenuto">
+          <Textarea
+            mono
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={
+              format === 'markdown'
+                ? '# Argomento principale\n- Sotto-argomento\n  - Dettaglio $\\int x\\,dx$'
+                : '<opml version="2.0">…'
+            }
+            rows={12}
+            className="resize-none text-xs"
+          />
+        </Field>
       </div>
     </Modal>
   );

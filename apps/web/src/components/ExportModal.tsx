@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, Button, cn } from '@xmap/ui-kit';
-import { Copy, Download, Check } from 'lucide-react';
+import { Modal, Button, SegmentedControl, Textarea } from '@xmap/ui-kit';
+import { Check, Copy, Download } from 'lucide-react';
 import { saveBytes } from '../adapters/fileSystem.js';
 
 type ExportFormat = 'markdown' | 'opml' | 'outline';
@@ -17,6 +17,8 @@ const FORMATS: { id: ExportFormat; label: string; ext: string; mime: string }[] 
   { id: 'opml', label: 'OPML', ext: 'opml', mime: 'text/xml' },
   { id: 'outline', label: 'Testo', ext: 'txt', mime: 'text/plain' },
 ];
+
+const FORMAT_ITEMS = FORMATS.map(({ id, label }) => ({ id, label }));
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
@@ -46,52 +48,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Esporta Mappa" maxWidth="max-w-xl">
-      <div className="space-y-3">
-        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[var(--adw-surface)] border border-[var(--adw-card-border)]">
-          {FORMATS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFormat(f.id)}
-              className={cn(
-                'flex-1 h-7 rounded-md text-xs font-medium transition-colors',
-                format === f.id
-                  ? 'bg-[var(--adw-card-bg)] text-[var(--adw-fg-color)] shadow-[var(--adw-shadow-sm)]'
-                  : 'text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Esporta mappa"
+      size="md"
+      footer={
+        <div className="flex w-full items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            icon={copied ? <Check className="size-4 text-success-foreground" /> : <Copy className="size-4" />}
+            onClick={handleCopy}
+          >
+            {copied ? 'Copiato' : 'Copia'}
+          </Button>
+          <Button variant="default" icon={<Download className="size-4" />} onClick={handleDownload}>
+            Scarica .{spec.ext}
+          </Button>
         </div>
+      }
+    >
+      <div className="flex flex-col items-start gap-3">
+        <SegmentedControl items={FORMAT_ITEMS} activeId={format} onChange={setFormat} />
 
-        <div className="relative">
-          <textarea
-            readOnly
-            value={content}
-            className="w-full h-64 p-3 rounded-lg border border-[var(--adw-card-border)] bg-[var(--adw-bg-color)] font-mono text-xs text-[var(--adw-fg-color)] resize-none focus:outline-none"
-          />
-        </div>
+        <Textarea mono readOnly value={content} className="h-64 resize-none text-xs" />
 
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-[11px] text-[var(--adw-muted-color)]">
-            Salvataggio nei formati aperti interoperabili con Logseq, Obsidian e Freeplane.
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="flat"
-              size="sm"
-              icon={copied ? <Check className="w-3.5 h-3.5 text-[var(--adw-success-color)]" /> : <Copy className="w-3.5 h-3.5" />}
-              onClick={handleCopy}
-            >
-              {copied ? 'Copiato' : 'Copia'}
-            </Button>
-            <Button variant="suggested" size="sm" icon={<Download className="w-3.5 h-3.5" />} onClick={handleDownload}>
-              Scarica .{spec.ext}
-            </Button>
-          </div>
-        </div>
+        <p className="text-2xs text-muted-foreground">
+          Salvataggio nei formati aperti interoperabili con Logseq, Obsidian e Freeplane.
+        </p>
       </div>
     </Modal>
   );

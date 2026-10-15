@@ -1,8 +1,7 @@
 import React from 'react';
-import { Search } from 'lucide-react';
-import { IconButton, cn } from '@xmap/ui-kit';
+import { Plus, Search } from 'lucide-react';
+import { Badge, IconButton, Input, SegmentedControl } from '@xmap/ui-kit';
 import { TopicView } from '@xmap/core';
-import { Plus } from 'lucide-react';
 import { TopicFilter, TopicTree, DropPlacement } from './TopicTree.js';
 
 export interface SidebarProps {
@@ -42,40 +41,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onMove,
 }) => {
   const filteredCount = topics.filter((t) => filter === 'all' || t.kind === filter).length;
+  const isFiltered = Boolean(searchQuery) || filter !== 'all';
 
   return (
-    <aside className="w-[280px] shrink-0 flex flex-col border-r border-[var(--adw-card-border)] bg-[var(--adw-sidebar-bg)] overflow-hidden">
-      <div className="p-2.5 space-y-2 border-b border-[var(--adw-hairline)]">
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--adw-muted-color)] pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Cerca un blocco…"
-            className="w-full h-8 pl-8 pr-2.5 rounded-md border border-[var(--adw-card-border)] bg-[var(--adw-bg-color)] text-[13px] placeholder:text-[var(--adw-muted-color)] focus:outline-none focus:border-[var(--adw-accent-color)]"
-          />
+    <aside className="flex w-sidebar shrink-0 flex-col gap-2 overflow-hidden border-r bg-sidebar p-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h2 className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">Blocchi</h2>
+          <Badge variant="outline" size="sm" className="tabular-nums">
+            {isFiltered ? `${filteredCount} / ${topics.length}` : topics.length}
+          </Badge>
         </div>
-        <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-[var(--adw-surface)] border border-[var(--adw-card-border)]">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => onFilter(f.id)}
-              className={cn(
-                'flex-1 h-6 rounded text-[11px] font-medium transition-colors',
-                filter === f.id
-                  ? 'bg-[var(--adw-card-bg)] text-[var(--adw-fg-color)] shadow-[var(--adw-shadow-sm)]'
-                  : 'text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <IconButton variant="ghost" size="xs" label="Aggiungi blocco" onClick={onAddRootChild}>
+          <Plus className="size-3.5" />
+        </IconButton>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <Input
+        type="text"
+        size="sm"
+        value={searchQuery}
+        onChange={(e) => onSearch(e.target.value)}
+        placeholder="Cerca un blocco…"
+        aria-label="Cerca un blocco"
+        leading={<Search className="size-4" />}
+        className="bg-sidebar-control-surface"
+      />
+
+      <SegmentedControl
+        size="sm"
+        items={FILTERS}
+        activeId={filter}
+        onChange={onFilter}
+        className="w-full"
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <TopicTree
           topics={topics}
           searchQuery={searchQuery}
@@ -87,15 +88,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onAddChild={onAddChild}
           onMove={onMove}
         />
-      </div>
-
-      <div className="flex items-center justify-between px-3 h-9 border-t border-[var(--adw-hairline)] text-[11px] text-[var(--adw-muted-color)]">
-        <span className="tabular-nums">
-          {searchQuery || filter !== 'all' ? `${filteredCount} / ${topics.length}` : topics.length} blocchi
-        </span>
-        <IconButton size="sm" title="Aggiungi blocco alla radice" onClick={onAddRootChild}>
-          <Plus className="w-3.5 h-3.5" />
-        </IconButton>
       </div>
     </aside>
   );

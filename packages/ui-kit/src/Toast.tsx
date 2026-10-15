@@ -1,13 +1,24 @@
-import React, { useEffect } from 'react';
-import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
+/*
+ * Notifiche temporanee in basso a destra.
+ *
+ * Perché il timer legge `onDismiss` da una ref: i chiamanti passano spesso una
+ * funzione nuova a ogni render; con `onDismiss` tra le dipendenze dell'effetto
+ * il conto alla rovescia ripartirebbe a ogni render dell'app e il toast non
+ * scomparirebbe mai.
+ */
+import { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 import { cn } from './utils.js';
+import { IconButton } from './IconButton.js';
+import { STATUS_ICON, STATUS_TEXT, type StatusTone } from './shared.js';
 
-export type ToastType = 'info' | 'success' | 'warning' | 'error';
+export type ToastType = StatusTone;
 
 export interface ToastMessage {
   id: string;
   type: ToastType;
   message: string;
+  /** Durata in ms prima della chiusura automatica (default 4000). */
   duration?: number;
 }
 
@@ -16,50 +27,47 @@ export interface ToastProps {
   onDismiss: (id: string) => void;
 }
 
-export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
-  useEffect(() => {
-    const timer = setTimeout(() => onDismiss(toast.id), toast.duration ?? 4000);
-    return () => clearTimeout(timer);
-  }, [toast, onDismiss]);
+export function Toast({ toast, onDismiss }: ToastProps) {
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
 
-  const icons = {
-    info: <Info className="w-4 h-4 text-[var(--adw-accent-color)] shrink-0" />,
-    success: <CheckCircle2 className="w-4 h-4 text-[var(--adw-success-color)] shrink-0" />,
-    warning: <AlertTriangle className="w-4 h-4 text-[var(--adw-warning-color)] shrink-0" />,
-    error: <AlertCircle className="w-4 h-4 text-[var(--adw-destructive-color)] shrink-0" />,
-  };
+  useEffect(() => {
+    const timer = setTimeout(() => onDismissRef.current(toast.id), toast.duration ?? 4000);
+    return () => clearTimeout(timer);
+  }, [toast.id, toast.duration]);
+
+  const Icon = STATUS_ICON[toast.type];
 
   return (
     <div
-      role="status"
-      className={cn(
-        'pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border text-[13px]',
-        'bg-[var(--adw-card-bg)] text-[var(--adw-fg-color)] border-[var(--adw-card-border)] shadow-[var(--adw-shadow-md)]'
-      )}
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      className="pointer-events-auto flex animate-pop-in items-start gap-2.5 rounded-lg border bg-popover py-2 pl-3 pr-2 text-sm text-popover-foreground shadow-composer"
     >
-      {icons[toast.type]}
-      <span className="max-w-md">{toast.message}</span>
-      <button
-        type="button"
-        onClick={() => onDismiss(toast.id)}
-        className="p-0.5 rounded text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)] focus:outline-none"
-      >
-        <X className="w-3.5 h-3.5" />
-      </button>
+      <Icon aria-hidden className={cn('mt-0.5 size-4 shrink-0', STATUS_TEXT[toast.type])} />
+      <span className="max-w-md flex-1 py-px">{toast.message}</span>
+      <IconButton label="Chiudi notifica" size="xs" onClick={() => onDismiss(toast.id)}>
+        <X />
+      </IconButton>
     </div>
   );
-};
+}
 
-export const ToastContainer: React.FC<{
+export function ToastContainer({
+  toasts,
+  onDismiss,
+}: {
   toasts: ToastMessage[];
   onDismiss: (id: string) => void;
-}> = ({ toasts, onDismiss }) => {
+}) {
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-5 right-5 flex flex-col items-end gap-2 pointer-events-none z-50">
+    <div
+      aria-live="polite"
+      className="pointer-events-none fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2"
+    >
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}
     </div>
   );
-};
+}

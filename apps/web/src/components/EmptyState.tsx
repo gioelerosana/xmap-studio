@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Button } from '@xmap/ui-kit';
-import { FolderOpen, Plus, FileSpreadsheet, Sigma } from 'lucide-react';
+import { Button, Shortcut } from '@xmap/ui-kit';
+import { FileCheck, FileSpreadsheet, FileUp, FolderOpen, Plus, ShieldCheck, Sigma } from 'lucide-react';
+import { AppMark } from './AppMark.js';
 
 export interface EmptyStateProps {
   onOpenFile: () => void;
@@ -8,6 +9,14 @@ export interface EmptyStateProps {
   onLoadDemo: () => void;
   onDropFiles: (file: File) => void;
 }
+
+// Punti a 16px che svaniscono verso i bordi: il fondo resta quieto attorno al contenuto.
+const dotGridStyle: React.CSSProperties = {
+  backgroundImage: 'radial-gradient(var(--map-grid-dot) 1px, transparent 1px)',
+  backgroundSize: '16px 16px',
+  WebkitMaskImage: 'radial-gradient(ellipse at center, black 35%, transparent 75%)',
+  maskImage: 'radial-gradient(ellipse at center, black 35%, transparent 75%)',
+};
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
   onOpenFile,
@@ -27,44 +36,69 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8 bg-[var(--adw-bg-color)] select-none">
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragOver(true);
-        }}
-        onDragLeave={() => setIsDragOver(false)}
-        onDrop={handleDrop}
-        className={`w-full max-w-md rounded-xl border border-dashed px-8 py-10 flex flex-col items-center text-center transition-colors ${
-          isDragOver
-            ? 'border-[var(--adw-accent-color)] bg-[var(--adw-accent-soft)]'
-            : 'border-[var(--adw-card-border)] bg-[var(--adw-surface)]'
-        }`}
-      >
-        <div className="w-12 h-12 rounded-xl bg-[var(--adw-accent-soft)] flex items-center justify-center text-[var(--adw-accent-color)] mb-4">
-          <Sigma className="w-6 h-6" />
-        </div>
-        <h1 className="text-base font-semibold tracking-tight">XMap Studio</h1>
-        <p className="text-[13px] text-[var(--adw-muted-color)] mt-1.5 mb-6 leading-relaxed">
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        // dragleave scatta anche entrando nei figli: esce solo se il cursore lascia l'area.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false);
+      }}
+      onDrop={handleDrop}
+      className="relative flex flex-1 items-center justify-center overflow-hidden bg-background p-6 text-foreground select-none"
+    >
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={dotGridStyle} />
+
+      <div className="relative flex w-full max-w-md flex-col items-center text-center">
+        <AppMark size={48} />
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight">XMap Studio</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
           Editor di mappe XMind con equazioni LaTeX native. Lossless, offline, senza account.
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button variant="suggested" icon={<FolderOpen className="w-4 h-4" />} onClick={onOpenFile}>
-            Apri mappa
+        <div className="mt-8 flex items-center gap-3">
+          <Button variant="default" size="lg" icon={<FolderOpen className="size-4" />} onClick={onOpenFile}>
+            Apri mappa…
           </Button>
-          <Button variant="default" icon={<Plus className="w-4 h-4" />} onClick={onNewFile}>
-            Nuova
+          <Shortcut keys="Ctrl+O" />
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <Button variant="outline" icon={<Plus className="size-4" />} onClick={onNewFile}>
+            Nuova mappa
           </Button>
-          <Button variant="flat" icon={<FileSpreadsheet className="w-4 h-4" />} onClick={onLoadDemo}>
+          <Button variant="ghost" icon={<FileSpreadsheet className="size-4" />} onClick={onLoadDemo}>
             Demo
           </Button>
         </div>
 
-        <p className="mt-6 text-[11px] text-[var(--adw-muted-color)]">
-          Trascina qui un file <b>.xmind</b> per aprirlo.
-        </p>
+        <p className="mt-4 text-xs text-muted-foreground">Oppure trascina qui un file .xmind</p>
+
+        <ul className="mt-10 flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t pt-6 text-2xs text-muted-foreground">
+          <li className="flex items-center gap-1.5">
+            <Sigma className="size-3.5" />
+            LaTeX nativo
+          </li>
+          <li className="flex items-center gap-1.5">
+            <ShieldCheck className="size-3.5" />
+            Salvataggio sicuro
+          </li>
+          <li className="flex items-center gap-1.5">
+            <FileCheck className="size-3.5" />
+            Compatibile XMind
+          </li>
+        </ul>
       </div>
+
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-4 z-10 flex animate-fade-in items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/8">
+          <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <FileUp className="size-4 text-primary" />
+            Rilascia per aprire il file .xmind
+          </p>
+        </div>
+      )}
     </div>
   );
 };

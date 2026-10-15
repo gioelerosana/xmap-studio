@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { TopicView } from '@xmap/core';
 import {
   ChevronRight,
-  ChevronDown,
   Plus,
   Sigma,
   Image as ImageIcon,
@@ -10,8 +9,9 @@ import {
   Tag,
   Flag,
   Link2,
+  SearchX,
 } from 'lucide-react';
-import { cn } from '@xmap/ui-kit';
+import { EmptyHint, IconButton, cn } from '@xmap/ui-kit';
 
 export type TopicFilter = 'all' | 'equation' | 'text' | 'image';
 export type DropPlacement = 'before' | 'after' | 'into';
@@ -27,6 +27,11 @@ export interface TopicTreeProps {
   onAddChild: (id: string) => void;
   onMove: (id: string, targetId: string, placement: DropPlacement) => void;
 }
+
+// Passo di indentazione per livello; il chevron di ogni livello è centrato a +16px dal bordo della riga.
+const INDENT_STEP = 14;
+const ROW_INSET = 8;
+const CHEVRON_CENTER = 16;
 
 function matchesQuery(t: TopicView, query: string): boolean {
   if (!query) return true;
@@ -120,14 +125,17 @@ export const TopicTree: React.FC<TopicTreeProps> = ({
   };
 
   if (topics.length === 0) {
-    return <div className="px-3 py-6 text-xs text-[var(--adw-muted-color)]">Nessun blocco.</div>;
+    return <div className="px-2 py-6 text-xs text-muted-foreground">Nessun blocco.</div>;
   }
 
   if (visible.length === 0) {
     return (
-      <div className="px-3 py-6 text-xs text-[var(--adw-muted-color)]">
-        Nessun blocco corrisponde ai filtri.
-      </div>
+      <EmptyHint
+        className="py-6"
+        icon={<SearchX className="size-4" />}
+        title="Nessun risultato"
+        description="Nessun blocco corrisponde ai filtri."
+      />
     );
   }
 
@@ -169,56 +177,68 @@ export const TopicTree: React.FC<TopicTreeProps> = ({
             onDrop={(e) => handleDrop(e, topic)}
             onClick={() => onSelect(topic.id)}
             className={cn(
-              'group relative flex items-center gap-1.5 pr-2 py-[3px] mx-1.5 rounded-md cursor-default transition-colors',
-              isSelected
-                ? 'bg-[var(--adw-accent-soft)] text-[var(--adw-fg-color)]'
-                : 'hover:bg-[var(--adw-button-hover)]',
+              'group relative flex h-7 items-center gap-1.5 rounded-md pr-2 text-sm text-foreground cursor-default transition-colors',
+              isSelected ? 'bg-sidebar-row-active shadow-control' : 'hover:bg-accent',
               drop === 'into' && 'drop-into',
               drop === 'before' && 'drop-before',
               drop === 'after' && 'drop-after',
               dragId === topic.id && 'opacity-50'
             )}
-            style={{ paddingLeft: `${topic.depth * 14 + 4}px` }}
+            style={{ paddingLeft: `${topic.depth * INDENT_STEP + ROW_INSET}px` }}
           >
+            {/* Guide verticali: una per antenato, sulla colonna del suo chevron. */}
+            {Array.from({ length: topic.depth }, (_, level) => (
+              <span
+                key={level}
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 w-px bg-border"
+                style={{ left: `${level * INDENT_STEP + CHEVRON_CENTER}px` }}
+              />
+            ))}
+
             {/* Espandi/comprimi */}
             {hasChildren ? (
               <button
                 type="button"
+                aria-label={isCollapsed ? 'Espandi' : 'Comprimi'}
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleCollapse(topic.id);
                 }}
-                className="shrink-0 h-4 w-4 flex items-center justify-center rounded text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]"
+                className="flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
-                {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                <ChevronRight
+                  className={cn('size-3.5 transition-transform duration-150', !isCollapsed && 'rotate-90')}
+                />
               </button>
             ) : (
-              <span className="shrink-0 h-4 w-4 flex items-center justify-center">
-                <span className="w-1 h-1 rounded-full bg-[var(--adw-muted-color)] opacity-40" />
+              <span className="flex size-4 shrink-0 items-center justify-center">
+                <span className="size-1 rounded-full bg-muted-foreground opacity-40" />
               </span>
             )}
 
             {/* Tipo */}
-            <span className="shrink-0 flex items-center">
+            <span className="flex shrink-0 items-center">
               {topic.kind === 'equation' ? (
-                <Sigma className="w-3.5 h-3.5 text-[var(--adw-accent-color)]" />
+                <Sigma className="size-3.5 text-muted-foreground" />
               ) : topic.kind === 'image' ? (
-                <ImageIcon className="w-3.5 h-3.5 text-[var(--adw-muted-color)]" />
+                <ImageIcon className="size-3.5 text-muted-foreground" />
               ) : null}
             </span>
 
             {topic.fillColor && (
               <span
-                className="shrink-0 w-2 h-2 rounded-full border border-black/10 dark:border-white/20"
+                className="size-2 shrink-0 rounded-full border border-foreground/10"
                 style={{ backgroundColor: topic.fillColor }}
               />
             )}
 
             <span
               className={cn(
-                'flex-1 truncate text-[13px]',
+                'flex-1 truncate',
                 isSelected ? 'font-medium' : 'font-normal',
-                !topic.title && topic.kind === 'text' && 'italic text-[var(--adw-muted-color)]'
+                topic.kind === 'equation' && 'font-mono',
+                !topic.title && topic.kind === 'text' && 'italic text-muted-foreground'
               )}
               title={topic.path.join(' › ')}
             >
@@ -226,34 +246,35 @@ export const TopicTree: React.FC<TopicTreeProps> = ({
             </span>
 
             {/* Badge meta */}
-            <span className="shrink-0 flex items-center gap-1 text-[var(--adw-muted-color)] opacity-0 group-hover:opacity-100 transition-opacity">
-              {topic.notes && <FileText className="w-3 h-3" />}
+            <span className="flex shrink-0 items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+              {topic.notes && <FileText className="size-3.5" />}
               {topic.labels.length > 0 && (
-                <span className="flex items-center gap-0.5 text-[10px]">
-                  <Tag className="w-3 h-3" />
+                <span className="flex items-center gap-0.5 text-3xs tabular-nums">
+                  <Tag className="size-3.5" />
                   {topic.labels.length}
                 </span>
               )}
               {topic.markers.length > 0 && (
-                <span className="flex items-center gap-0.5 text-[10px]">
-                  <Flag className="w-3 h-3" />
+                <span className="flex items-center gap-0.5 text-3xs tabular-nums">
+                  <Flag className="size-3.5" />
                   {topic.markers.length}
                 </span>
               )}
-              {topic.href && <Link2 className="w-3 h-3" />}
+              {topic.href && <Link2 className="size-3.5" />}
             </span>
 
-            <button
-              type="button"
-              title="Aggiungi sotto-blocco"
+            <IconButton
+              variant="ghost"
+              size="xs"
+              label="Aggiungi sotto-blocco"
+              className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
                 onAddChild(topic.id);
               }}
-              className="shrink-0 h-5 w-5 flex items-center justify-center rounded text-[var(--adw-muted-color)] opacity-0 group-hover:opacity-100 hover:bg-[var(--adw-button-active)] hover:text-[var(--adw-fg-color)]"
             >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+              <Plus className="size-3.5" />
+            </IconButton>
           </div>
         );
       })}

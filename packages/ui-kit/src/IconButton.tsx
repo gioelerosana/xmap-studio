@@ -1,47 +1,59 @@
-import React from 'react';
+/*
+ * Bottone solo-icona.
+ *
+ * Perché esiste accanto a `Button`: un bottone senza testo non ha nome
+ * accessibile, quindi `label` va sempre fornita (diventa `aria-label` e
+ * `title`). Il tipo la lascia opzionale solo per non rompere i vecchi punti
+ * d'uso che passano `title`/`aria-label`: i nuovi devono usare `label`.
+ */
+import { forwardRef, type ReactNode } from 'react';
+import { Button, type ButtonProps } from './Button.js';
 import { cn } from './utils.js';
 
-export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'flat' | 'suggested' | 'destructive';
-  size?: 'sm' | 'md' | 'lg';
-  active?: boolean;
+export type IconButtonVariant = 'ghost' | 'outline' | 'default' | 'ghost-destructive';
+export type IconButtonSize = 'xs' | 'sm' | 'md' | 'lg';
+
+export interface IconButtonProps
+  extends Omit<ButtonProps, 'variant' | 'size' | 'icon' | 'iconRight' | 'children'> {
+  /**
+   * Nome accessibile e tooltip nativo. OBBLIGATORIO a livello di contratto
+   * (opzionale nel tipo solo per compatibilità). Per sopprimere il tooltip
+   * nativo, ad esempio dentro un `Tooltip`, passa `title=""`.
+   */
+  label?: string;
+  variant?: IconButtonVariant;
+  /** `xs` 24 · `sm` 28 · `md` 32 (default) · `lg` 36. */
+  size?: IconButtonSize;
+  children?: ReactNode;
 }
 
-export const IconButton: React.FC<IconButtonProps> = ({
-  children,
-  variant = 'flat',
-  size = 'md',
-  active = false,
-  className,
-  disabled,
-  ...props
-}) => {
-  const base =
-    'inline-flex items-center justify-center rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--adw-focus-ring)] disabled:opacity-35 disabled:cursor-not-allowed select-none';
+const SIZE_MAP = {
+  xs: 'icon-xs',
+  sm: 'icon-sm',
+  md: 'icon',
+  lg: 'icon-lg',
+} as const;
 
-  const sizes = {
-    sm: 'h-7 w-7',
-    md: 'h-8 w-8',
-    lg: 'h-9 w-9',
-  };
-
-  const variants = {
-    default:
-      'bg-[var(--adw-card-bg)] border border-[var(--adw-card-border)] text-[var(--adw-fg-color)] hover:bg-[var(--adw-button-hover)]',
-    flat: 'bg-transparent text-[var(--adw-muted-color)] hover:bg-[var(--adw-button-hover)] hover:text-[var(--adw-fg-color)]',
-    suggested:
-      'bg-[var(--adw-accent-color)] text-white hover:bg-[var(--adw-accent-hover)]',
-    destructive:
-      'bg-transparent text-[var(--adw-destructive-color)] hover:bg-[color-mix(in_srgb,var(--adw-destructive-color)_12%,transparent)]',
-  };
-
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { label, variant = 'ghost', size = 'md', title, className, children, ...props },
+  ref,
+) {
+  const name = label ?? title ?? props['aria-label'];
   return (
-    <button
-      className={cn(base, sizes[size], variants[variant], active && 'bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)]', className)}
-      disabled={disabled}
+    <Button
+      ref={ref}
+      // L'icona è muta di default e si accende all'hover (come `ghost-muted`).
+      variant={variant === 'ghost' ? 'ghost-muted' : variant}
+      size={SIZE_MAP[size]}
+      title={title ?? label}
+      aria-label={props['aria-label'] ?? name}
+      className={cn(
+        variant === 'outline' && 'text-muted-foreground hover:text-foreground',
+        className,
+      )}
       {...props}
     >
       {children}
-    </button>
+    </Button>
   );
-};
+});

@@ -1,6 +1,14 @@
-import React from 'react';
-import { Minus, Square, X } from 'lucide-react';
+/*
+ * Minimizza / massimizza / chiudi per la barra del titolo disegnata dall'app
+ * (Electron senza cornice di sistema).
+ *
+ * Perché ghost 28px e non i pulsanti tondi GNOME: l'interfaccia segue T3 Code,
+ * dove i controlli finestra sono bottoni discreti che si accendono solo
+ * all'hover; la chiusura vira al rosso pieno per segnalare l'azione.
+ */
+import { Copy, Minus, Square, X } from 'lucide-react';
 import { cn } from './utils.js';
+import { Button } from './Button.js';
 
 export interface WindowControlsProps {
   onMinimize?: () => void;
@@ -10,44 +18,44 @@ export interface WindowControlsProps {
   className?: string;
 }
 
-export const WindowControls: React.FC<WindowControlsProps> = ({
+export function WindowControls({
   onMinimize,
   onMaximize,
   onClose,
   isMaximized = false,
   className,
-}) => {
+}: WindowControlsProps) {
+  const maximizeLabel = isMaximized ? 'Ripristina' : 'Massimizza';
   return (
-    <div className={cn('app-no-drag flex items-center space-x-2 pl-3', className)}>
-      <button
-        type="button"
+    <div className={cn('app-no-drag flex items-center gap-1 pl-2', className)}>
+      <Button
+        variant="ghost-muted"
+        size="icon-sm"
         title="Riduci a icona"
         aria-label="Riduci a icona"
         onClick={onMinimize}
-        className="gnome-window-btn focus:outline-none"
       >
-        <Minus className="w-3.5 h-3.5" />
-      </button>
-
-      <button
-        type="button"
-        title={isMaximized ? 'Ripristina' : 'Massimizza'}
-        aria-label={isMaximized ? 'Ripristina' : 'Massimizza'}
+        <Minus className="size-3.5" />
+      </Button>
+      <Button
+        variant="ghost-muted"
+        size="icon-sm"
+        title={maximizeLabel}
+        aria-label={maximizeLabel}
         onClick={onMaximize}
-        className="gnome-window-btn focus:outline-none"
       >
-        <Square className="w-3 h-3" />
-      </button>
-
-      <button
-        type="button"
+        {isMaximized ? <Copy className="size-3.5" /> : <Square className="size-3" />}
+      </Button>
+      <Button
+        variant="ghost-muted"
+        size="icon-sm"
         title="Chiudi"
         aria-label="Chiudi"
+        className="hover:bg-error hover:text-primary-foreground"
         onClick={onClose}
-        className="gnome-window-btn gnome-window-btn-close focus:outline-none"
       >
-        <X className="w-3.5 h-3.5" />
-      </button>
+        <X className="size-3.5" />
+      </Button>
     </div>
   );
-};
+}

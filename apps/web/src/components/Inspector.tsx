@@ -25,8 +25,20 @@ import {
   X,
   AlertCircle,
 } from 'lucide-react';
-import { Button, IconButton, cn } from '@xmap/ui-kit';
+import {
+  Badge,
+  Banner,
+  Button,
+  Field,
+  IconButton,
+  Input,
+  SegmentedControl,
+  Select,
+  Textarea,
+  cn,
+} from '@xmap/ui-kit';
 
+// I valori di colore sono dati salvati nel file XMind (compatibilità col formato), non stile.
 const BRANCH_COLORS = ['#E65D5D', '#E9863F', '#C99A12', '#79A83B', '#1599B5', '#7953A9', '#4E5D6C'];
 const INK_COLORS = ['#000000', '#ffffff', '#3b6cf6', '#e5484d', '#2f9e63', '#7953a9'];
 const TEMPLATES = [
@@ -36,6 +48,11 @@ const TEMPLATES = [
   { label: 'Radice', latex: '\\sqrt{x^2+y^2}' },
   { label: 'Limite', latex: '\\lim_{x\\to\\infty}\\frac{1}{x}=0' },
   { label: 'Matrice', latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}' },
+];
+const TITLE_MODE_ITEMS: { id: 'formula_only' | 'keep_title' | 'custom'; label: string }[] = [
+  { id: 'formula_only', label: 'Solo formula' },
+  { id: 'keep_title', label: 'Mantieni titolo' },
+  { id: 'custom', label: 'Titolo custom' },
 ];
 
 export interface InspectorProps {
@@ -49,7 +66,25 @@ export interface InspectorProps {
   onToast: (type: 'info' | 'success' | 'warning' | 'error', message: string) => void;
 }
 
-const Section: React.FC<{
+// Anello di focus dei bottoni ui-kit, riusato dai controlli che non sono `Button`.
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
+
+const chipClass = (active: boolean) =>
+  cn(
+    'rounded-sm border px-1.5 py-0.5 text-2xs transition-colors',
+    FOCUS_RING,
+    active
+      ? 'border-primary bg-primary/8 text-primary dark:bg-primary/16'
+      : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+  );
+
+// Il bordo hairline tiene visibili bianco e nero in entrambi i temi; il selezionato usa l'anello primario.
+const swatchHairline = 'ring-1 ring-inset ring-foreground/10';
+const swatchSelected = 'ring-2 ring-primary ring-offset-2 ring-offset-background';
+
+// Sezione richiudibile: il disclosure è comportamento locale, quindi non usa `Section` di ui-kit.
+const InspectorSection: React.FC<{
   title: string;
   icon: React.ReactNode;
   defaultOpen?: boolean;
@@ -58,35 +93,30 @@ const Section: React.FC<{
 }> = ({ title, icon, defaultOpen = true, count, children }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-[var(--adw-hairline)]">
+    <section className="border-b">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-[var(--adw-fg-color)] hover:bg-[var(--adw-button-hover)]"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        <span className="text-[var(--adw-muted-color)] flex items-center">{icon}</span>
-        <span className="flex-1 text-left">{title}</span>
-        {typeof count === 'number' && count > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)]">
-            {count}
-          </span>
+        <span className="flex items-center text-muted-foreground">{icon}</span>
+        <span className="flex-1">{title}</span>
+        {typeof count === 'number' && count > 0 && <Badge variant="secondary" size="sm">{count}</Badge>}
+        {open ? (
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 text-muted-foreground" />
         )}
-        {open ? <ChevronDown className="w-3.5 h-3.5 opacity-50" /> : <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
       </button>
-      {open && <div className="px-4 pb-4 pt-0.5 space-y-2.5">{children}</div>}
-    </div>
+      {open && <div className="flex flex-col gap-3 px-4 pb-4">{children}</div>}
+    </section>
   );
 };
 
-const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <label className="block text-[11px] font-medium text-[var(--adw-muted-color)] mb-1">{children}</label>
+const GroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="text-xs font-medium">{children}</div>
 );
-
-const inputClass =
-  'w-full h-8 px-2.5 rounded-md border border-[var(--adw-card-border)] bg-[var(--adw-bg-color)] text-[13px] text-[var(--adw-fg-color)] placeholder:text-[var(--adw-muted-color)] focus:outline-none focus:border-[var(--adw-accent-color)]';
-
-const textareaClass =
-  'w-full px-2.5 py-2 rounded-md border border-[var(--adw-card-border)] bg-[var(--adw-bg-color)] text-[13px] text-[var(--adw-fg-color)] placeholder:text-[var(--adw-muted-color)] focus:outline-none focus:border-[var(--adw-accent-color)] resize-y';
 
 export const Inspector: React.FC<InspectorProps> = ({
   topic,
@@ -353,66 +383,63 @@ const InspectorBody: React.FC<InspectorProps> = ({
   };
 
   return (
-    <aside className="w-[340px] shrink-0 border-l border-[var(--adw-card-border)] bg-[var(--adw-bg-color)] flex flex-col overflow-hidden">
+    <aside className="flex w-inspector shrink-0 animate-slide-in-right flex-col overflow-hidden border-l bg-background">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--adw-card-border)]">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-semibold truncate">
-              {t.displayTitle || '(senza titolo)'}
-            </div>
-            <div className="text-[11px] text-[var(--adw-muted-color)] truncate">
-              {t.path.slice(0, -1).join(' › ') || 'Radice'}
-            </div>
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">{t.displayTitle || '(senza titolo)'}</div>
+          <div className="truncate text-2xs text-muted-foreground">
+            {t.path.slice(0, -1).join(' › ') || 'Radice'}
           </div>
-          <IconButton size="sm" title="Aggiungi sotto-blocco" onClick={handleAddChild}>
-            <Plus className="w-4 h-4" />
-          </IconButton>
-          {t.depth > 0 && (
-            <IconButton size="sm" variant="destructive" title="Elimina blocco" onClick={handleDelete}>
-              <Trash2 className="w-4 h-4" />
-            </IconButton>
-          )}
-          <IconButton size="sm" title="Chiudi pannello" onClick={onClose}>
-            <X className="w-4 h-4" />
-          </IconButton>
         </div>
+        <IconButton size="sm" variant="ghost" label="Aggiungi sotto-blocco" onClick={handleAddChild}>
+          <Plus className="size-4" />
+        </IconButton>
+        {t.depth > 0 && (
+          <IconButton size="sm" variant="ghost-destructive" label="Elimina blocco" onClick={handleDelete}>
+            <Trash2 className="size-4" />
+          </IconButton>
+        )}
+        <IconButton size="sm" variant="ghost" label="Chiudi pannello" onClick={onClose}>
+          <X className="size-4" />
+        </IconButton>
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
         {/* Testo del blocco */}
-        <Section title="Testo" icon={<FileText className="w-3.5 h-3.5" />}>
-          <div>
-            <FieldLabel>Titolo del blocco</FieldLabel>
-            <input
-              className={inputClass}
+        <InspectorSection title="Testo" icon={<FileText className="size-3.5" />}>
+          <Field label="Titolo del blocco">
+            <Input
               value={title}
               placeholder="Titolo…"
               onChange={(e) => setTitle(e.target.value)}
               onBlur={commitTitle}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
-          </div>
-        </Section>
+          </Field>
+        </InspectorSection>
 
         {/* Equazione */}
-        <Section title="Equazione LaTeX" icon={<Sigma className="w-3.5 h-3.5" />} count={t.latex ? 1 : undefined}>
-          <div className="rounded-lg border border-[var(--adw-card-border)] bg-[var(--adw-surface)] min-h-[64px] flex items-center justify-center p-3">
+        <InspectorSection
+          title="Equazione LaTeX"
+          icon={<Sigma className="size-3.5" />}
+          count={t.latex ? 1 : undefined}
+        >
+          <div className="eq-preview">
             {preview?.error ? (
-              <div className="flex items-center gap-2 text-[var(--adw-destructive-color)] text-xs">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{preview.error}</span>
-              </div>
+              <Banner variant="error" className="w-full" icon={<AlertCircle className="size-4" />}>
+                {preview.error}
+              </Banner>
             ) : preview?.svg ? (
               <div className="max-w-full overflow-x-auto" dangerouslySetInnerHTML={{ __html: preview.svg }} />
             ) : (
-              <span className="text-[11px] text-[var(--adw-muted-color)] italic">Anteprima formula</span>
+              <span className="text-2xs italic text-muted-foreground">Anteprima formula</span>
             )}
           </div>
 
-          <textarea
-            className={cn(textareaClass, 'font-mono text-xs')}
+          <Textarea
+            mono
             rows={3}
             value={latex}
             placeholder="\\int_{0}^{1} x^2\\,dx"
@@ -421,44 +448,28 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
           <div className="flex flex-wrap gap-1">
             {TEMPLATES.map((tpl) => (
-              <button
+              <Button
                 key={tpl.label}
                 type="button"
+                variant="outline"
+                size="xs"
                 onClick={() => setLatex((prev) => (prev ? `${prev} ${tpl.latex}` : tpl.latex))}
-                className="px-1.5 py-0.5 rounded text-[10px] font-mono text-[var(--adw-muted-color)] bg-[var(--adw-surface)] border border-[var(--adw-card-border)] hover:text-[var(--adw-fg-color)]"
               >
                 {tpl.label}
-              </button>
+              </Button>
             ))}
           </div>
 
-          <div className="grid grid-cols-3 gap-1">
-            {(
-              [
-                ['formula_only', 'Solo formula'],
-                ['keep_title', 'Mantieni titolo'],
-                ['custom', 'Titolo custom'],
-              ] as const
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setTitleMode(mode)}
-                className={cn(
-                  'h-7 rounded-md text-[11px] border transition-colors',
-                  titleMode === mode
-                    ? 'border-[var(--adw-accent-color)] bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)] font-medium'
-                    : 'border-[var(--adw-card-border)] text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            size="sm"
+            className="grid w-full grid-cols-3"
+            items={TITLE_MODE_ITEMS}
+            activeId={titleMode}
+            onChange={(id) => setTitleMode(id)}
+          />
 
           {titleMode === 'custom' && (
-            <input
-              className={inputClass}
+            <Input
               value={customTitle}
               placeholder="Titolo mostrato"
               onChange={(e) => setCustomTitle(e.target.value)}
@@ -466,16 +477,19 @@ const InspectorBody: React.FC<InspectorProps> = ({
           )}
 
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-[var(--adw-muted-color)]">Colore</span>
+            <span className="text-xs text-muted-foreground">Colore</span>
             <div className="flex items-center gap-1.5">
               {INK_COLORS.map((c) => (
                 <button
                   key={c}
                   type="button"
+                  aria-label={`Inchiostro ${c}`}
+                  aria-pressed={inkColor === c}
                   onClick={() => setInkColor(c)}
                   className={cn(
-                    'w-[18px] h-[18px] rounded-full border border-black/15 dark:border-white/20',
-                    inkColor === c && 'ring-2 ring-[var(--adw-accent-color)] ring-offset-1 ring-offset-[var(--adw-bg-color)]'
+                    'size-[18px] rounded-full',
+                    FOCUS_RING,
+                    inkColor === c ? swatchSelected : swatchHairline
                   )}
                   style={{ backgroundColor: c }}
                 />
@@ -485,7 +499,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
           <div className="flex items-center gap-2">
             <Button
-              variant="suggested"
+              variant="default"
               size="sm"
               className="flex-1"
               disabled={!latex.trim() || !!preview?.error || applying}
@@ -494,67 +508,73 @@ const InspectorBody: React.FC<InspectorProps> = ({
               {applying ? 'Rendering…' : t.latex ? 'Aggiorna equazione' : 'Applica equazione'}
             </Button>
             {t.latex && (
-              <Button variant="flat" size="sm" onClick={handleRemoveEquation}>
+              <Button variant="ghost" size="sm" onClick={handleRemoveEquation}>
                 Rimuovi
               </Button>
             )}
           </div>
-        </Section>
+        </InspectorSection>
 
         {/* Note */}
-        <Section title="Note" icon={<FileText className="w-3.5 h-3.5" />} defaultOpen={false} count={t.notes ? 1 : undefined}>
-          <textarea
-            className={textareaClass}
+        <InspectorSection
+          title="Note"
+          icon={<FileText className="size-3.5" />}
+          defaultOpen={false}
+          count={t.notes ? 1 : undefined}
+        >
+          <Textarea
             rows={4}
             value={notes}
             placeholder="Appunti estesi del blocco…"
             onChange={(e) => setNotes(e.target.value)}
             onBlur={commitNotes}
           />
-          <div>
-            <FieldLabel>Visualizzazione in XMind</FieldLabel>
-            <select
-              className={inputClass}
+          <Field label="Visualizzazione in XMind">
+            <Select
               value={notesDisplay}
               onChange={(e) => commitNotesDisplay(e.target.value as 'icon' | 'block' | '')}
             >
               <option value="">Predefinita (icona)</option>
               <option value="icon">Icona</option>
               <option value="block">Riquadro espanso</option>
-            </select>
-          </div>
-        </Section>
+            </Select>
+          </Field>
+        </InspectorSection>
 
         {/* Etichette e link */}
-        <Section title="Etichette e link" icon={<Tag className="w-3.5 h-3.5" />} defaultOpen={false} count={t.labels.length || (t.href ? 1 : 0)}>
-          <div>
-            <FieldLabel>Etichette (separate da virgola)</FieldLabel>
-            <input
-              className={inputClass}
+        <InspectorSection
+          title="Etichette e link"
+          icon={<Tag className="size-3.5" />}
+          defaultOpen={false}
+          count={t.labels.length || (t.href ? 1 : 0)}
+        >
+          <Field label="Etichette (separate da virgola)">
+            <Input
               value={labelsStr}
               placeholder="Importante, Revisione"
               onChange={(e) => setLabelsStr(e.target.value)}
               onBlur={commitLabels}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
-          </div>
-          <div>
-            <FieldLabel>Link (URL, mailto:, file: o #id)</FieldLabel>
-            <div className="flex items-center gap-1.5">
-              <input
-                className={inputClass}
-                value={href}
-                placeholder="https://…"
-                onChange={(e) => setHref(e.target.value)}
-                onBlur={commitHref}
-                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              />
-            </div>
-          </div>
-        </Section>
+          </Field>
+          <Field label="Link (URL, mailto:, file: o #id)">
+            <Input
+              value={href}
+              placeholder="https://…"
+              onChange={(e) => setHref(e.target.value)}
+              onBlur={commitHref}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            />
+          </Field>
+        </InspectorSection>
 
         {/* Marker */}
-        <Section title="Marker" icon={<Flag className="w-3.5 h-3.5" />} defaultOpen={false} count={t.markers.length}>
+        <InspectorSection
+          title="Marker"
+          icon={<Flag className="size-3.5" />}
+          defaultOpen={false}
+          count={t.markers.length}
+        >
           {t.markers.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {t.markers.map((m) => (
@@ -563,18 +583,21 @@ const InspectorBody: React.FC<InspectorProps> = ({
                   type="button"
                   onClick={() => toggleMarker(m)}
                   title="Rimuovi marker"
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)]"
+                  className={cn(
+                    'flex items-center gap-1 rounded-sm bg-primary/8 px-1.5 py-0.5 text-2xs text-primary dark:bg-primary/16',
+                    FOCUS_RING
+                  )}
                 >
                   {markerDisplayName(m)}
-                  <X className="w-3 h-3" />
+                  <X className="size-3.5" />
                 </button>
               ))}
             </div>
           )}
-          <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+          <div className="flex max-h-52 flex-col gap-2 overflow-y-auto pr-1">
             {GROUPS.map((group) => (
               <div key={group.id}>
-                <div className="text-[10px] uppercase tracking-wide text-[var(--adw-muted-color)] mb-1">
+                <div className="mb-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
                   {group.label}
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -585,13 +608,9 @@ const InspectorBody: React.FC<InspectorProps> = ({
                         key={m.id}
                         type="button"
                         onClick={() => toggleMarker(m.id)}
+                        aria-pressed={active}
                         title={m.name}
-                        className={cn(
-                          'px-1.5 py-0.5 rounded text-[10px] border transition-colors',
-                          active
-                            ? 'border-[var(--adw-accent-color)] bg-[var(--adw-accent-soft)] text-[var(--adw-accent-color)]'
-                            : 'border-[var(--adw-card-border)] text-[var(--adw-muted-color)] hover:text-[var(--adw-fg-color)]'
-                        )}
+                        className={chipClass(active)}
                       >
                         {m.name}
                       </button>
@@ -601,20 +620,16 @@ const InspectorBody: React.FC<InspectorProps> = ({
               </div>
             ))}
           </div>
-        </Section>
+        </InspectorSection>
 
         {/* Colore ramo */}
-        <Section title="Colore del ramo" icon={<Palette className="w-3.5 h-3.5" />} defaultOpen={false}>
+        <InspectorSection title="Colore del ramo" icon={<Palette className="size-3.5" />} defaultOpen={false}>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              aria-pressed={!color}
               onClick={() => applyColor(null)}
-              className={cn(
-                'px-2 h-6 rounded text-[11px] border',
-                !color
-                  ? 'border-[var(--adw-accent-color)] text-[var(--adw-accent-color)]'
-                  : 'border-[var(--adw-card-border)] text-[var(--adw-muted-color)]'
-              )}
+              className={cn(chipClass(!color), 'flex h-6 items-center px-2')}
             >
               Nessuno
             </button>
@@ -622,24 +637,30 @@ const InspectorBody: React.FC<InspectorProps> = ({
               <button
                 key={c}
                 type="button"
+                aria-label={`Colore ${c}`}
+                aria-pressed={color === c}
                 onClick={() => applyColor(c)}
                 className={cn(
-                  'w-5 h-5 rounded-full border border-black/15 dark:border-white/20',
-                  color === c && 'ring-2 ring-[var(--adw-accent-color)] ring-offset-1 ring-offset-[var(--adw-bg-color)]'
+                  'size-5 rounded-full',
+                  FOCUS_RING,
+                  color === c ? swatchSelected : swatchHairline
                 )}
                 style={{ backgroundColor: c }}
               />
             ))}
           </div>
-        </Section>
+        </InspectorSection>
 
         {/* Task */}
-        <Section title="Task" icon={<ListChecks className="w-3.5 h-3.5" />} defaultOpen={false} count={t.task ? 1 : undefined}>
+        <InspectorSection
+          title="Task"
+          icon={<ListChecks className="size-3.5" />}
+          defaultOpen={false}
+          count={t.task ? 1 : undefined}
+        >
           <div className="grid grid-cols-2 gap-2">
-            <div>
-              <FieldLabel>Priorità</FieldLabel>
-              <select
-                className={inputClass}
+            <Field label="Priorità">
+              <Select
                 value={task.priority ?? ''}
                 onChange={(e) =>
                   commitTask({ ...task, priority: e.target.value ? Number(e.target.value) : undefined })
@@ -651,107 +672,107 @@ const InspectorBody: React.FC<InspectorProps> = ({
                     {p}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Avanzamento %</FieldLabel>
-              <input
+              </Select>
+            </Field>
+            <Field label="Avanzamento %">
+              <Input
                 type="number"
                 min={0}
                 max={100}
-                className={inputClass}
                 value={task.progress ?? ''}
                 onChange={(e) =>
                   commitTask({ ...task, progress: e.target.value ? Number(e.target.value) : undefined })
                 }
               />
-            </div>
-            <div>
-              <FieldLabel>Inizio</FieldLabel>
-              <input
+            </Field>
+            <Field label="Inizio">
+              <Input
                 type="date"
-                className={inputClass}
                 value={toDateInput(task.startDate)}
                 onChange={(e) => commitTask({ ...task, startDate: fromDateInput(e.target.value) })}
               />
-            </div>
-            <div>
-              <FieldLabel>Scadenza</FieldLabel>
-              <input
+            </Field>
+            <Field label="Scadenza">
+              <Input
                 type="date"
-                className={inputClass}
                 value={toDateInput(task.dueDate)}
                 onChange={(e) => commitTask({ ...task, dueDate: fromDateInput(e.target.value) })}
               />
-            </div>
+            </Field>
           </div>
           {(task.priority || task.progress || task.startDate || task.dueDate) && (
-            <Button variant="flat" size="sm" onClick={() => commitTask({})}>
+            <Button variant="ghost" size="sm" onClick={() => commitTask({})}>
               Azzera task
             </Button>
           )}
-        </Section>
+        </InspectorSection>
 
         {/* Struttura */}
-        <Section title="Struttura" icon={<GitBranch className="w-3.5 h-3.5" />} defaultOpen={false} count={rels.length || t.boundaries.length || t.summaries.length}>
-          <div className="space-y-1.5">
-            <FieldLabel>Relazioni</FieldLabel>
-            {rels.length === 0 && <div className="text-[11px] text-[var(--adw-muted-color)]">Nessuna relazione.</div>}
+        <InspectorSection
+          title="Struttura"
+          icon={<GitBranch className="size-3.5" />}
+          defaultOpen={false}
+          count={rels.length || t.boundaries.length || t.summaries.length}
+        >
+          <div className="flex flex-col gap-1.5">
+            <GroupLabel>Relazioni</GroupLabel>
+            {rels.length === 0 && <div className="text-2xs text-muted-foreground">Nessuna relazione.</div>}
             {rels.map((r) => {
               const otherId = r.end1Id === t.id ? r.end2Id : r.end1Id;
               const other = allTopics.find((x) => x.id === otherId);
               return (
-                <div key={r.id} className="flex items-center gap-1.5 text-[11px]">
-                  <GitBranch className="w-3 h-3 text-[var(--adw-muted-color)] shrink-0" />
+                <div key={r.id} className="flex items-center gap-1.5 text-2xs">
+                  <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="flex-1 truncate">
                     {r.end1Id === t.id ? '→' : '←'} {other?.displayTitle || otherId}
                     {r.title ? ` · ${r.title}` : ''}
                   </span>
                   <button
                     type="button"
+                    aria-label="Rimuovi relazione"
                     onClick={() => {
                       controller.removeTopicRelationship(r.id);
                       onChanged();
                     }}
-                    className="text-[var(--adw-muted-color)] hover:text-[var(--adw-destructive-color)]"
+                    className={cn('rounded-sm text-muted-foreground hover:text-error-foreground', FOCUS_RING)}
                   >
-                    <X className="w-3 h-3" />
+                    <X className="size-3.5" />
                   </button>
                 </div>
               );
             })}
             <div className="flex items-center gap-1.5">
-              <select className={inputClass} value={relTarget} onChange={(e) => setRelTarget(e.target.value)}>
+              <Select value={relTarget} onChange={(e) => setRelTarget(e.target.value)}>
                 <option value="">Collega a…</option>
                 {otherTopics.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.displayTitle || o.id}
                   </option>
                 ))}
-              </select>
-              <Button size="sm" variant="flat" disabled={!relTarget} onClick={addRelationship}>
+              </Select>
+              <Button size="sm" variant="ghost" disabled={!relTarget} onClick={addRelationship}>
                 Aggiungi
               </Button>
             </div>
           </div>
 
-          <div className="pt-1 space-y-1.5">
-            <FieldLabel>Sotto-blocchi</FieldLabel>
+          <div className="flex flex-col gap-1.5 pt-1">
+            <GroupLabel>Sotto-blocchi</GroupLabel>
             {!hasChildren && (
-              <div className="text-[11px] text-[var(--adw-muted-color)]">
+              <div className="text-2xs text-muted-foreground">
                 Aggiungi almeno un sotto-blocco per cornice o sommario.
               </div>
             )}
             {hasChildren && (
               <div className="flex items-center gap-1.5">
                 {t.boundaries.length === 0 ? (
-                  <Button size="sm" variant="flat" icon={<Boxes className="w-3.5 h-3.5" />} onClick={addBoundary}>
+                  <Button size="sm" variant="ghost" icon={<Boxes className="size-4" />} onClick={addBoundary}>
                     Cornice
                   </Button>
                 ) : (
                   <Button
                     size="sm"
-                    variant="flat"
+                    variant="ghost"
                     onClick={() => {
                       controller.removeTopicBoundary(t.id, t.boundaries[0].id);
                       onChanged();
@@ -761,13 +782,13 @@ const InspectorBody: React.FC<InspectorProps> = ({
                   </Button>
                 )}
                 {t.summaries.length === 0 ? (
-                  <Button size="sm" variant="flat" icon={<Boxes className="w-3.5 h-3.5" />} onClick={addSummary}>
+                  <Button size="sm" variant="ghost" icon={<Boxes className="size-4" />} onClick={addSummary}>
                     Sommario
                   </Button>
                 ) : (
                   <Button
                     size="sm"
-                    variant="flat"
+                    variant="ghost"
                     onClick={() => {
                       controller.removeTopicSummary(t.id, t.summaries[0].id);
                       onChanged();
@@ -779,7 +800,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
               </div>
             )}
           </div>
-        </Section>
+        </InspectorSection>
       </div>
     </aside>
   );
