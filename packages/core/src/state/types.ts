@@ -34,6 +34,8 @@ export interface TopicView {
   displayTitle: string;
   kind: 'equation' | 'image' | 'text';
   latex?: string;
+  /** Titolo che sembra LaTeX ma non è un'equazione: solo suggerimento per la UI. */
+  latexSuggestion?: string;
   imageSrc?: string;
   imageW?: number;
   imageH?: number;

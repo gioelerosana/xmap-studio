@@ -1,6 +1,5 @@
 import { SheetDto, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
-import { isLikelyLatex } from '../model/utils.js';
 import {
   BRANCH_COLORS,
   DEFAULT_NODE_H,
@@ -27,7 +26,7 @@ export class EstimatedMetrics implements NodeMetrics {
       return { w: Math.max(72.0, fw), h: Math.max(32.0, fh) };
     }
 
-    const effectiveLatex = node.latex || (isLikelyLatex(node.title) ? node.title : undefined);
+    const effectiveLatex = node.latex;
     if (effectiveLatex) {
       try {
         const rendered = renderLatexToSvg(effectiveLatex, 18);
@@ -112,7 +111,7 @@ function buildNodeRecursive(
     return buildNodeRecursive(c, childrenMap, childBranch);
   });
 
-  const effectiveLatex = topic.latex || (isLikelyLatex(topic.title) ? topic.title : undefined);
+  const effectiveLatex = topic.latex;
 
   return {
     id: topic.id,

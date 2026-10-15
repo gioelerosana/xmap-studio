@@ -11,6 +11,7 @@ import {
   topicNotesText,
   topicPosition,
   topicTitle,
+  suggestedLatex,
 } from '../model/utils.js';
 import {
   BoundaryView,
@@ -222,6 +223,7 @@ function collectTopicViews(
     displayTitle,
     kind,
     latex,
+    latexSuggestion: suggestedLatex(topic),
     imageSrc: topic.image?.src,
     imageW: topic.image?.width,
     imageH: topic.image?.height,
