@@ -34,6 +34,7 @@ export class OpenWorkbook {
   public pos: number;
   public savedPos: number;
   public xmindRunning: string[];
+  public originalHash: string;
 
   constructor(
     path: string,
@@ -41,7 +42,8 @@ export class OpenWorkbook {
     archive: RawArchive,
     content: Sheet[],
     manifest: Record<string, unknown> = {},
-    xmindRunning: string[] = []
+    xmindRunning: string[] = [],
+    originalHash: string = ''
   ) {
     this.path = path;
     this.fileName = fileName;
@@ -52,6 +54,7 @@ export class OpenWorkbook {
     this.pos = 0;
     this.savedPos = 0;
     this.xmindRunning = xmindRunning;
+    this.originalHash = originalHash;
   }
 
   public isDirty(): boolean {
@@ -95,11 +98,13 @@ export class OpenWorkbook {
     }
   }
 
-  public markSaved(newPath?: string): void {
+  public markSaved(newPath?: string, newHash?: string): void {
+    if (!newHash) throw new Error('Hash del file salvato mancante.');
     if (newPath) {
       this.path = newPath;
-      this.fileName = newPath.split('/').pop() || newPath;
+      this.fileName = newPath.split(/[\\/]/).pop() || newPath;
     }
+    this.originalHash = newHash;
     this.savedPos = this.pos;
   }
 

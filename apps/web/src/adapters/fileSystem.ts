@@ -1,3 +1,5 @@
+import { sha256HexAsync, validateArchiveBytes } from '@xmap/core';
+
 export interface FileHandleHolder {
   handle?: FileSystemFileHandle;
 }
@@ -60,16 +62,25 @@ export async function openLocalXmindFile(): Promise<{
 export async function saveLocalXmindFile(
   bytes: Uint8Array,
   suggestedName: string = 'map.xmind',
-  existingHandle?: FileSystemFileHandle
+  existingHandle?: FileSystemFileHandle,
+  expectedHash?: string
 ): Promise<FileSystemFileHandle | undefined> {
   // Se abbiamo un handle esistente e possiamo scrivere
   if (existingHandle && 'createWritable' in existingHandle) {
     try {
+      if (expectedHash) {
+        const currentFile = await existingHandle.getFile();
+        const currentHash = await sha256HexAsync(new Uint8Array(await currentFile.arrayBuffer()));
+        if (currentHash !== expectedHash) {
+          throw new FileConflictError('Il file è cambiato su disco dopo l\'apertura. Ricaricalo prima di salvare.');
+        }
+      }
       const writable = await (existingHandle as any).createWritable();
       await writable.write(bytes);
       await writable.close();
       return existingHandle;
-    } catch {
+    } catch (err) {
+      if (err instanceof FileConflictError) throw err;
       // Procedi con showSaveFilePicker o download
     }
   }
@@ -100,6 +111,13 @@ export async function saveLocalXmindFile(
   // Fallback download browser
   downloadBlob(bytes, suggestedName, 'application/vnd.xmind.workbook');
   return undefined;
+}
+
+class FileConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FileConflictError';
+  }
 }
 
 /**
@@ -147,6 +165,8 @@ export async function saveBytes(
   mimeType: string,
   options?: { description?: string; extensions?: string[] }
 ): Promise<{ path?: string } | null> {
+  if (mimeType === 'application/vnd.xmind.workbook') await validateArchiveBytes(bytes);
+
   const api = (window as any).electronAPI;
   if (api?.saveBytes) {
     return (await api.saveBytes(suggestedName, Array.from(bytes), options)) || null;
@@ -170,7 +190,7 @@ export async function saveBytes(
   }
 
   downloadBlob(bytes, suggestedName, mimeType);
-  return null;
+  return {};
 }
 
 export function downloadBlob(bytes: Uint8Array, filename: string, mimeType: string): void {

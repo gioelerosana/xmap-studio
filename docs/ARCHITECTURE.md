@@ -1,271 +1,113 @@
 # Architettura
 
-App desktop Linux nativa in Rust con UI GTK4 + libadwaita. Nessun webview,
-nessun runtime JS nel processo principale: MathJax gira in un processo `node`
-separato e viene incorporato nel binario.
+Nel branch `feat/ts-migration` l'implementazione attiva è il monorepo
+TypeScript. `src-tauri/` conserva la precedente app Rust/GTK come riferimento
+funzionale e di formato.
 
-## Panoramica
+## Componenti
 
-```
-                    ┌────────────────────────────────────────────┐
-                    │ gui.rs — GTK4 + libadwaita (main thread)   │
-                    │  ListView, TextView, Picture, azioni, CSS  │
-                    └───────────────┬────────────────────────────┘
-                                    │ chiamate sincrone (thread di lavoro)
-                                    │ ritorno via glib::MainContext::spawn_local
-                    ┌───────────────▼────────────────────────────┐
-                    │ controller.rs — AppController              │
-                    │  unica porta verso la logica backend       │
-                    └───────────────┬────────────────────────────┘
-             ┌──────────────────────┼───────────────────────┐
-             ▼                      ▼                       ▼
-      state.rs               equation.rs            mathjax.rs (Node)
-   OpenWorkbook +           applica/rimuovi          SVG MathJax
-   undo/redo + save          su un Topic
-             │                      │                       │
-             ▼                      ▼                       ▼
-      archive.rs             model.rs                raster.rs
-      ZIP + atomic           content.json           SVG → PNG (resvg)
-      write + backup         tipizzato + extra
-             │
-             ▼
-      validate.rs (+ safety.rs)
+```text
+apps/desktop — Electron main + preload
+     │ IPC tipizzato, dialoghi, finestre, scrittura atomica
+     ▼
+apps/web — React 19 + Vite
+     │ DTO e azioni
+     ▼
+packages/core — AppController (unico accesso al workbook)
+     ├── model/       modello XMind, traversal, editing
+     ├── archive/     ZIP, hash, scrittura atomica e backup
+     ├── safety/      validazione, manifest, rilevamento XMind su Linux
+     ├── latex/       MathJax SVG, rasterizzazione PNG, schema equazione
+     ├── exporters/   Markdown, OPML, outliner, import
+     ├── layout/      geometria pura per la vista mappa
+     ├── task/        provider org.xmind.ui.task
+     └── markers/     catalogo marker XMind
+     ▼
+packages/ui-kit — componenti React condivisi
 ```
 
-## Mappa dei moduli
+`AppController` e i tipi in `state/` separano il modello XMind dalla UI. I
+componenti React ricevono `WorkbookDto` e invocano operazioni del controller;
+non devono modificare `content.json` direttamente.
 
-Tutto vive in `src-tauri/src/`.
+## Apertura e round-trip
 
-| Modulo | Responsabilità | Punti d'ingresso |
-|---|---|---|
-| `lib.rs` | radice della libreria, `APP_ID`, `run()` | `lib.rs:21` |
-| `main.rs` | entry point del binario | `main.rs:1` |
-| `gui.rs` | costruzione UI, segnali, azioni, drag & drop, thread di lavoro | `gui.rs:129`, `gui.rs:150`, `gui.rs:887` |
-| `controller.rs` | API sincrona del backend, stato globale (workbook + renderer) | `controller.rs:26` |
-| `state.rs` | workbook aperto, undo/redo, costruzione byte, salvataggio | `state.rs:18` |
-| `model.rs` | modello tipizzato di `content.json`, traversal, `extra` preservato | `model.rs:69` |
-| `archive.rs` | lettura/scrittura ZIP, hashing, scrittura atomica, backup nascosti con retention | `archive.rs:59`, `archive.rs:209` |
-| `equation.rs` | applica/rimuove un'equazione su un topic | `equation.rs:61`, `equation.rs:135` |
-| `edit.rs` | rinomina, aggiunge, elimina e sposta topic; note/etichette/marker/link | `edit.rs:59`, `edit.rs:66`, `edit.rs:158` |
-| `export.rs` | intera mappa in Markdown / OPML / outliner (solo modello, nessuno schema) | `export.rs:13`, `export.rs:119`, `export.rs:44` |
-| `import.rs` | parse Markdown/OPML in albero e conversione in `Topic` | `import.rs:24`, `import.rs:82`, `import.rs:295` |
-| `merge.rs` | unione di `.xmind` (id riassegnati) e divisione di un ramo in mappa autonoma | `merge.rs:24`, `merge.rs:141`, `merge.rs:170` |
-| `media.rs` | allegati: entry `attachments/<id>.bin` + link `xap:attachments/…` | `media.rs:22`, `media.rs:37` |
-| `task.rs` | extension `org.xmind.ui.task` (priorità, avanzamento, date) | `task.rs:39`, `task.rs:60` |
-| `layout.rs` | layout a Logic Chart orizzontale (radice in alto a sinistra) puro, guidato dai DTO, con collapse, colori di ramo e misure flessibili | `layout.rs:1` |
-| `map_view.rs` | vista interattiva della mappa ad albero (GTK4 + Cairo + Pango) con pan, zoom, collapse, rendering di immagini/equazioni e colori per ramo | `map_view.rs:1` |
-| `markers.rs` | catalogo marker verificato dal binario XMind | `markers.rs:1` |
-| `mathjax.rs` | scoperta ed esecuzione del renderer Node | `mathjax.rs:30`, `mathjax.rs:90` |
-| `raster.rs` | SVG → PNG con resvg/tiny-skia | `raster.rs:10` |
-| `renderer_assets.rs` | estrazione del renderer incorporato in cache | `renderer_assets.rs:15` |
-| `validate.rs` | validazione dell'archivio prima di scrivere | `validate.rs:28` |
-| `safety.rs` | rilevamento XMind aperto e conflitti su disco | `safety.rs:12`, `safety.rs:80` |
-| `error.rs` | `ErrorPayload { code, message }` verso la UI | `error.rs:7` |
-| `build.rs` | prepara e impacchetta il renderer in `renderer.tar.gz` | `build.rs:20` |
-
-Moduli fuori da `src-tauri/src/`:
-
-- `src-tauri/examples/inject.rs` — CLI per generare file di prova.
-- `src-tauri/tests/e2e_real_map.rs` — test end-to-end su mappa reale.
-- `xtask/src/main.rs` — task di build (`cargo xtask appimage`, `cargo xtask install`).
-
-## Flusso dati
-
-### Apertura
-
-```
-controller.open(path)
-  → state::OpenWorkbook::open           (state.rs:77)
-      → archive::read_archive           (legge tutte le entry, risorse separate)
-      → serde_json::from_slice → Vec<Sheet>
-      → hash + mtime iniziali           (per rilevare conflitti)
-  → WorkbookDto (to_dto)                (state.rs:239)
+```text
+AppController.open(bytes)
+  → readArchive                 ZIP: entry normali e resources/
+  → JSON.parse(content.json)    Sheet[]; le chiavi sconosciute restano nei campi extra
+  → OpenWorkbook                archivio, manifest, hash originale, undo/redo
+  → WorkbookDto                 fogli e topic per albero, ispettore e mappa
 ```
 
-`content.json` viene deserializzato in `Vec<Sheet>`: i campi noti sono tipizzati,
-tutto il resto finisce in `#[serde(flatten)] extra` e viene riserializzato
-identico. Vedi `model.rs:69`.
+Le interfacce di `model/types.ts` accettano chiavi aggiuntive (`[key: string]:
+unknown`); la serializzazione non deve eliminare proprietà che XMap Studio non
+conosce. Il formato dettagliato e lo schema MathJax sono descritti in
+[`XMIND-FORMAT.md`](XMIND-FORMAT.md).
 
-Apertura dal file manager: l'app è registrata su `application/xmind`
-(`HANDLES_OPEN`). Il doppio clic o "Apri con…" passa il percorso via `Exec=… %f`
-del `.desktop`, GApplication emette `open` (`gui.rs:165`) e ogni file
-ricevuto ottiene una finestra indipendente con `controller.open`; così
-un'apertura esterna non sovrascrive modifiche non salvate in un'altra finestra.
+## Modifica di un'equazione
 
-### Applicazione di un'equazione
-
-```
-controller.apply(topic_id, latex, title_mode)
-  → apply_batch ([BatchSpec])           (controller.rs:237)
-      → renderer.render                 (mathjax.rs:90 → node gen_equation.mjs)
-      → equation::apply_equation        (equation.rs:61)
-          → raster::svg_to_png          (3×, `currentColor` concretizzato)
-          → resource = "resources/<sha256(png)>.png"
-          → aggiorna extensions[] + image{} annidato + title
-      → risorse aggiunte all'archivio, commit() (snapshot undo/redo)
+```text
+controller.apply(topicId, latex)
+  → MathJax SVG
+  → SVG → PNG (resvg quando disponibile, Canvas nel browser)
+  → SHA-256 → resources/<hash>.png
+  → topic.extensions[] + topic.image{} + titolo
+  → snapshot undo/redo in memoria
 ```
 
-`apply_batch_inner` (`controller.rs:185`) lavora su una **copia** del contenuto:
-se una formula è invalida, nulla viene modificato. "Applica" tocca solo la
-memoria; il disco resta intatto fino a `Salva`.
+L'applicazione non scrive subito il file. `applyBatch` usa una copia di lavoro e
+registra il batch solo se tutte le formule riescono. Le risorse orfane non si
+rimuovono, così undo/redo e campi non riconosciuti restano sicuri.
 
-### Salvataggio
+## Salvataggio
 
-```
-controller.save(force)
-  → state::OpenWorkbook::save_to        (state.rs:179)
-      → safety::xmind_processes         (blocca se XMind è aperto, salvo force)
-      → safety::has_conflict            (file cambiato dall'apertura?)
-      → build_bytes                     (state.rs:149)
-          → serializza content.json
-          → rimuove Thumbnails/thumbnail.png
-          → validate::refresh_manifest  (registra risorse, elimina thumbnail)
-          → build_archive_bytes in memoria
-          → validate::validate_archive_bytes  (PRIMA di scrivere)
-      → archive::atomic_write           (archive.rs:209)
-          → temp nella stessa dir → fsync → backup (cartella nascosta) → rename → fsync dir
-      → validazione post-scrittura del file reale
+```text
+prepareArchiveBytes()
+  → content.json e manifest aggiornati
+  → thumbnail obsoleta rimossa
+  → ZIP ricostruito in memoria
+  → validateArchiveBytes (risorse, allegati, manifest, JSON, ZIP)
+  → adapter di destinazione
+       Electron: check hash → temp/fsync → backup → rename/fsync directory
+       Browser: File System Access API oppure download
+  → markSaved(path, hash)
 ```
 
-Lo ZIP viene riaperto e validato in memoria prima di sovrascrivere qualsiasi
-cosa. Se la validazione fallisce, il file dell'utente non viene toccato.
+Nel desktop Electron il processo principale valida di nuovo i byte prima della
+scrittura e rifiuta l'overwrite se il file è cambiato dall'apertura. Il controllo
+di XMind in esecuzione richiede conferma esplicita per forzare il salvataggio.
+Ogni workbook aperto dal file manager ha una finestra indipendente; all'interno
+della stessa finestra, aprire o creare un'altra mappa chiede prima come gestire
+le modifiche non salvate.
 
-### Export / import testuale
+Il browser non può ispezionare i processi del sistema. Se è disponibile un
+`FileSystemFileHandle`, il salvataggio confronta l'hash del file prima di
+sovrascriverlo; in assenza di handle produce un download.
 
-```
-controller.export_outline(format, path)
-  → export::to_markdown / to_opml        (solo modello in memoria)
-  → std::fs::write (file NUOVO dell'utente, non il .xmind)
+## Operazioni e UI
 
-controller.import_outline(format, path)
-  → import::parse → OutlineNode          (parser senza dipendenze)
-  → import::node_to_topic + renderer     (le `$…$` diventano equazioni native)
-  → nuova Sheet in wb.content + commit   (nessuna scrittura finché non salvi)
-```
+- Modifica topic: titolo, note, etichette, link, marker, task, colore,
+  relazioni, boundary e summary.
+- Struttura: aggiunta, eliminazione e spostamento di sottoalberi; undo/redo.
+- Interoperabilità: export Markdown/OPML/outliner, import, merge e split.
+- Presentazione: ricerca e filtri nell'albero, vista mappa interattiva e
+  outliner.
+- Media: equazioni e immagini XMind renderizzate nella vista mappa; allegati
+  mantenuti in `attachments/` e registrati nel manifest.
 
-### Unione e divisione (Fase 2)
+## Differenze architetturali dalla versione Rust
 
-```
-controller.merge_workbook(path)
-  → OpenWorkbook::open del secondo file
-  → merge::merge_sheets: remap_ids (id + xmind:#id/topicId/end1Id/end2Id)
-  → copia risorse (content-addressed) e allegati mancanti
-  → sheet accodate + commit              (nessuna scrittura finché non salvi)
+Rust usa GTK e sposta rendering/salvataggio fuori dal main loop GTK. In questa
+versione TypeScript, MathJax e parte del calcolo del layout girano nel renderer
+React; mappe grandi o formule pesanti possono quindi causare pause visibili.
+La divisione di file e le altre scritture `.xmind` passano per la scrittura
+atomica desktop o per l'API di salvataggio del browser. La suite automatica non
+sostituisce l'apertura manuale del file risultante in XMind.
 
-controller.split_topic(topic_id, out_path)
-  → merge::standalone_sheet              (il ramo diventa rootTopic)
-  → solo risorse/allegati referenziati dal ramo
-  → merge::build_standalone_bytes        (content+metadata+manifest, validato)
-  → archive::atomic_write                (unica scrittura su disco)
-```
+## Codice Rust di riferimento
 
-### Struttura (Fase 3)
-
-Relazioni (a livello sheet), boundary e sommari (sui figli del topic) sono
-tipizzati in `model.rs` e manipolati da `edit.rs`. `controller.add_topic_*` e
-`controller.remove_topic_*` espongono le operazioni; `edit::remove_topic`
-riallinea gli intervalli `(start,end)` e rimuove relazioni/descrittori orfani.
-Il sommario è scritto in **doppia rappresentazione** (descrittore + topic in
-`children.summary`).
-
-### Allegati (Fase 4)
-
-```
-controller.attach_file_to_topic(topic_id, path)
-  → media::attach_file: entry `attachments/<uuid>.bin` in archive.entries
-  → edit::set_href("xap:attachments/<uuid>.bin") + titolo = nome file
-  → al salvataggio build_bytes registra l'entry nel manifest
-```
-
-### Produttività (Fase 5)
-
-- Task: `task.rs` legge/scrive l'extension `org.xmind.ui.task` preservando
-  `dependencies`; l'outliner è `export::to_outline` in sola lettura.
-- Colore del ramo: `model::set_fill_color` tocca `style.properties["svg:fill"]`
-  senza perdere le altre proprietà di stile.
-
-### Vista mappa (Fase 6/7)
-
-```
-gui::refresh
-  → controller.workbook()                     (DTO: sheets/topics)
-  → controller.resource_bytes(src) per i topic con image_src (PNG equazioni/immagini)
-  → map_view.set_images(bytes) → cache + superfici Cairo decodificate
-  → map_view.set_workbook(sheets)
-       → layout::layout_single_sheet → Layout { nodes, edges, bounds }  (no GTK)
-       → DrawingArea.set_draw_func: cairo (card, curve, PNG) + Pango (testo)
-```
-
-Il layout è a **Logic Chart orizzontale** (radice in alto a sinistra, rami di
-primo livello in colonna, sottoalberi verso destra) come XMind: i rami di primo
-livello sono box colorati, i livelli profondi sono testo nudo. I colori dei rami
-arrivano dal `svg:fill` esplicito o, in mancanza, dalla palette "Colored Branch"
-del tema Snowbrush (`layout::BRANCH_COLORS`); i connettori sono a gomito col bus
-verticale condiviso tra fratelli. Le equazioni e le immagini semplici sono
-disegnate come PNG decodificati (`cairo::ImageSurface`), non come segnaposto di
-testo. Il layout resta puro e testato a parte in `layout.rs`.
-
-### Anteprima della formula (editor)
-
-```
-gui::schedule_preview  (debounce ~220 ms)
-  → controller.preview(latex, DEFAULT_EM_PX)
-  → raster::svg_to_png (fino a 2×, colore in base al tema; scala ridotta se la
-    formula supera l'altezza massima della striscia)
-  → gdk::Texture mostrata in una gtk::Picture
-```
-
-### Spostamento nell'albero (drag & drop)
-
-```
-gtk::DragSource sulla riga
-  → prepare: id del topic in `State::dragging` + ContentProvider (string)
-gtk::DropTarget sulla riga
-  → enter/motion: `drop_plan` = id sorgente + id bersaglio, rifiuta sé stesso e i
-    discendenti; `drop_placement` (terzi della riga) → Into/Before/After
-  → drop: controller.move_topic(...) su un thread, poi refresh e selezione
-```
-
-`edit::move_topic` (`edit.rs:158`) stacca il sotto-albero e lo reinserisce rispetto
-al bersaglio, rifiutando radici e cicli. Il rientro è calcolato dal `depth` nel
-DTO, quindi si aggiorna da solo dopo ogni spostamento. La mappa `State::row_ids`
-associa ogni widget-riga al suo topic (il `ListItem` non è un widget).
-
-### Chiusura della finestra
-
-`gui::confirm_close` (`gui.rs:1615`) intercetta `close-request`: con modifiche non
-salvate chiede Salva / Non salvare / Annulla. "Salva" riusa `do_save` con
-`CloseAfter::Yes` (rispettando i blocchi XMind/conflitto) e chiude solo a
-salvataggio riuscito; il flag `State::closing` evita il ri-prompt al rientro.
-
-## Threading
-
-Il main loop GTK non esegue mai lavoro pesante. Tutte le operazioni (apertura,
-rendering, applicazione, salvataggio, esportazione) passano per
-`gui::spawn_blocking` (`gui.rs:1060`):
-
-```rust
-fn spawn_blocking<T, F, D>(work: F, done: D)
-where F: FnOnce() -> T + Send + 'static, D: FnOnce(T) + 'static
-```
-
-Un `std::thread` esegue il lavoro e invia il risultato su un `async_channel`;
-il main thread lo riceve con `glib::MainContext::default().spawn_local` e invoca
-la callback `done`. Lo stato condiviso è `Arc<Mutex<AppController>>`.
-
-## Confini e invarianti
-
-- **La UI non conosce il formato XMind.** Parla solo con `AppController` e con
-  i DTO in `state.rs`/`controller.rs`.
-- **Il backend non conosce GTK.** `controller.rs` non importa nulla di GTK: è
-  testabile e riutilizzabile (lo fa `examples/inject.rs`).
-- **Nessuna dipendenza da Tauri** nel codice attuale, nonostante i nomi ereditati
-  (`src-tauri/`, DTO con suffisso `Dto`). Vedi le deviazioni nel `README.md`.
-- **Il disco si tocca solo in `archive::atomic_write`.** Ogni altra operazione è
-  in memoria finché non si salva.
-
-## Vedi anche
-
-- Formato `.xmind` e schema MathJax: [`XMIND-FORMAT.md`](XMIND-FORMAT.md)
-- Build e ambiente: [`DEVELOPMENT.md`](DEVELOPMENT.md)
-- Test: [`TESTING.md`](TESTING.md)
+`src-tauri/src/` resta utile per confrontare le invarianti. Non aggiungere
+feature alla versione Rust come unica implementazione: la versione attiva è
+`packages/core` + `apps/web` + `apps/desktop`. L'audit di parità è in
+[`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md).

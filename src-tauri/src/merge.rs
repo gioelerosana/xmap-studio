@@ -116,6 +116,71 @@ pub fn attachments_used(sheets: &[Sheet]) -> BTreeSet<String> {
     out
 }
 
+/// Prepara gli allegati di un workbook da unire, risolvendo collisioni di nome
+/// e aggiornando i riferimenti nel contenuto importato.
+pub fn attachments_to_copy(
+    sheets: &mut [Sheet],
+    source: &crate::archive::Entries,
+    destination: &crate::archive::Entries,
+) -> Result<Vec<(String, Vec<u8>)>, ErrorPayload> {
+    let mut value = serde_json::to_value(&*sheets)
+        .map_err(|e| err(CODE_FORMAT, format!("serializzazione allegati: {e}")))?;
+    let refs = attachments_used(sheets);
+    let mut remap = HashMap::new();
+    let mut copies = Vec::new();
+
+    for source_path in refs {
+        let bytes = source.get(&source_path).ok_or_else(|| {
+            err(
+                CODE_FORMAT,
+                format!("allegato referenziato ma assente: {source_path}"),
+            )
+        })?;
+        match destination.get(&source_path) {
+            None => {
+                remap.insert(source_path.clone(), source_path.clone());
+                copies.push((source_path, bytes.clone()));
+            }
+            Some(existing) if existing == bytes => {
+                remap.insert(source_path.clone(), source_path);
+            }
+            Some(_) => {
+                let destination_path = loop {
+                    let candidate = format!("attachments/{}.bin", new_topic_id());
+                    if !destination.contains_key(&candidate)
+                        && !copies.iter().any(|(name, _)| name == &candidate)
+                    {
+                        break candidate;
+                    }
+                };
+                remap.insert(source_path, destination_path.clone());
+                copies.push((destination_path, bytes.clone()));
+            }
+        }
+    }
+
+    fn rewrite(value: &mut Value, remap: &HashMap<String, String>) {
+        match value {
+            Value::String(text) => {
+                if let Some(path) = text.strip_prefix("xap:") {
+                    if let Some(new_path) = remap.get(path) {
+                        *text = format!("xap:{new_path}");
+                    }
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(|item| rewrite(item, remap)),
+            Value::Object(object) => object.values_mut().for_each(|item| rewrite(item, remap)),
+            _ => {}
+        }
+    }
+
+    rewrite(&mut value, &remap);
+    let rewritten: Vec<Sheet> = serde_json::from_value(value)
+        .map_err(|e| err(CODE_FORMAT, format!("deserializzazione allegati: {e}")))?;
+    sheets.clone_from_slice(&rewritten);
+    Ok(copies)
+}
+
 /// Costruisce una mappa a sé stante il cui `rootTopic` è `topic`, con id
 /// riassegnati. `title` finisce sia nel titolo della sheet sia, se il ramo non
 /// ha titolo, in quello della radice.
@@ -341,6 +406,49 @@ mod tests {
         assert_eq!(
             attachments_used(&with_attach),
             ["attachments/f.bin".to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn merge_attachment_collisions_are_remapped_and_copied() {
+        let mut sheets = vec![sample().remove(0)];
+        sheets[0].root_topic.as_mut().unwrap().href = Some("xap:attachments/shared.bin".into());
+        let mut source = crate::archive::Entries::new();
+        source.insert("attachments/shared.bin".into(), b"source".to_vec());
+        let mut destination = crate::archive::Entries::new();
+        destination.insert("attachments/shared.bin".into(), b"destination".to_vec());
+
+        let copies = attachments_to_copy(&mut sheets, &source, &destination).unwrap();
+        let href = sheets[0]
+            .root_topic
+            .as_ref()
+            .unwrap()
+            .href
+            .as_deref()
+            .unwrap();
+        let remapped_path = href.strip_prefix("xap:").unwrap();
+
+        assert_ne!(remapped_path, "attachments/shared.bin");
+        assert_eq!(copies.len(), 1);
+        assert_eq!(copies[0].0, remapped_path);
+        assert_eq!(copies[0].1, b"source");
+    }
+
+    #[test]
+    fn merge_reuses_identical_attachments_and_rejects_missing_ones() {
+        let mut sheets = vec![sample().remove(0)];
+        sheets[0].root_topic.as_mut().unwrap().href = Some("xap:attachments/shared.bin".into());
+        let mut source = crate::archive::Entries::new();
+        source.insert("attachments/shared.bin".into(), b"same".to_vec());
+        let mut destination = crate::archive::Entries::new();
+        destination.insert("attachments/shared.bin".into(), b"same".to_vec());
+
+        assert!(attachments_to_copy(&mut sheets, &source, &destination)
+            .unwrap()
+            .is_empty());
+        assert!(
+            attachments_to_copy(&mut sheets, &crate::archive::Entries::new(), &destination)
+                .is_err()
         );
     }
 }

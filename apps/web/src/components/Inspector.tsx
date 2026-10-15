@@ -315,7 +315,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
   const addBoundary = () => {
     try {
-      controller.addTopicBoundary(t.id, 0, t.childCount - 1);
+      controller.addTopicBoundary(t.id);
       onChanged();
       onToast('success', 'Cornice aggiunta');
     } catch (err: any) {
@@ -325,7 +325,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
   const addSummary = () => {
     try {
-      controller.addTopicSummary(t.id, 0, t.childCount - 1, 'Sommario');
+      controller.addTopicSummary(t.id);
       onChanged();
       onToast('success', 'Sommario aggiunto');
     } catch (err: any) {

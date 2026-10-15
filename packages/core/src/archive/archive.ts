@@ -22,6 +22,25 @@ export function sha256Hex(data: Uint8Array | string): string {
   return pureSha256(bytes);
 }
 
+/** Calcola SHA-256 senza bloccare la UI quando WebCrypto è disponibile. */
+export async function sha256HexAsync(data: Uint8Array | string): Promise<string> {
+  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+
+  if (typeof process !== 'undefined' && process.versions?.node) {
+    const { createHash } = await import('node:crypto');
+    return createHash('sha256').update(bytes).digest('hex');
+  }
+
+  if (globalThis.crypto?.subtle) {
+    const digestBytes = new Uint8Array(bytes.length);
+    digestBytes.set(bytes);
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', digestBytes.buffer);
+    return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
+  }
+
+  return pureSha256(bytes);
+}
+
 function pureSha256(bytes: Uint8Array): string {
   function rightRotate(value: number, amount: number) {
     return (value >>> amount) | (value << (32 - amount));

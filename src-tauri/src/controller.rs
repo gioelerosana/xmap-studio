@@ -829,15 +829,24 @@ impl AppController {
         let path = path.strip_prefix("file://").unwrap_or(path);
         let other = OpenWorkbook::open(&PathBuf::from(path))?;
         self.with_wb(|wb| {
+            let mut imported_sheets = other.content.clone();
+            let attachments = crate::merge::attachments_to_copy(
+                &mut imported_sheets,
+                &other.archive.entries,
+                &wb.archive.entries,
+            )?;
             let resources = crate::merge::resources_to_copy(
-                &other.content,
+                &imported_sheets,
                 &other.archive.resources,
                 &wb.archive.resources,
             );
             let (added_sheets, added_topics) =
-                crate::merge::merge_sheets(&mut wb.content, other.content)?;
+                crate::merge::merge_sheets(&mut wb.content, imported_sheets)?;
             for (key, bytes) in resources {
                 wb.archive.resources.insert(key, bytes);
+            }
+            for (key, bytes) in attachments {
+                wb.archive.entries.insert(key, bytes);
             }
             wb.commit();
             Ok(MergeResultDto {
@@ -870,7 +879,7 @@ impl AppController {
                     .collect(),
                 None,
             )?;
-            std::fs::write(&target, bytes)
+            crate::archive::atomic_write(&target, &bytes, true)
                 .map_err(|e| ErrorPayload::new(crate::error::CODE_IO, format!("{e:#}")))?;
             Ok(target.display().to_string())
         })

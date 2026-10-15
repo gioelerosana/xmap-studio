@@ -13,7 +13,11 @@ export interface ElectronAPI {
     bytes: number[],
     options?: { description?: string; extensions?: string[] }
   ) => Promise<{ path: string } | null>;
-  saveAtomic: (filePath: string, bytes: number[]) => Promise<{ backup?: string; bytes: number }>;
+  saveAtomic: (
+    filePath: string,
+    bytes: number[],
+    expectedHash?: string
+  ) => Promise<{ backup?: string; bytes: number }>;
   checkXMindRunning: () => Promise<string[]>;
   minimize: () => void;
   maximize: () => void;
@@ -23,7 +27,6 @@ export interface ElectronAPI {
   getInitialFile: () => Promise<string | null>;
   onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;
   onBeforeClose: (callback: () => void) => () => void;
-  onOpenFile: (callback: (filePath: string) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -33,8 +36,8 @@ const api: ElectronAPI = {
   saveFileDialog: (suggestedName?: string) => ipcRenderer.invoke('dialog:saveFile', suggestedName),
   saveBytes: (suggestedName, bytes, options) =>
     ipcRenderer.invoke('dialog:saveBytes', suggestedName, bytes, options),
-  saveAtomic: (filePath: string, bytes: number[]) =>
-    ipcRenderer.invoke('fs:saveAtomic', filePath, bytes),
+  saveAtomic: (filePath: string, bytes: number[], expectedHash?: string) =>
+    ipcRenderer.invoke('fs:saveAtomic', filePath, bytes, expectedHash),
   checkXMindRunning: () => ipcRenderer.invoke('safety:checkXMind'),
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
@@ -51,11 +54,6 @@ const api: ElectronAPI = {
     const handler = () => callback();
     ipcRenderer.on('app:beforeClose', handler);
     return () => ipcRenderer.removeListener('app:beforeClose', handler);
-  },
-  onOpenFile: (callback) => {
-    const handler = (_: any, filePath: string) => callback(filePath);
-    ipcRenderer.on('app:openFile', handler);
-    return () => ipcRenderer.removeListener('app:openFile', handler);
   },
 };
 

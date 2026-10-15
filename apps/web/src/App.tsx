@@ -16,6 +16,7 @@ import {
   TopicView,
   WorkbookDto,
   buildArchiveBytes,
+  sha256HexAsync,
   RawArchive,
 } from '@xmap/core';
 import {
@@ -62,7 +63,11 @@ declare global {
       openFile: (options?: { description?: string; extensions?: string[] }) => Promise<{ path: string; name: string; bytes: number[] } | null>;
       saveFileDialog: (suggestedName?: string) => Promise<string | null>;
       saveBytes: (suggestedName: string, bytes: number[], options?: { description?: string; extensions?: string[] }) => Promise<{ path: string } | null>;
-      saveAtomic: (filePath: string, bytes: number[]) => Promise<{ backup?: string; bytes: number }>;
+      saveAtomic: (
+        filePath: string,
+        bytes: number[],
+        expectedHash?: string
+      ) => Promise<{ backup?: string; bytes: number }>;
       checkXMindRunning: () => Promise<string[]>;
       minimize: () => void;
       maximize: () => void;
@@ -72,12 +77,12 @@ declare global {
       getInitialFile: () => Promise<string | null>;
       onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;
       onBeforeClose: (callback: () => void) => () => void;
-      onOpenFile: (callback: (filePath: string) => void) => () => void;
     };
   }
 }
 
 type CloseAction = null | 'confirm';
+type ReplacementAction = 'save' | 'discard' | 'cancel';
 
 function sanitizeName(name: string): string {
   return (
@@ -104,6 +109,8 @@ export const App: React.FC = () => {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
+  const [pendingReplacement, setPendingReplacement] = useState<(() => Promise<void>) | null>(null);
+  const [replacePrompt, setReplacePrompt] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -127,6 +134,18 @@ export const App: React.FC = () => {
 
   const resolveResource = useCallback(
     (src: string) => controller.resourceBytes(src),
+    [controller]
+  );
+
+  const requestWorkbookReplacement = useCallback(
+    async (replace: () => Promise<void>) => {
+      if (controller.isDirty()) {
+        setPendingReplacement(() => replace);
+        setReplacePrompt(true);
+        return;
+      }
+      await replace();
+    },
     [controller]
   );
 
@@ -164,24 +183,28 @@ export const App: React.FC = () => {
       if (!window.electronAPI) return;
       const res = await window.electronAPI.openFilePath(filePath);
       if (!res) return;
-      const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
-      setWorkbook(dto);
-      setActiveSheetIndex(0);
-      setCollapsedIds(new Set());
-      setSelectedTopicId(undefined);
-      addToast('success', `Aperto: ${res.name}`);
+      try {
+        await requestWorkbookReplacement(async () => {
+          const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
+          setWorkbook(dto);
+          setFileHandle(undefined);
+          setActiveSheetIndex(0);
+          setCollapsedIds(new Set());
+          setSelectedTopicId(undefined);
+          addToast('success', `Aperto: ${res.name}`);
+        });
+      } catch (err: any) {
+        addToast('error', `Errore apertura file: ${err.message || String(err)}`);
+      }
     },
-    [controller, addToast]
+    [controller, addToast, requestWorkbookReplacement]
   );
 
   // File iniziale + aperture successive (Electron)
   useEffect(() => {
     if (!isElectron || !window.electronAPI) return;
-    window.electronAPI.getInitialFile().then((p) => {
+    void window.electronAPI.getInitialFile().then((p) => {
       if (p) void openFromPath(p);
-    });
-    return window.electronAPI.onOpenFile((p) => {
-      void openFromPath(p);
     });
   }, [isElectron, openFromPath]);
 
@@ -190,41 +213,48 @@ export const App: React.FC = () => {
       if (isElectron && window.electronAPI) {
         const res = await window.electronAPI.openFileDialog();
         if (!res) return;
-        const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
-        setWorkbook(dto);
-        setActiveSheetIndex(0);
-        setCollapsedIds(new Set());
-        setSelectedTopicId(undefined);
-        addToast('success', `Mappa aperta: ${res.name}`);
+        await requestWorkbookReplacement(async () => {
+          const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
+          setWorkbook(dto);
+          setFileHandle(undefined);
+          setActiveSheetIndex(0);
+          setCollapsedIds(new Set());
+          setSelectedTopicId(undefined);
+          addToast('success', `Mappa aperta: ${res.name}`);
+        });
         return;
       }
 
       const res = await openLocalXmindFile();
       if (!res) return;
-      const dto = await controller.open(res.data, res.name, res.name);
-      setWorkbook(dto);
-      setFileHandle(res.handle);
-      setActiveSheetIndex(0);
-      setCollapsedIds(new Set());
-      setSelectedTopicId(undefined);
-      addToast('success', `Mappa aperta: ${res.name}`);
+      await requestWorkbookReplacement(async () => {
+        const dto = await controller.open(res.data, res.name, res.name);
+        setWorkbook(dto);
+        setFileHandle(res.handle);
+        setActiveSheetIndex(0);
+        setCollapsedIds(new Set());
+        setSelectedTopicId(undefined);
+        addToast('success', `Mappa aperta: ${res.name}`);
+      });
     } catch (err: any) {
       addToast('error', `Errore apertura file: ${err.message || String(err)}`);
     }
-  }, [controller, isElectron, addToast]);
+  }, [controller, isElectron, addToast, requestWorkbookReplacement]);
 
   const handleLoadDemo = async () => {
     try {
       const response = await fetch('/demo.xmind');
       if (!response.ok) throw new Error('File demo non reperibile');
       const buffer = await response.arrayBuffer();
-      const dto = await controller.open(new Uint8Array(buffer), 'Relazioni.xmap-studio.xmind');
-      setWorkbook(dto);
-      setFileHandle(undefined);
-      setActiveSheetIndex(0);
-      setCollapsedIds(new Set());
-      setSelectedTopicId(undefined);
-      addToast('info', 'Mappa demo caricata');
+      await requestWorkbookReplacement(async () => {
+        const dto = await controller.open(new Uint8Array(buffer), 'Relazioni.xmap-studio.xmind');
+        setWorkbook(dto);
+        setFileHandle(undefined);
+        setActiveSheetIndex(0);
+        setCollapsedIds(new Set());
+        setSelectedTopicId(undefined);
+        addToast('info', 'Mappa demo caricata');
+      });
     } catch (err: any) {
       addToast('error', `Impossibile caricare la demo: ${err.message}`);
     }
@@ -258,13 +288,15 @@ export const App: React.FC = () => {
       resources: new Map(),
     };
     const bytes = await buildArchiveBytes(raw);
-    const dto = await controller.open(bytes, 'senza_titolo.xmind');
-    setWorkbook(dto);
-    setFileHandle(undefined);
-    setActiveSheetIndex(0);
-    setCollapsedIds(new Set());
-    setSelectedTopicId(undefined);
-    addToast('success', 'Nuova mappa creata');
+    await requestWorkbookReplacement(async () => {
+      const dto = await controller.open(bytes, 'senza_titolo.xmind');
+      setWorkbook(dto);
+      setFileHandle(undefined);
+      setActiveSheetIndex(0);
+      setCollapsedIds(new Set());
+      setSelectedTopicId(undefined);
+      addToast('success', 'Nuova mappa creata');
+    });
   };
 
   const writeWorkbook = useCallback(
@@ -286,6 +318,13 @@ export const App: React.FC = () => {
         }
 
         const { bytes, validation } = await controller.prepareArchiveBytes();
+        const hasDesktopPath =
+          isElectron && workbook.path !== 'senza_titolo.xmind' && workbook.path.includes('/');
+        const expectedHash =
+          !saveAs && (hasDesktopPath || Boolean(fileHandle))
+            ? controller.expectedFileHash()
+            : undefined;
+        const contentHash = await sha256HexAsync(bytes);
 
         if (isElectron && window.electronAPI) {
           let savePath = workbook.path;
@@ -294,16 +333,21 @@ export const App: React.FC = () => {
             if (!selected) return false;
             savePath = selected;
           }
-          await window.electronAPI.saveAtomic(savePath, Array.from(bytes));
-          controller.markSaved(savePath);
+          await window.electronAPI.saveAtomic(savePath, Array.from(bytes), expectedHash);
+          controller.markSaved(savePath, contentHash);
           refreshState();
           addToast('success', `Salvato (${bytes.length.toLocaleString('it-IT')} byte)`);
           return true;
         }
 
-        const handle = await saveLocalXmindFile(bytes, workbook.fileName || 'mappa.xmind', saveAs ? undefined : fileHandle);
+        const handle = await saveLocalXmindFile(
+          bytes,
+          workbook.fileName || 'mappa.xmind',
+          saveAs ? undefined : fileHandle,
+          expectedHash
+        );
         if (handle) setFileHandle(handle);
-        controller.markSaved();
+        controller.markSaved(undefined, contentHash);
         refreshState();
         addToast('success', `Mappa salvata (${validation.resourceRefs} risorse registrate)`);
         return true;
@@ -328,8 +372,28 @@ export const App: React.FC = () => {
 
   const handleSaveAs = useCallback(async () => {
     if (!workbook) return;
-    await writeWorkbook(true, true);
+    await writeWorkbook(false, true);
   }, [workbook, writeWorkbook]);
+
+  const handleConfirmReplacement = async (action: ReplacementAction) => {
+    if (action === 'cancel') {
+      setReplacePrompt(false);
+      setPendingReplacement(null);
+      return;
+    }
+    if (action === 'save') {
+      const ok = await writeWorkbook(false, false);
+      if (!ok) return;
+    }
+    const replace = pendingReplacement;
+    setReplacePrompt(false);
+    setPendingReplacement(null);
+    try {
+      await replace?.();
+    } catch (err: any) {
+      addToast('error', `Impossibile aprire la mappa: ${err.message || String(err)}`);
+    }
+  };
 
   // Scorciatoie da tastiera
   useEffect(() => {
@@ -469,10 +533,11 @@ export const App: React.FC = () => {
     try {
       const bytes = await controller.splitTopic(selectedTopic.id);
       const base = sanitizeName(selectedTopic.title || 'mappa');
-      await saveBytes(bytes, `${base}.xmind`, 'application/vnd.xmind.workbook', {
+      const saved = await saveBytes(bytes, `${base}.xmind`, 'application/vnd.xmind.workbook', {
         description: 'File XMind',
         extensions: ['xmind'],
       });
+      if (!saved) return;
       addToast('success', 'Ramo estratto in una nuova mappa');
     } catch (err: any) {
       addToast('error', `Estrazione non riuscita: ${err.message}`);
@@ -498,7 +563,7 @@ export const App: React.FC = () => {
       return;
     }
     if (action === 'save') {
-      const ok = await writeWorkbook(true, false);
+      const ok = await writeWorkbook(false, false);
       if (!ok) return;
     }
     window.electronAPI?.forceClose();
@@ -753,6 +818,23 @@ export const App: React.FC = () => {
             <Button variant="flat" size="sm" onClick={() => handleConfirmClose('cancel')}>Annulla</Button>
             <Button variant="destructive" size="sm" onClick={() => handleConfirmClose('discard')}>Non salvare</Button>
             <Button variant="suggested" size="sm" onClick={() => handleConfirmClose('save')}>Salva</Button>
+          </div>
+        }
+      >
+        <span />
+      </Modal>
+
+      <Modal
+        isOpen={replacePrompt}
+        onClose={() => void handleConfirmReplacement('cancel')}
+        title="Salvare prima di aprire un’altra mappa?"
+        description="Le modifiche non salvate andranno perse se sostituisci la mappa aperta."
+        maxWidth="max-w-sm"
+        footer={
+          <div className="flex items-center justify-end gap-2 w-full">
+            <Button variant="flat" size="sm" onClick={() => void handleConfirmReplacement('cancel')}>Annulla</Button>
+            <Button variant="destructive" size="sm" onClick={() => void handleConfirmReplacement('discard')}>Non salvare</Button>
+            <Button variant="suggested" size="sm" onClick={() => void handleConfirmReplacement('save')}>Salva</Button>
           </div>
         }
       >

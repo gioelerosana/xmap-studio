@@ -15,7 +15,11 @@ export function refreshManifest(
   if (!manifest || typeof manifest !== 'object') {
     manifest = {};
   }
-  if (!manifest['file-entries'] || typeof manifest['file-entries'] !== 'object') {
+  if (
+    !manifest['file-entries'] ||
+    typeof manifest['file-entries'] !== 'object' ||
+    Array.isArray(manifest['file-entries'])
+  ) {
     manifest['file-entries'] = {};
   }
   const fileEntries = manifest['file-entries'] as Record<string, Record<string, unknown>>;
@@ -44,7 +48,11 @@ export function registerEntries(
   if (!manifest || typeof manifest !== 'object') {
     manifest = {};
   }
-  if (!manifest['file-entries'] || typeof manifest['file-entries'] !== 'object') {
+  if (
+    !manifest['file-entries'] ||
+    typeof manifest['file-entries'] !== 'object' ||
+    Array.isArray(manifest['file-entries'])
+  ) {
     manifest['file-entries'] = {};
   }
   const fileEntries = manifest['file-entries'] as Record<string, Record<string, unknown>>;

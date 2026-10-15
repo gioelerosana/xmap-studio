@@ -1,4 +1,4 @@
-import { buildArchiveBytes, readArchive } from './archive/archive.js';
+import { buildArchiveBytes, readArchive, sha256HexAsync } from './archive/archive.js';
 import { atomicWrite } from './archive/atomic.js';
 import { RawArchive } from './archive/types.js';
 import {
@@ -22,10 +22,13 @@ import {
 import { Sheet, Topic } from './model/types.js';
 import {
   countTopics,
+  collectAttachmentRefs,
+  collectResourceRefs,
   findTopic,
   fontSizePx,
   newTopicId,
   remapIds,
+  remapAttachmentRefs,
   setFillColor,
   sheetIndexOf,
   topicLatex,
@@ -36,7 +39,8 @@ import { applyEquation, removeEquation, TitleMode } from './latex/equation.js';
 import { renderLatexToSvg } from './latex/mathjax.js';
 import { svgToPng } from './latex/raster.js';
 import { clearTask, writeTask, TaskData } from './task/task.js';
-import { refreshManifest } from './safety/manifest.js';
+import { isMarkerKnown } from './markers/catalog.js';
+import { refreshManifest, registerEntries } from './safety/manifest.js';
 import { xmindProcesses } from './safety/process.js';
 import { validateArchiveBytes, ValidationReport } from './safety/validate.js';
 import { toMarkdown } from './exporters/markdown.js';
@@ -52,7 +56,7 @@ import {
   SaveResultDto,
   WorkbookDto,
 } from './state/types.js';
-import { OpenWorkbook } from './state/workbook.js';
+import { cloneSheets, OpenWorkbook } from './state/workbook.js';
 
 export class AppController {
   private currentWorkbook: OpenWorkbook | null = null;
@@ -105,7 +109,11 @@ export class AppController {
       throw new Error('content.json assente');
     }
     const contentStr = new TextDecoder('utf-8').decode(contentBytes);
-    const content: Sheet[] = JSON.parse(contentStr);
+    const parsedContent: unknown = JSON.parse(contentStr);
+    if (!Array.isArray(parsedContent)) {
+      throw new Error('content.json non è un array di fogli');
+    }
+    const content = parsedContent as Sheet[];
 
     let manifest: Record<string, unknown> = {};
     const manifestBytes = archive.entries.get('manifest.json');
@@ -120,7 +128,16 @@ export class AppController {
     const running = await xmindProcesses();
     const name = fileName || path.split('/').pop() || 'workbook.xmind';
 
-    this.currentWorkbook = new OpenWorkbook(path, name, archive, content, manifest, running);
+    const originalHash = await sha256HexAsync(data instanceof Uint8Array ? data : new Uint8Array(data));
+    this.currentWorkbook = new OpenWorkbook(
+      path,
+      name,
+      archive,
+      content,
+      manifest,
+      running,
+      originalHash
+    );
     return this.currentWorkbook.toDto();
   }
 
@@ -174,35 +191,46 @@ export class AppController {
 
   public async applyBatch(specs: BatchSpec[]): Promise<BatchResultDto> {
     const wb = this.ensureWorkbook();
-    let modified = 0;
+    if (specs.length === 0) throw new Error('Nessuna equazione da applicare.');
+
+    const working = cloneSheets(wb.content);
+    const pendingResources: Array<[string, Uint8Array]> = [];
     const errors: { topicId: string; error: string }[] = [];
 
     for (const spec of specs) {
-      const topic = findTopic(wb.content, spec.topicId);
+      const topic = findTopic(working, spec.topicId);
       if (!topic) {
         errors.push({ topicId: spec.topicId, error: 'Topic non trovato' });
-        continue;
+        break;
       }
       try {
         const fontPx = spec.fontSizePx ?? fontSizePx(topic);
         const emPx = fontPx ? fontPx * 1.25 : 23.33;
         const { outcome, png } = await applyEquation(topic, spec.latex, {
           emPx,
+          titleMode: spec.titleMode,
           color: spec.color,
         });
-        wb.archive.resources.set(outcome.resource, png);
-        modified++;
-      } catch (err: any) {
-        errors.push({ topicId: spec.topicId, error: err.message || String(err) });
+        pendingResources.push([outcome.resource, png]);
+      } catch (err: unknown) {
+        errors.push({
+          topicId: spec.topicId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        break;
       }
     }
 
-    if (modified > 0) {
-      wb.pushHistory();
+    if (errors.length > 0) {
+      return { modified: 0, totalLatex: specs.length, errors };
     }
 
+    wb.content = working;
+    for (const [name, bytes] of pendingResources) wb.archive.resources.set(name, bytes);
+    wb.pushHistory();
+
     return {
-      modified,
+      modified: specs.length,
       totalLatex: specs.length,
       errors,
     };
@@ -243,7 +271,7 @@ export class AppController {
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new Error(`Topic ${topicId} non trovato`);
 
-    setNotesDisplay(topic, display);
+    setNotesDisplay(topic, topic.notes ? display : null);
     wb.pushHistory();
     return wb.toDto();
   }
@@ -263,7 +291,16 @@ export class AppController {
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new Error(`Topic ${topicId} non trovato`);
 
-    toggleMarker(topic, markerId);
+    const id = markerId.trim();
+    if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+      throw new Error('Id marker non valido.');
+    }
+    const alreadyPresent = topic.markers?.some((marker) => marker.markerId === id) ?? false;
+    if (!alreadyPresent && !isMarkerKnown(id)) {
+      throw new Error(`Marker sconosciuto: ${id}`);
+    }
+
+    toggleMarker(topic, id);
     wb.pushHistory();
     return wb.toDto();
   }
@@ -321,6 +358,11 @@ export class AppController {
     const wb = this.ensureWorkbook();
     const sheetIdx = sheetIndexOf(wb.content, end1Id);
     if (sheetIdx === -1) throw new Error(`Topic ${end1Id} non trovato`);
+    const end2SheetIdx = sheetIndexOf(wb.content, end2Id);
+    if (end2SheetIdx === -1) throw new Error(`Topic ${end2Id} non trovato`);
+    if (sheetIdx !== end2SheetIdx) {
+      throw new Error('I blocchi non appartengono allo stesso foglio.');
+    }
     const sheet = wb.content[sheetIdx];
 
     addRelationship(sheet, end1Id, end2Id, title);
@@ -339,12 +381,21 @@ export class AppController {
     throw new Error(`Relazione ${relationshipId} non trovata`);
   }
 
-  public addTopicBoundary(topicId: string, start: number, end: number, title?: string): WorkbookDto {
+  public addTopicBoundary(
+    topicId: string,
+    start?: number,
+    end?: number,
+    title?: string
+  ): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new Error(`Topic ${topicId} non trovato`);
 
-    addBoundary(topic, start, end, title);
+    const childCount = topic.children?.attached?.length ?? 0;
+    const rangeStart = start ?? 0;
+    const rangeEnd = end ?? Math.max(0, childCount - 1);
+    validateChildRange(rangeStart, rangeEnd, childCount);
+    addBoundary(topic, rangeStart, rangeEnd, title);
     wb.pushHistory();
     return wb.toDto();
   }
@@ -361,12 +412,21 @@ export class AppController {
     return wb.toDto();
   }
 
-  public addTopicSummary(topicId: string, start: number, end: number, title: string): WorkbookDto {
+  public addTopicSummary(
+    topicId: string,
+    start?: number,
+    end?: number,
+    title: string = 'Sommario'
+  ): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new Error(`Topic ${topicId} non trovato`);
 
-    addSummary(topic, start, end, title);
+    const childCount = topic.children?.attached?.length ?? 0;
+    const rangeStart = start ?? 0;
+    const rangeEnd = end ?? Math.max(0, childCount - 1);
+    validateChildRange(rangeStart, rangeEnd, childCount);
+    addSummary(topic, rangeStart, rangeEnd, title);
     wb.pushHistory();
     return wb.toDto();
   }
@@ -418,11 +478,12 @@ export class AppController {
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new Error(`Topic ${topicId} non trovato`);
 
-    const ext = fileName.includes('.') ? `.${fileName.split('.').pop()}` : '.bin';
-    const attachmentPath = `attachments/${newTopicId()}${ext}`;
+    if (fileBytes.length === 0) throw new Error('Il file da allegare è vuoto.');
+    const attachmentPath = `attachments/${newTopicId()}.bin`;
 
     wb.archive.entries.set(attachmentPath, fileBytes);
     setHref(topic, `xap:${attachmentPath}`);
+    if (!topicTitle(topic).trim()) setTitle(topic, fileName.trim() || 'allegato');
     wb.pushHistory();
     return wb.toDto();
   }
@@ -489,7 +550,7 @@ export class AppController {
   public async importOutline(
     format: 'markdown' | 'opml' | string,
     text: string,
-    options: { asNewSheet?: boolean } = {}
+    options: { asNewSheet?: boolean } = { asNewSheet: true }
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
     const importedSheet = await importToSheet(format, text, async (t, latex) => {
@@ -517,6 +578,7 @@ export class AppController {
 
   public async mergeWorkbook(otherBytes: Uint8Array): Promise<MergeResultDto> {
     const wb = this.ensureWorkbook();
+    await validateArchiveBytes(otherBytes);
     const otherArchive = await readArchive(otherBytes);
     const otherContentBytes = otherArchive.entries.get('content.json');
     if (!otherContentBytes) throw new Error('content.json assente nel file da unire');
@@ -527,6 +589,28 @@ export class AppController {
     // Riassegna gli id per evitare collisioni tra file indipendenti.
     remapIds(otherSheets);
     const addedTopics = countTopics(otherSheets);
+
+    const attachmentRefs = new Set<string>();
+    collectAttachmentRefs(otherSheets, attachmentRefs);
+    const attachmentRemap = new Map<string, string>();
+    const attachmentsToCopy: Array<[string, Uint8Array]> = [];
+    for (const sourcePath of attachmentRefs) {
+      const bytes = otherArchive.entries.get(sourcePath);
+      if (!bytes) throw new Error(`Allegato referenziato ma assente: ${sourcePath}`);
+
+      const existing = wb.archive.entries.get(sourcePath);
+      if (!existing || bytesEqual(existing, bytes)) {
+        attachmentRemap.set(sourcePath, sourcePath);
+        if (!existing) attachmentsToCopy.push([sourcePath, bytes]);
+        continue;
+      }
+
+      const extension = sourcePath.match(/\.[a-zA-Z0-9]{1,12}$/)?.[0] ?? '.bin';
+      const destinationPath = `attachments/${newTopicId()}${extension}`;
+      attachmentRemap.set(sourcePath, destinationPath);
+      attachmentsToCopy.push([destinationPath, bytes]);
+    }
+    remapAttachmentRefs(otherSheets, attachmentRemap);
 
     let addedResources = 0;
     for (const [name, bytes] of otherArchive.resources) {
@@ -539,6 +623,9 @@ export class AppController {
     const addedSheets = otherSheets.length;
     for (const s of otherSheets) {
       wb.content.push(s);
+    }
+    for (const [name, bytes] of attachmentsToCopy) {
+      wb.archive.entries.set(name, bytes);
     }
 
     wb.pushHistory();
@@ -555,43 +642,54 @@ export class AppController {
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new Error(`Topic ${topicId} non trovato`);
 
-    // Raccoglie tutte le risorse referenziate dal sotto-albero
-    const refs = new Set<string>();
-    walkTopic(topic, (t) => {
-      if (t.image?.src?.startsWith('xap:resources/')) {
-        refs.add(t.image.src.slice(14));
-      }
-    });
+    const root = JSON.parse(JSON.stringify(topic)) as Topic;
 
     const newArchive: RawArchive = {
       entries: new Map(),
       resources: new Map(),
     };
 
-    for (const ref of refs) {
-      const resPath = `resources/${ref}`;
-      const bytes = wb.archive.resources.get(resPath);
-      if (bytes) {
-        newArchive.resources.set(resPath, bytes);
-      }
-    }
-
-    const newSheet: Sheet = {
+    const standalone: Sheet = {
       id: newTopicId(),
       class: 'sheet',
       title: topicTitle(topic) || 'Mappa Estratta',
-      rootTopic: JSON.parse(JSON.stringify(topic)),
+      revisionId: newTopicId(),
+      rootTopic: root,
     };
+    remapIds([standalone]);
+
+    const resourceRefs = new Set<string>();
+    collectResourceRefs(standalone, resourceRefs);
+    for (const ref of resourceRefs) {
+      const resPath = `resources/${ref}`;
+      const bytes = wb.archive.resources.get(resPath);
+      if (!bytes) throw new Error(`Risorsa referenziata ma assente: ${resPath}`);
+      newArchive.resources.set(resPath, bytes);
+    }
+
+    const attachmentRefs = new Set<string>();
+    collectAttachmentRefs(standalone, attachmentRefs);
+    for (const attachment of attachmentRefs) {
+      const bytes = wb.archive.entries.get(attachment);
+      if (!bytes) throw new Error(`Allegato referenziato ma assente: ${attachment}`);
+      newArchive.entries.set(attachment, bytes);
+    }
 
     const manifestObj = refreshManifest({}, newArchive.resources.keys(), true);
+    registerEntries(
+      manifestObj,
+      Array.from(newArchive.entries.keys()).filter((name) => name.startsWith('attachments/'))
+    );
     newArchive.entries.set('manifest.json', new TextEncoder().encode(JSON.stringify(manifestObj)));
-    newArchive.entries.set('content.json', new TextEncoder().encode(JSON.stringify([newSheet])));
+    newArchive.entries.set('content.json', new TextEncoder().encode(JSON.stringify([standalone])));
     newArchive.entries.set(
       'metadata.json',
       new TextEncoder().encode(JSON.stringify({ creator: { name: 'XMap Studio', version: '2.0' } }))
     );
 
-    return await buildArchiveBytes(newArchive);
+    const bytes = await buildArchiveBytes(newArchive);
+    await validateArchiveBytes(bytes);
+    return bytes;
   }
 
   /**
@@ -606,6 +704,10 @@ export class AppController {
 
     // Aggiorna manifest con tutte le risorse attuali e dropThumbnail
     const updatedManifest = refreshManifest(wb.manifest, wb.archive.resources.keys(), true);
+    registerEntries(
+      updatedManifest,
+      Array.from(wb.archive.entries.keys()).filter((name) => name.startsWith('attachments/'))
+    );
     wb.manifest = updatedManifest;
 
     wb.archive.entries.set(
@@ -628,14 +730,25 @@ export class AppController {
    * adapter esterno (Electron IPC, File System Access API). Opzionalmente
    * aggiorna il percorso (Salva con nome).
    */
-  public markSaved(path?: string): WorkbookDto {
+  public expectedFileHash(): string {
+    return this.ensureWorkbook().originalHash;
+  }
+
+  public markSaved(path?: string, contentHash?: string): WorkbookDto {
     const wb = this.ensureWorkbook();
-    wb.markSaved(path);
+    wb.markSaved(path, contentHash);
     return wb.toDto();
   }
 
-  public async save(force: boolean = false, desktopFs: boolean = false): Promise<SaveResultDto> {
+  public async save(
+    force: boolean = false,
+    desktopFs: boolean = false,
+    targetPath?: string
+  ): Promise<SaveResultDto> {
     const wb = this.ensureWorkbook();
+    if (!desktopFs || typeof process === 'undefined' || !process.versions?.node) {
+      throw new Error('Usa prepareArchiveBytes() e l’adapter di filesystem per salvare questo workbook.');
+    }
 
     if (!force) {
       const running = await xmindProcesses();
@@ -647,20 +760,20 @@ export class AppController {
     }
 
     const { bytes, validation } = await this.prepareArchiveBytes();
-
-    let backup: string | undefined;
-    if (desktopFs && typeof process !== 'undefined' && process.versions?.node) {
-      const report = await atomicWrite(wb.path, bytes, true);
-      backup = report.backup;
-    }
-
-    wb.markSaved();
+    const target = targetPath ?? wb.path;
+    const expectedHash = target === wb.path ? wb.originalHash : undefined;
+    const report = await atomicWrite(target, bytes, true, expectedHash);
+    const fs = await import('node:fs');
+    const writtenBytes = fs.readFileSync(target);
+    const writtenValidation = await validateArchiveBytes(writtenBytes);
+    const contentHash = await sha256HexAsync(writtenBytes);
+    wb.markSaved(target, contentHash);
 
     return {
-      path: wb.path,
-      backup,
+      path: target,
+      backup: report.backup,
       bytes: bytes.length,
-      validation,
+      validation: writtenValidation ?? validation,
     };
   }
 
@@ -669,9 +782,28 @@ export class AppController {
     force: boolean = false,
     desktopFs: boolean = false
   ): Promise<SaveResultDto> {
-    const wb = this.ensureWorkbook();
-    wb.path = newPath;
-    wb.fileName = newPath.split('/').pop() || newPath;
-    return await this.save(force, desktopFs);
+    this.ensureWorkbook();
+    return await this.save(force, desktopFs, newPath);
   }
+}
+
+function validateChildRange(start: number, end: number, childCount: number): void {
+  if (
+    childCount === 0 ||
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end < start ||
+    end >= childCount
+  ) {
+    throw new Error('Intervallo non valido per i sotto-blocchi collegati.');
+  }
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
 }

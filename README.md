@@ -115,7 +115,7 @@ save()
   → prepareArchiveBytes       (content.json + manifest + thumbnail rimossa)
   → validateArchiveBytes      (in memoria, PRIMA di scrivere)
   → scrittura atomica         (desktop: IPC su fs; web: File System Access)
-  → markSaved()
+  → markSaved(path, hash)
 ```
 
 L'anteprima della formula è **debounced** (~220 ms). Chiudendo la finestra con
@@ -202,7 +202,7 @@ pnpm install
 pnpm dev:web        # UI nel browser su http://localhost:3000
 pnpm dev:desktop    # app Electron (richiede la build web)
 pnpm build          # build di core + ui-kit + web + desktop
-pnpm test           # test di core (round-trip, task, validazione)
+pnpm test           # test core, round-trip e regressioni di parità
 ```
 
 `pnpm build` compila nell'ordine corretto: `@xmap/core` e `@xmap/ui-kit`
@@ -277,6 +277,11 @@ nativo con il LaTeX corretto.
   aggiunta, eliminazione (con i figli), spostamento (riordino/riannidamento) e
   struttura (relazioni, cornici, sommari). Restano fuori scope il rich text, la
   registrazione audio e l'editor di temi (il colore del ramo è supportato).
-- Il rilevamento di conflitti su disco (hash all'apertura) è nel core Rust di
-  riferimento: il port TS blocca il salvataggio mentre XMind è aperto ma non
-  confronta ancora l'hash del file.
+- Il desktop Electron confronta l'hash del file prima di sovrascriverlo e
+  richiede conferma se XMind è aperto. Il browser non può ispezionare i processi
+  del sistema; con un `FileSystemFileHandle` confronta comunque l'hash del file.
+- MathJax e parte del layout vengono calcolati nel renderer React: mappe grandi
+  o formule pesanti possono causare pause. La versione GTK spostava questi
+  lavori fuori dal main loop.
+- La build web segnala un bundle JavaScript principale sopra 500 kB e moduli
+  Node esternalizzati. La build riesce; resta lavoro di packaging/performance.

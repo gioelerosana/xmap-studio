@@ -350,3 +350,48 @@ export function collectResourceRefs(value: unknown, out: Set<string>): void {
     }
   }
 }
+
+/** Raccoglie i riferimenti xap:attachments/<nome> da un valore JSON. */
+export function collectAttachmentRefs(value: unknown, out: Set<string>): void {
+  if (typeof value === 'string') {
+    const prefix = 'xap:attachments/';
+    if (value.startsWith(prefix) && value.length > prefix.length) {
+      out.add(`attachments/${value.slice(prefix.length)}`);
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectAttachmentRefs(item, out);
+  } else if (value !== null && typeof value === 'object') {
+    for (const val of Object.values(value as Record<string, unknown>)) {
+      collectAttachmentRefs(val, out);
+    }
+  }
+}
+
+/** Riscrive i riferimenti agli allegati dopo una collisione durante il merge. */
+export function remapAttachmentRefs(value: unknown, paths: Map<string, string>): void {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i];
+      if (typeof item === 'string' && item.startsWith('xap:attachments/')) {
+        const oldPath = `attachments/${item.slice('xap:attachments/'.length)}`;
+        const newPath = paths.get(oldPath);
+        if (newPath) value[i] = `xap:${newPath}`;
+      } else {
+        remapAttachmentRefs(item, paths);
+      }
+    }
+    return;
+  }
+  if (value === null || typeof value !== 'object') return;
+
+  const object = value as Record<string, unknown>;
+  for (const [key, item] of Object.entries(object)) {
+    if (typeof item === 'string' && item.startsWith('xap:attachments/')) {
+      const oldPath = `attachments/${item.slice('xap:attachments/'.length)}`;
+      const newPath = paths.get(oldPath);
+      if (newPath) object[key] = `xap:${newPath}`;
+    } else {
+      remapAttachmentRefs(item, paths);
+    }
+  }
+}

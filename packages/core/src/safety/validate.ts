@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { collectResourceRefs } from '../model/utils.js';
+import { collectAttachmentRefs, collectResourceRefs } from '../model/utils.js';
 
 export interface ValidationReport {
   entries: number;
@@ -81,9 +81,11 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
     }
   }
 
+  const candidateEntries =
+    manifestObj && typeof manifestObj === 'object' ? manifestObj['file-entries'] : undefined;
   const fileEntries =
-    manifestObj && typeof manifestObj === 'object' && manifestObj['file-entries']
-      ? manifestObj['file-entries']
+    candidateEntries && typeof candidateEntries === 'object' && !Array.isArray(candidateEntries)
+      ? (candidateEntries as Record<string, unknown>)
       : {};
 
   // Verifica riferimenti a risorse
@@ -100,6 +102,17 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
     }
   }
 
+  const attachments = new Set<string>();
+  collectAttachmentRefs(contentObj, attachments);
+  for (const attachment of attachments) {
+    if (!names.has(attachment)) {
+      throw new Error(`Riferimento ${attachment} senza allegato nello ZIP`);
+    }
+    if (!(attachment in fileEntries)) {
+      throw new Error(`Riferimento ${attachment} non registrato nel manifest`);
+    }
+  }
+
   // Verifica che ogni risorsa nello zip sia registrata nel manifest
   let resourceCount = 0;
   for (const name of names) {
@@ -108,6 +121,9 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
       if (!(name in fileEntries)) {
         throw new Error(`Risorsa ${name} presente nello ZIP ma assente dal manifest`);
       }
+    }
+    if (name.startsWith('attachments/') && !name.endsWith('/') && !(name in fileEntries)) {
+      throw new Error(`Allegato ${name} presente nello ZIP ma assente dal manifest`);
     }
   }
 

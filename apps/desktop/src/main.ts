@@ -1,52 +1,60 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { atomicWrite, xmindProcesses } from '@xmap/core';
+import { atomicWrite, validateArchiveBytes, xmindProcesses } from '@xmap/core';
 
-let mainWindow: BrowserWindow | null = null;
-let initialFilePath: string | null = null;
-let allowClose = false;
+const initialFiles = new Map<number, string | null>();
+const allowedCloseIds = new Set<number>();
+const startupFiles = findXmindFiles(process.argv);
+const startupFile = startupFiles.shift() ?? null;
+const queuedFiles: string[] = startupFiles;
 
-// Gestione file da riga di comando (es. doppio clic su .xmind)
-for (let i = 1; i < process.argv.length; i++) {
-  const arg = process.argv[i];
-  if (arg.endsWith('.xmind') && fs.existsSync(arg)) {
-    initialFilePath = path.resolve(arg);
-    break;
-  }
+function findXmindFiles(args: string[]): string[] {
+  return args
+    .filter((arg) => /\.xmind$/i.test(arg) && fs.existsSync(arg))
+    .map((arg) => path.resolve(arg));
 }
 
-// Single instance lock
+// Ogni workbook ha una finestra e uno stato React indipendenti.
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_, commandLine) => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-
-      for (let i = 1; i < commandLine.length; i++) {
-        const arg = commandLine[i];
-        if (arg.endsWith('.xmind') && fs.existsSync(arg)) {
-          const resolved = path.resolve(arg);
-          mainWindow.webContents.send('app:openFile', resolved);
-          break;
-        }
+    const files = commandLine
+      .filter((arg) => /\.xmind$/i.test(arg) && fs.existsSync(arg))
+      .map((arg) => path.resolve(arg));
+    if (files.length > 0) {
+      if (app.isReady()) {
+        for (const file of files) createWindow(file);
+      } else {
+        queuedFiles.push(...files);
       }
+    } else {
+      const windows = BrowserWindow.getAllWindows();
+      windows[windows.length - 1]?.focus();
     }
   });
 
-  app.whenReady().then(createWindow);
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    if (app.isReady()) createWindow(filePath);
+    else queuedFiles.push(path.resolve(filePath));
+  });
+
+  app.whenReady().then(() => {
+    createWindow(startupFile);
+    for (const file of queuedFiles.splice(0)) createWindow(file);
+  });
 }
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
+function createWindow(initialFile: string | null = null): BrowserWindow {
+  const window = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 720,
     minHeight: 520,
-    frame: false, // Frameless Client-Side Decorations (Adwaita CSD)
+    frame: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#242424' : '#fafafa',
     show: false,
     webPreferences: {
@@ -57,80 +65,73 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
+  const id = window.webContents.id;
+  initialFiles.set(id, initialFile);
+  window.once('ready-to-show', () => window.show());
 
   // Chiede conferma al renderer prima di chiudere, per non perdere modifiche.
-  mainWindow.on('close', (e) => {
-    if (allowClose) return;
-    e.preventDefault();
-    mainWindow?.webContents.send('app:beforeClose');
+  window.on('close', (event) => {
+    if (allowedCloseIds.has(id)) return;
+    event.preventDefault();
+    window.webContents.send('app:beforeClose');
   });
 
-  mainWindow.on('maximize', () => {
-    mainWindow?.webContents.send('window:maximizedChanged', true);
+  window.on('maximize', () => window.webContents.send('window:maximizedChanged', true));
+  window.on('unmaximize', () => window.webContents.send('window:maximizedChanged', false));
+  window.on('closed', () => {
+    initialFiles.delete(id);
+    allowedCloseIds.delete(id);
   });
 
-  mainWindow.on('unmaximize', () => {
-    mainWindow?.webContents.send('window:maximizedChanged', false);
-  });
-
-  // Carica la web app
   const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    void window.loadURL('http://localhost:3000');
   } else {
     const webDistPath = path.resolve(__dirname, '../../web/dist/index.html');
-    if (fs.existsSync(webDistPath)) {
-      mainWindow.loadFile(webDistPath);
-    } else {
-      mainWindow.loadURL('http://localhost:3000');
-    }
+    if (fs.existsSync(webDistPath)) void window.loadFile(webDistPath);
+    else void window.loadURL('http://localhost:3000');
   }
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  return window;
 }
 
-// IPC Handlers
-ipcMain.handle('app:getInitialFile', () => initialFilePath);
+function senderWindow(event: { sender: Electron.WebContents }): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(event.sender);
+}
 
-ipcMain.handle('safety:checkXMind', async () => {
-  return await xmindProcesses();
+// IPC handlers
+ipcMain.handle('app:getInitialFile', (event) => {
+  const id = event.sender.id;
+  const filePath = initialFiles.get(id) ?? null;
+  initialFiles.delete(id);
+  return filePath;
 });
 
-ipcMain.handle('dialog:openFile', async () => {
-  if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle('safety:checkXMind', async () => xmindProcesses());
+
+ipcMain.handle('dialog:openFile', async (event) => {
+  const owner = senderWindow(event);
+  if (!owner) return null;
+  const result = await dialog.showOpenDialog(owner, {
     properties: ['openFile'],
     filters: [{ name: 'XMind Map', extensions: ['xmind'] }],
   });
-
   if (result.canceled || result.filePaths.length === 0) return null;
   const filePath = result.filePaths[0];
   const buffer = fs.readFileSync(filePath);
-  return {
-    path: filePath,
-    name: path.basename(filePath),
-    bytes: Array.from(buffer),
-  };
+  return { path: filePath, name: path.basename(filePath), bytes: Array.from(buffer) };
 });
 
 ipcMain.handle('fs:openPath', async (_, filePath: string) => {
   if (!fs.existsSync(filePath)) return null;
   const buffer = fs.readFileSync(filePath);
-  return {
-    path: filePath,
-    name: path.basename(filePath),
-    bytes: Array.from(buffer),
-  };
+  return { path: filePath, name: path.basename(filePath), bytes: Array.from(buffer) };
 });
 
-ipcMain.handle('dialog:saveFile', async (_, suggestedName?: string) => {
-  if (!mainWindow) return null;
-  const result = await dialog.showSaveDialog(mainWindow, {
+ipcMain.handle('dialog:saveFile', async (event, suggestedName?: string) => {
+  const owner = senderWindow(event);
+  if (!owner) return null;
+  const result = await dialog.showSaveDialog(owner, {
     defaultPath: suggestedName || 'mappa.xmind',
     filters: [{ name: 'XMind Map', extensions: ['xmind'] }],
   });
@@ -140,10 +141,11 @@ ipcMain.handle('dialog:saveFile', async (_, suggestedName?: string) => {
 
 ipcMain.handle(
   'dialog:openAnyFile',
-  async (_, options?: { description?: string; extensions?: string[] }) => {
-    if (!mainWindow) return null;
+  async (event, options?: { description?: string; extensions?: string[] }) => {
+    const owner = senderWindow(event);
+    if (!owner) return null;
     const extensions = options?.extensions ?? ['xmind'];
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(owner, {
       properties: ['openFile'],
       filters: [{ name: options?.description || 'File', extensions }],
     });
@@ -156,57 +158,66 @@ ipcMain.handle(
 
 ipcMain.handle(
   'dialog:saveBytes',
-  async (_, suggestedName: string, bytesArr: number[], options?: { description?: string; extensions?: string[] }) => {
-    if (!mainWindow) return null;
+  async (
+    event,
+    suggestedName: string,
+    bytesArr: number[],
+    options?: { description?: string; extensions?: string[] }
+  ) => {
+    const owner = senderWindow(event);
+    if (!owner) return null;
     const extensions = options?.extensions ?? ['bin'];
-    const result = await dialog.showSaveDialog(mainWindow, {
+    const result = await dialog.showSaveDialog(owner, {
       defaultPath: suggestedName,
       filters: [{ name: options?.description || 'File', extensions }],
     });
     if (result.canceled || !result.filePath) return null;
-    fs.writeFileSync(result.filePath, Buffer.from(new Uint8Array(bytesArr)));
-    return { path: result.filePath };
+    const bytes = new Uint8Array(bytesArr);
+    const writesXmind = extensions.some((extension) => extension.toLowerCase() === 'xmind');
+    let outputPath = result.filePath;
+    if (writesXmind && !outputPath.toLowerCase().endsWith('.xmind')) {
+      outputPath += '.xmind';
+    }
+    if (writesXmind || outputPath.toLowerCase().endsWith('.xmind')) {
+      await validateArchiveBytes(bytes);
+      await atomicWrite(outputPath, bytes, true);
+    } else {
+      fs.writeFileSync(outputPath, Buffer.from(bytes));
+    }
+    return { path: outputPath };
   }
 );
 
-ipcMain.on('window:forceClose', () => {
-  allowClose = true;
-  mainWindow?.close();
+ipcMain.on('window:forceClose', (event) => {
+  const window = senderWindow(event);
+  if (!window) return;
+  allowedCloseIds.add(window.webContents.id);
+  window.close();
 });
 
-ipcMain.handle('fs:saveAtomic', async (_, filePath: string, bytesArr: number[]) => {
-  const bytes = new Uint8Array(bytesArr);
-  const report = await atomicWrite(filePath, bytes, true);
-  return {
-    backup: report.backup,
-    bytes: report.bytesWritten,
-  };
-});
-
-// Controlli Finestra CSD
-ipcMain.on('window:minimize', () => {
-  mainWindow?.minimize();
-});
-
-ipcMain.on('window:maximize', () => {
-  if (!mainWindow) return;
-  if (mainWindow.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow.maximize();
+ipcMain.handle(
+  'fs:saveAtomic',
+  async (_, filePath: string, bytesArr: number[], expectedHash?: string) => {
+    const bytes = new Uint8Array(bytesArr);
+    await validateArchiveBytes(bytes);
+    const report = await atomicWrite(filePath, bytes, true, expectedHash);
+    return { backup: report.backup, bytes: report.bytesWritten };
   }
+);
+
+// Controlli finestra CSD, indirizzati alla finestra che ha inviato il messaggio.
+ipcMain.on('window:minimize', (event) => senderWindow(event)?.minimize());
+
+ipcMain.on('window:maximize', (event) => {
+  const window = senderWindow(event);
+  if (!window) return;
+  if (window.isMaximized()) window.unmaximize();
+  else window.maximize();
 });
 
-ipcMain.on('window:close', () => {
-  mainWindow?.close();
-});
-
-ipcMain.handle('window:isMaximized', () => {
-  return mainWindow?.isMaximized() ?? false;
-});
+ipcMain.on('window:close', (event) => senderWindow(event)?.close());
+ipcMain.handle('window:isMaximized', (event) => senderWindow(event)?.isMaximized() ?? false);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });

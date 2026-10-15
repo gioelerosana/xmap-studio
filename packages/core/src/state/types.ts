@@ -73,6 +73,7 @@ export interface WorkbookDto {
 export interface BatchSpec {
   topicId: string;
   latex: string;
+  titleMode?: import('../latex/equation.js').TitleMode;
   fontSizePx?: number;
   color?: string;
 }

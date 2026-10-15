@@ -1,4 +1,5 @@
 import { WriteReport } from './types.js';
+import { sha256HexAsync } from './archive.js';
 
 const MAX_BACKUPS = 5;
 const BACKUP_DIR = '.xmap-studio/backups';
@@ -26,7 +27,8 @@ function formatTimestamp(): string {
 export async function atomicWrite(
   targetPath: string,
   bytes: Uint8Array,
-  makeBackup: boolean = true
+  makeBackup: boolean = true,
+  expectedHash?: string
 ): Promise<WriteReport> {
   const fs = await import('node:fs');
   const path = await import('node:path');
@@ -38,49 +40,70 @@ export async function atomicWrite(
     throw new Error(`La cartella ${dir} non esiste`);
   }
 
+  if (expectedHash !== undefined) {
+    if (!fs.existsSync(resolved)) {
+      throw new Error('Il file è cambiato o è stato rimosso dopo l\'apertura.');
+    }
+    const currentHash = await sha256HexAsync(fs.readFileSync(resolved));
+    if (currentHash !== expectedHash) {
+      throw new Error('Il file è cambiato su disco dopo l\'apertura. Ricaricalo prima di salvare.');
+    }
+  }
+
   // 1) File temporaneo nella stessa cartella (garantisce stesso filesystem per rename atomico)
   const randomSuffix = Math.random().toString(36).substring(2, 8);
   const tempPath = path.join(dir, `.xmind-eq-${Date.now()}-${randomSuffix}.tmp`);
 
-  const fd = fs.openSync(tempPath, 'w');
-  try {
-    fs.writeSync(fd, bytes, 0, bytes.length);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-
-  // 2) Backup se richiesto e file esistente
   let backupPath: string | undefined;
-  if (makeBackup && fs.existsSync(resolved)) {
-    const backupDir = path.join(dir, BACKUP_DIR);
-    fs.mkdirSync(backupDir, { recursive: true });
-
-    const stem = path.basename(resolved, path.extname(resolved));
-    const ts = formatTimestamp();
-    let candidate = path.join(backupDir, `${stem}.backup.${ts}.xmind`);
-    let n = 1;
-    while (fs.existsSync(candidate)) {
-      candidate = path.join(backupDir, `${stem}.backup.${ts}-${n}.xmind`);
-      n++;
-    }
-
-    fs.copyFileSync(resolved, candidate);
-    const bfd = fs.openSync(candidate, 'r');
-    try {
-      fs.fsyncSync(bfd);
-    } finally {
-      fs.closeSync(bfd);
-    }
-    backupPath = candidate;
-
-    // Prune backups oltre MAX_BACKUPS
-    pruneBackups(fs, path, backupDir, stem);
-  }
-
-  // 3) Rename atomico
   try {
+    const fd = fs.openSync(tempPath, 'wx');
+    try {
+      fs.writeSync(fd, bytes, 0, bytes.length);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    // 2) Backup se richiesto e file esistente
+    if (makeBackup && fs.existsSync(resolved)) {
+      const backupDir = path.join(dir, BACKUP_DIR);
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const stem = path.basename(resolved, path.extname(resolved));
+      const ts = formatTimestamp();
+      let candidate = path.join(backupDir, `${stem}.backup.${ts}.xmind`);
+      let n = 1;
+      while (fs.existsSync(candidate)) {
+        candidate = path.join(backupDir, `${stem}.backup.${ts}-${n}.xmind`);
+        n++;
+      }
+
+      fs.copyFileSync(resolved, candidate);
+      const bfd = fs.openSync(candidate, 'r');
+      try {
+        fs.fsyncSync(bfd);
+      } finally {
+        fs.closeSync(bfd);
+      }
+      backupPath = candidate;
+
+      // Prune backups oltre MAX_BACKUPS
+      pruneBackups(fs, path, backupDir, stem);
+    }
+
+    // 3) Rename atomico
     fs.renameSync(tempPath, resolved);
+    // 4) Fsync della directory padre
+    try {
+      const dirFd = fs.openSync(dir, 'r');
+      try {
+        fs.fsyncSync(dirFd);
+      } finally {
+        fs.closeSync(dirFd);
+      }
+    } catch {
+      // Fsync su directory può non essere supportato su tutti gli OS (es. Windows)
+    }
   } catch (err) {
     if (fs.existsSync(tempPath)) {
       try {
@@ -89,19 +112,7 @@ export async function atomicWrite(
         // Ignora
       }
     }
-    throw new Error(`Rename atomico fallito: ${err}`);
-  }
-
-  // 4) Fsync della directory padre
-  try {
-    const dirFd = fs.openSync(dir, 'r');
-    try {
-      fs.fsyncSync(dirFd);
-    } finally {
-      fs.closeSync(dirFd);
-    }
-  } catch {
-    // Fsync su directory può non essere supportato su tutti gli OS (es. Windows)
+    throw err instanceof Error ? err : new Error(String(err));
   }
 
   return {
