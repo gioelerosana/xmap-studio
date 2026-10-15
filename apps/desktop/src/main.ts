@@ -12,6 +12,7 @@ function loadCore(): Promise<Core> {
   return corePromise;
 }
 
+const DEV_SERVER_URL = 'http://localhost:3000';
 const initialFiles = new Map<number, string | null>();
 const allowedCloseIds = new Set<number>();
 const startupFiles = findXmindFiles(process.argv);
@@ -78,9 +79,16 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
   initialFiles.set(id, initialFile);
   window.once('ready-to-show', () => window.show());
 
+  // Senza renderer caricato nessuno risponderebbe a `app:beforeClose` e la
+  // finestra non si chiuderebbe più: la conferma si chiede solo a UI pronta.
+  let rendererReady = false;
+  window.webContents.on('did-finish-load', () => {
+    rendererReady = true;
+  });
+
   // Chiede conferma al renderer prima di chiudere, per non perdere modifiche.
   window.on('close', (event) => {
-    if (allowedCloseIds.has(id)) return;
+    if (allowedCloseIds.has(id) || !rendererReady) return;
     event.preventDefault();
     window.webContents.send('app:beforeClose');
   });
@@ -92,14 +100,23 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
     allowedCloseIds.delete(id);
   });
 
+  const webDistPath = path.resolve(__dirname, '../../web/dist/index.html');
+  // Se il server di sviluppo non risponde si ripiega sulla UI compilata; se
+  // fallisce anche quella la finestra si mostra comunque, invece di restare
+  // nascosta in attesa di un `ready-to-show` che non arriverà.
+  window.webContents.on('did-fail-load', (_event, errorCode, _description, url, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3 /* ERR_ABORTED: navigazione sostituita */) return;
+    if (url.startsWith(DEV_SERVER_URL) && fs.existsSync(webDistPath)) {
+      console.warn(`[xmap] ${DEV_SERVER_URL} non raggiungibile, carico ${webDistPath}`);
+      void window.loadFile(webDistPath);
+      return;
+    }
+    window.show();
+  });
+
   const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
-  if (isDev) {
-    void window.loadURL('http://localhost:3000');
-  } else {
-    const webDistPath = path.resolve(__dirname, '../../web/dist/index.html');
-    if (fs.existsSync(webDistPath)) void window.loadFile(webDistPath);
-    else void window.loadURL('http://localhost:3000');
-  }
+  if (!isDev && fs.existsSync(webDistPath)) void window.loadFile(webDistPath);
+  else void window.loadURL(DEV_SERVER_URL);
 
   return window;
 }

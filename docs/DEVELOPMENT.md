@@ -14,13 +14,21 @@ backend Rust di riferimento.
 ```bash
 pnpm install
 pnpm dev:web        # Vite, interfaccia nel browser
-pnpm dev:desktop    # Electron; avvia la UI già compilata
+pnpm dev:desktop    # Electron con la UI servita da Vite (avvia tutto da solo)
 pnpm build          # core, ui-kit, web, desktop
 pnpm test           # test del core TypeScript
 ```
 
-`pnpm dev:desktop` compila il processo Electron e carica il server web su
-`http://localhost:3000`; avvia prima `pnpm dev:web` in un altro terminale.
+`pnpm dev:desktop` (script `apps/desktop/scripts/dev.mjs`) avvia Vite su
+`http://localhost:3000` se non è già attivo, compila il processo Electron e apre
+la finestra; chiudendo Electron si ferma anche il Vite avviato dallo script. Se
+il server di sviluppo non risponde, Electron ripiega su `apps/web/dist`.
+
+Con Node ≥ 26 l'installer di `electron` può interrompersi a metà estrazione
+(errore "Electron failed to install correctly"): lo zip scaricato resta in
+`~/.cache/electron/`, va estratto in `node_modules/.pnpm/electron@*/node_modules/electron/dist`
+scrivendo `electron` in `path.txt` accanto a `dist`. Con Node 22 LTS il problema
+non si presenta.
 `pnpm build` compila la web app nella cartella `apps/web/dist`, usata da
 Electron in modalità normale.
 
