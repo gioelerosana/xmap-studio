@@ -157,6 +157,16 @@ export async function pickAnyFile(options?: {
 }
 
 /**
+ * Il main di Electron rifiuta di scrivere mentre XMind è aperto (regola 4):
+ * qui si chiede se forzare, mostrando i processi trovati.
+ */
+export function confirmForceSave(processes: string[]): boolean {
+  return confirm(
+    `XMind è in esecuzione (${processes.join(', ')}). Salvando adesso il file potrebbe essere sovrascritto o corrotto.\n\nForzare il salvataggio?`
+  );
+}
+
+/**
  * Salva byte arbitrari (export, split, …) con dialogo nativo o download.
  */
 export async function saveBytes(
@@ -169,7 +179,18 @@ export async function saveBytes(
 
   const api = (window as any).electronAPI;
   if (api?.saveBytes) {
-    return (await api.saveBytes(suggestedName, Array.from(bytes), options)) || null;
+    const payload = Array.from(bytes);
+    let res = await api.saveBytes(suggestedName, payload, options);
+    if (res && 'ok' in res && res.code === 'xmind_running') {
+      if (!confirmForceSave(res.processes ?? [])) return null;
+      res = await api.saveBytes(suggestedName, payload, {
+        ...options,
+        targetPath: res.path,
+        force: true,
+      });
+    }
+    if (res && 'ok' in res) throw new Error(res.message);
+    return res || null;
   }
 
   if ('showSaveFilePicker' in window) {

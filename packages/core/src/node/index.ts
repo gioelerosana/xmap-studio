@@ -6,6 +6,8 @@ import { xmindProcesses } from './process.js';
 
 export { atomicWrite } from './atomic.js';
 export { xmindProcesses } from './process.js';
+export { guardedSave } from './guarded-save.js';
+export type { GuardedSaveDeps, GuardedSaveResult } from './guarded-save.js';
 
 /** Implementazione di `Platform` per Node/Electron. */
 export const nodePlatform: Platform = {

@@ -44,6 +44,7 @@ import {
   saveLocalXmindFile,
   pickAnyFile,
   saveBytes,
+  confirmForceSave,
   downloadBlob,
 } from './adapters/fileSystem.js';
 import { Sidebar } from './components/Sidebar.js';
@@ -62,12 +63,23 @@ declare global {
       openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: number[] } | null>;
       openFile: (options?: { description?: string; extensions?: string[] }) => Promise<{ path: string; name: string; bytes: number[] } | null>;
       saveFileDialog: (suggestedName?: string) => Promise<string | null>;
-      saveBytes: (suggestedName: string, bytes: number[], options?: { description?: string; extensions?: string[] }) => Promise<{ path: string } | null>;
+      saveBytes: (
+        suggestedName: string,
+        bytes: number[],
+        options?: { description?: string; extensions?: string[]; targetPath?: string; force?: boolean }
+      ) => Promise<
+        | { path: string }
+        | { ok: false; code: string; message: string; processes?: string[]; path: string }
+        | null
+      >;
       saveAtomic: (
         filePath: string,
         bytes: number[],
-        expectedHash?: string
-      ) => Promise<{ backup?: string; bytes: number }>;
+        options?: { expectedHash?: string; force?: boolean }
+      ) => Promise<
+        | { ok: true; backup?: string; bytes: number }
+        | { ok: false; code: string; message: string; processes?: string[] }
+      >;
       checkXMindRunning: () => Promise<string[]>;
       minimize: () => void;
       maximize: () => void;
@@ -304,19 +316,6 @@ export const App: React.FC = () => {
       if (!workbook) return false;
       setBusy(true);
       try {
-        if (!force && isElectron && window.electronAPI) {
-          const running = await window.electronAPI.checkXMindRunning();
-          if (running.length > 0) {
-            const proceed = confirm(
-              `XMind è in esecuzione (${running.join(', ')}). Salvando adesso il file potrebbe essere sovrascritto o corrotto.\n\nForzare il salvataggio?`
-            );
-            if (!proceed) {
-              addToast('warning', 'Salvataggio annullato.');
-              return false;
-            }
-          }
-        }
-
         const { bytes, validation } = await controller.prepareArchiveBytes();
         const hasDesktopPath = isElectron && workbook.path !== null;
         const expectedHash =
@@ -332,7 +331,19 @@ export const App: React.FC = () => {
             if (!selected) return false;
             savePath = selected;
           }
-          await window.electronAPI.saveAtomic(savePath, Array.from(bytes), expectedHash);
+          const payload = Array.from(bytes);
+          let outcome = await window.electronAPI.saveAtomic(savePath, payload, { expectedHash, force });
+          if (!outcome.ok && outcome.code === 'xmind_running') {
+            if (!confirmForceSave(outcome.processes ?? [])) {
+              addToast('warning', 'Salvataggio annullato.');
+              return false;
+            }
+            outcome = await window.electronAPI.saveAtomic(savePath, payload, { expectedHash, force: true });
+          }
+          if (!outcome.ok) {
+            addToast('error', `Errore durante il salvataggio: ${outcome.message}`);
+            return false;
+          }
           controller.markSaved(savePath, contentHash);
           refreshState();
           addToast('success', `Salvato (${bytes.length.toLocaleString('it-IT')} byte)`);
