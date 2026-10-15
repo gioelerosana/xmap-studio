@@ -2,25 +2,20 @@
 
 ## Versioning
 
-Il progetto segue [SemVer](https://semver.org/lang/it/). La versione vive in un
-unico punto:
-
-- `src-tauri/Cargo.toml` → campo `version` del package `xmap-studio`.
-
-Da lì viene letta da `xtask` per il nome dell'AppImage
-(`XMap_Studio-<versione>-x86_64.AppImage`) e compilata in
-`env!("CARGO_PKG_VERSION")` (usata nella finestra "Informazioni" e nella cache
-del renderer). Non duplicare la versione altrove.
+Il progetto segue [SemVer](https://semver.org/lang/it/). La versione è
+dichiarata nel campo `version` dei `package.json` del workspace (root,
+`packages/core`, `packages/ui-kit`, `apps/web`, `apps/desktop`); vanno tenuti
+allineati a ogni release.
 
 ## Checklist
 
-1. Aggiorna `version` in `src-tauri/Cargo.toml` (e `Cargo.lock` di conseguenza:
-   `cargo update -p xmap-studio --precise <versione>` oppure build).
+1. Aggiorna `version` in tutti i `package.json` del workspace.
 2. Aggiorna il `README.md` se cambiano stack, architettura o limiti noti.
-3. `cargo fmt && cargo clippy --all-targets` — deve essere pulito.
-4. `cargo test` — tutti verdi (o skip correttamente motivati).
-5. `cargo xtask appimage` — produce l'AppImage in `dist/`.
-6. Collauda l'AppImage su una macchina con GTK4/libadwaita e `node`.
+3. `pnpm install --frozen-lockfile`.
+4. `pnpm build` — core, ui-kit, web ed Electron devono compilare senza errori.
+5. `pnpm test` — tutti verdi.
+6. Collauda l'app con `pnpm dev:desktop` e apri in XMind un file generato
+   (vedi [`TESTING.md`](TESTING.md)).
 7. Commit, tag annotato e push:
 
    ```bash
@@ -31,20 +26,17 @@ del renderer). Non duplicare la versione altrove.
    git push origin v<versione>
    ```
 
-8. Crea la release sul repository GitLab e allega l'AppImage da `dist/`.
+8. Crea la release sul repository GitLab.
 
 ## Artefatti
 
 | Artefatto | Percorso | Distribuito |
 |---|---|---|
-| Binario di release | `target/release/xmap-studio` | no |
-| AppImage | `dist/XMap_Studio-<versione>-x86_64.AppImage` | sì |
+| Web app (build Vite) | `apps/web/dist/` | no (usata da Electron) |
+| Processo Electron compilato | `apps/desktop/dist/` | no |
 
-`dist/` è in `.gitignore`: gli artefatti **non** finiscono nel repository, ma
-vanno allegati alla release GitLab.
-
-## Nota sulle dipendenze dell'AppImage
-
-L'AppImage non include GTK4/libadwaita né Node: vanno presenti sul sistema
-dell'utente. Per un bundle autosufficiente si può aggiungere `linuxdeploy` con il
-plugin GTK/doc, valutando l'aumento di dimensione.
+Al momento non esiste uno script che produca un pacchetto installabile
+(AppImage, deb o simili): `pnpm build:desktop` compila solo il processo
+Electron. Per distribuire un pacchetto occorre aggiungere un packager
+(ad esempio `electron-builder`) e dichiarare l'estensione `.xmind` per la
+piattaforma scelta. `dist/` è in `.gitignore`.

@@ -47,13 +47,11 @@ La direzione del prodotto — quali capacità di XMind Free reimplementare — �
 | Kernel | **TypeScript** (`@xmap/core`) | ZIP/JSON sicuri, round-trip lossless, testabile headless |
 | UI | **React 19 + Vite + Tailwind** (`@xmap/web`) | componente riusabile web/desktop, design system in `@xmap/ui-kit` |
 | Desktop | **Electron** (`@xmap/desktop`) | ornate system, CSD GNOME, dialogo file nativi, IPC atomico |
-| Geometria | **resvg** (Node) / Canvas (browser) | SVG → PNG, nessun binario esterno |
+| Rasterizzazione | **@resvg/resvg-js** (Node) / Canvas (browser) | SVG → PNG, nessun binario esterno |
 | Rendering LaTeX | **mathjax-full** dentro `@xmap/core` | *lo stesso motore di XMind* (fedeltà garantita) |
 
 Prerequisiti: **Node ≥ 20** e **pnpm**. Il pacchetto core non dipende dalla UI
-(regola storica mantenuta: backend testabile senza display). La vecchia
-implementazione Rust/GTK4 resta in `src-tauri/` come **riferimento** della
-parità funzionale.
+(regola storica mantenuta: backend testabile senza display).
 
 Stack monorepo:
 
@@ -62,8 +60,7 @@ xmap-studio/
 ├── apps/web/          # UI React (Vite) — gira anche da sola nel browser
 ├── apps/desktop/      # Electron: finestra nativa + dialogo file + scrittura atomica
 ├── packages/core/     # modello, archive, salvataggio, renderer LaTeX, export/import, task
-├── packages/ui-kit/   # design system (Button, Menu, Modal, Toast, tema)
-└── src-tauri/         # implementazione Rust di riferimento
+└── packages/ui-kit/   # design system (Button, Menu, Modal, Toast, tema)
 ```
 
 ---
@@ -97,12 +94,12 @@ mantiene la logica testabile senza display (i test in `packages/core/tests`).
 ```
 open(bytes)
   → readArchive               (tutte le entry, risorse separate)
-  → Vec<Sheet>                (campi noti tipizzati + campi sconosciuti preservati)
+  → Sheet[]                   (campi noti tipizzati + campi sconosciuti preservati)
   → OpenWorkbook              (cronologia undo/redo, manifest)
 
 apply(topicId, latex)
   → renderLatexToSvg          (mathjax-full → SVG + dimensioni + errori)
-  → svgToPng                  (resvg/Canvas, 3×)
+  → svgToPng                  (@resvg/resvg-js / Canvas, 3×)
   → sha256(png) → resources/<sha>.png
   → aggiorna extensions[] + image{} annidato, titolo
   → pushHistory()             (snapshot per undo/redo; nulla tocca il disco)
@@ -125,15 +122,14 @@ modifiche non salvate l'app chiede se salvare, scartare o annullare.
 
 ## 3. Formato `.xmind` (verificato su XMind 26.03.04129)
 
-`content.json` viene letto come `Vec<Sheet>`; ogni struct cattura i campi ignoti:
+`content.json` viene letto come `Sheet[]`; ogni interfaccia cattura i campi ignoti:
 
-```rust
-#[derive(Serialize, Deserialize)]
-struct Topic {
-    id: Option<String>, title: Option<String>,
-    image: Option<Image>, extensions: Option<Vec<Extension>>,
-    children: Option<Children>,
-    #[serde(flatten)] extra: serde_json::Map<String, serde_json::Value>, // ← obbligatorio
+```ts
+interface Topic {
+  id?: string; title?: string;
+  image?: Image; extensions?: Extension[];
+  children?: Children;
+  [key: string]: unknown;   // ← obbligatorio: campi sconosciuti preservati
 }
 ```
 
@@ -281,7 +277,7 @@ nativo con il LaTeX corretto.
   richiede conferma se XMind è aperto. Il browser non può ispezionare i processi
   del sistema; con un `FileSystemFileHandle` confronta comunque l'hash del file.
 - MathJax e parte del layout vengono calcolati nel renderer React: mappe grandi
-  o formule pesanti possono causare pause. La versione GTK spostava questi
-  lavori fuori dal main loop.
+  o formule pesanti possono causare pause. Non sono ancora spostati in un
+  worker.
 - La build web segnala un bundle JavaScript principale sopra 500 kB e moduli
   Node esternalizzati. La build riesce; resta lavoro di packaging/performance.

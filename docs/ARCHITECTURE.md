@@ -1,8 +1,8 @@
 # Architettura
 
-Nel branch `feat/ts-migration` l'implementazione attiva è il monorepo
-TypeScript. `src-tauri/` conserva la precedente app Rust/GTK come riferimento
-funzionale e di formato.
+L'implementazione è un monorepo TypeScript: `packages/core` (motore),
+`packages/ui-kit` (design system), `apps/web` (UI React) e `apps/desktop`
+(Electron).
 
 ## Componenti
 
@@ -50,7 +50,7 @@ conosce. Il formato dettagliato e lo schema MathJax sono descritti in
 ```text
 controller.apply(topicId, latex)
   → MathJax SVG
-  → SVG → PNG (resvg quando disponibile, Canvas nel browser)
+  → SVG → PNG (`@resvg/resvg-js` in Node/Electron, Canvas nel browser)
   → SHA-256 → resources/<hash>.png
   → topic.extensions[] + topic.image{} + titolo
   → snapshot undo/redo in memoria
@@ -96,18 +96,16 @@ sovrascriverlo; in assenza di handle produce un download.
 - Media: equazioni e immagini XMind renderizzate nella vista mappa; allegati
   mantenuti in `attachments/` e registrati nel manifest.
 
-## Differenze architetturali dalla versione Rust
+## Prestazioni e limiti
 
-Rust usa GTK e sposta rendering/salvataggio fuori dal main loop GTK. In questa
-versione TypeScript, MathJax e parte del calcolo del layout girano nel renderer
-React; mappe grandi o formule pesanti possono quindi causare pause visibili.
+MathJax e parte del calcolo del layout girano nel renderer React, non in un
+worker; mappe grandi o formule pesanti possono quindi causare pause visibili.
 La divisione di file e le altre scritture `.xmind` passano per la scrittura
-atomica desktop o per l'API di salvataggio del browser. La suite automatica non
+atomica desktop (`atomicWrite` in `packages/core/src/archive/atomic.ts`) o per
+l'API di salvataggio del browser. La suite automatica non
 sostituisce l'apertura manuale del file risultante in XMind.
 
-## Codice Rust di riferimento
+## Storico
 
-`src-tauri/src/` resta utile per confrontare le invarianti. Non aggiungere
-feature alla versione Rust come unica implementazione: la versione attiva è
-`packages/core` + `apps/web` + `apps/desktop`. L'audit di parità è in
+La migrazione dalla precedente implementazione è documentata in
 [`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md).

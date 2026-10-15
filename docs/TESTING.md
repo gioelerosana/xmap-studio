@@ -22,18 +22,6 @@ archivi creati in memoria. Per il formato `.xmind`, verificare almeno:
 - batch atomico e undo/redo;
 - conflitto su file cambiato dall'apertura.
 
-## Riferimento Rust
-
-Il vecchio backend si verifica con:
-
-```bash
-cargo fmt --all -- --check
-cargo test --workspace
-```
-
-I test E2E Rust usano le fixture incluse; i test che dipendono da risorse
-esterne possono auto-saltarsi con un messaggio.
-
 ## Verifica in XMind
 
 La validazione automatica non prova il parser XMind reale. Prima di dichiarare

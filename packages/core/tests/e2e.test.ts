@@ -75,6 +75,21 @@ describe('XMap Studio Core - Lossless Round-Trip & Invariants', () => {
     // Verifica che i byte siano un valido zip apribile
     const reValidation = await validateArchiveBytes(bytes);
     expect(reValidation.entries).toBeGreaterThan(0);
+
+    // Regole 1-3: `image` annidato (mai `imageSource` flat), `extensions` array col provider MathJax
+    const saved = await readArchive(bytes);
+    const sheets = JSON.parse(new TextDecoder().decode(saved.entries.get('content.json')!));
+    const findTopic = (t: any): any =>
+      t.id === targetTopic.id
+        ? t
+        : Object.values(t.children ?? {}).flat().map(findTopic).find(Boolean);
+    const raw = findTopic(sheets[0].rootTopic);
+    expect(raw).toBeDefined();
+    expect(raw.imageSource).toBeUndefined();
+    expect(raw.imageIsMathJaxImage).toBeUndefined();
+    expect(raw.image.src).toBe(modifiedTopic.imageSrc);
+    expect(Array.isArray(raw.extensions)).toBe(true);
+    expect(raw.extensions.some((e: any) => e.provider === 'org.xmind.ui.mathJax')).toBe(true);
   });
 
   it('supports undo and redo reliably', async () => {

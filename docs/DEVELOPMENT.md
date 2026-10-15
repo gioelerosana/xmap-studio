@@ -1,7 +1,6 @@
 # Sviluppo
 
-L'implementazione attiva è un workspace pnpm TypeScript; `src-tauri/` è il
-backend Rust di riferimento.
+Il progetto è un workspace pnpm TypeScript.
 
 ## Prerequisiti
 
@@ -16,6 +15,7 @@ pnpm install
 pnpm dev:web        # Vite, interfaccia nel browser
 pnpm dev:desktop    # Electron con la UI servita da Vite (avvia tutto da solo)
 pnpm build          # core, ui-kit, web, desktop
+pnpm build:desktop  # solo processo Electron (tsc)
 pnpm test           # test del core TypeScript
 ```
 
@@ -39,7 +39,6 @@ packages/core/      modello XMind, archivio, sicurezza, editing, MathJax
 packages/ui-kit/    componenti condivisi
 apps/web/           React + Vite, utilizzabile anche da browser
 apps/desktop/       Electron main/preload, dialoghi e scrittura atomica
-src-tauri/          implementazione Rust precedente, usata come riferimento
 ```
 
 ## File `.xmind` nell'app desktop
@@ -58,8 +57,7 @@ File System Access API quando disponibile; il fallback scarica i byte.
 
 `mathjax-full` è dipendenza di `@xmap/core`. La preview usa MathJax per produrre
 SVG; quando disponibile `@resvg/resvg-js` produce PNG. Nel browser si usa il
-percorso Canvas predisposto dal core. Non serve il vecchio renderer Node
-incorporato della versione Rust.
+percorso Canvas predisposto dal core.
 
 ## Convenzioni
 
@@ -71,6 +69,5 @@ incorporato della versione Rust.
 - Non aggiungere dipendenze quando le API standard o quelle già presenti
   bastano.
 
-La mappa dei moduli e le differenze dalla versione Rust sono in
-[`ARCHITECTURE.md`](ARCHITECTURE.md) e
-[`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md).
+La mappa dei moduli è in [`ARCHITECTURE.md`](ARCHITECTURE.md); la storia della
+migrazione in [`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md).

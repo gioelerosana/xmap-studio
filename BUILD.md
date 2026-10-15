@@ -1,2 +1,3 @@
-cargo run --release
-
+pnpm install
+pnpm build
+pnpm dev:desktop

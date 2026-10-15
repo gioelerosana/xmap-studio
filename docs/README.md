@@ -5,11 +5,11 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 
 | Documento | Contenuto |
 |---|---|
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Monorepo TypeScript, flusso dati e differenze dalla versione Rust |
-| [`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md) | Audit di parità feature Rust → TypeScript, difetti corretti e limiti residui |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Monorepo TypeScript e flusso dati |
+| [`TS-MIGRATION-PARITY.md`](TS-MIGRATION-PARITY.md) | Storico della migrazione a TypeScript, difetti corretti e limiti residui |
 | [`XMIND-FORMAT.md`](XMIND-FORMAT.md) | Struttura `.xmind`, schema MathJax verificato e trappole |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Prerequisiti, build e avvio del monorepo TypeScript |
-| [`TESTING.md`](TESTING.md) | Test TypeScript e test di riferimento Rust |
+| [`TESTING.md`](TESTING.md) | Test del core TypeScript e verifica in XMind |
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
 | [`PRODUCT.md`](PRODUCT.md) | Posizionamento, feature precluse a XMind Free, roadmap |
 | [`MAP-VIEW.md`](MAP-VIEW.md) | Piano della vista mappa ad albero (Fase 7) |
