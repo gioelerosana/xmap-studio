@@ -11,8 +11,8 @@ import {
   XmapError,
 } from './errors.js';
 import { buildArchiveBytes, readArchive, sha256HexAsync } from './archive/archive.js';
-import { atomicWrite } from './archive/atomic.js';
 import { RawArchive } from './archive/types.js';
+import type { Platform } from './platform.js';
 import {
   addChild,
   addRelationship,
@@ -53,7 +53,6 @@ import { svgToPng } from './latex/raster.js';
 import { clearTask, writeTask, TaskData } from './task/task.js';
 import { isMarkerKnown } from './markers/catalog.js';
 import { refreshManifest, registerEntries } from './safety/manifest.js';
-import { xmindProcesses } from './safety/process.js';
 import { validateArchiveBytes, ValidationReport } from './safety/validate.js';
 import { toMarkdown } from './exporters/markdown.js';
 import { toOPML } from './exporters/opml.js';
@@ -72,6 +71,12 @@ import { cloneSheets, OpenWorkbook } from './state/workbook.js';
 
 export class AppController {
   private currentWorkbook: OpenWorkbook | null = null;
+
+  /**
+   * `platform` abilita lettura/scrittura su disco e il rilevamento di XMind;
+   * senza (es. nel browser) il salvataggio passa da `prepareArchiveBytes()`.
+   */
+  constructor(private readonly platform?: Platform) {}
 
   public workbook(): WorkbookDto | null {
     return this.currentWorkbook ? this.currentWorkbook.toDto() : null;
@@ -137,7 +142,7 @@ export class AppController {
       }
     }
 
-    const running = await xmindProcesses();
+    const running = this.platform ? await this.platform.xmindProcesses() : [];
     // Senza percorso il workbook non ha una destinazione su disco: il primo
     // salvataggio deve passare da "Salva con nome".
     const resolvedPath = path ?? null;
@@ -158,11 +163,10 @@ export class AppController {
   }
 
   public async openPath(filePath: string): Promise<WorkbookDto> {
-    const fs = await import('node:fs');
-    const pathMod = await import('node:path');
-    const resolved = pathMod.resolve(filePath);
-    const buffer = fs.readFileSync(resolved);
-    return await this.open(buffer, resolved, pathMod.basename(resolved));
+    const platform = this.requirePlatform();
+    const resolved = platform.resolvePath ? platform.resolvePath(filePath) : filePath;
+    const bytes = await platform.readFile(resolved);
+    return await this.open(bytes, resolved);
   }
 
   public preview(latex: string, emPx: number = 23.33) {
@@ -759,18 +763,16 @@ export class AppController {
     return wb.toDto();
   }
 
-  public async save(
-    force: boolean = false,
-    desktopFs: boolean = false,
-    targetPath?: string
-  ): Promise<SaveResultDto> {
+  public async save(force: boolean = false, targetPath?: string): Promise<SaveResultDto> {
     const wb = this.ensureWorkbook();
-    if (!desktopFs || typeof process === 'undefined' || !process.versions?.node) {
-      throw new XmapError(CODE_IO, 'Usa prepareArchiveBytes() e l’adapter di filesystem per salvare questo workbook.');
+    const platform = this.requirePlatform();
+    const target = targetPath ?? wb.path;
+    if (!target) {
+      throw new XmapError(CODE_NO_PATH, 'La mappa non ha ancora un file: usa "Salva con nome".');
     }
 
     if (!force) {
-      const running = await xmindProcesses();
+      const running = await platform.xmindProcesses();
       if (running.length > 0) {
         throw new XmapError(
           CODE_XMIND_RUNNING,
@@ -780,16 +782,14 @@ export class AppController {
       }
     }
 
-    const { bytes, validation } = await this.prepareArchiveBytes();
-    const target = targetPath ?? wb.path;
-    if (!target) {
-      throw new XmapError(CODE_NO_PATH, 'La mappa non ha ancora un file: usa "Salva con nome".');
-    }
+    const { bytes } = await this.prepareArchiveBytes();
+    // Il controllo di conflitto vale solo se si riscrive il file che abbiamo aperto.
     const expectedHash = target === wb.path ? wb.originalHash : undefined;
-    const report = await atomicWrite(target, bytes, true, expectedHash);
-    const fs = await import('node:fs');
-    const writtenBytes = fs.readFileSync(target);
-    const writtenValidation = await validateArchiveBytes(writtenBytes);
+    const report = await platform.atomicWrite(target, bytes, { makeBackup: true, expectedHash });
+
+    // Rilegge e rivalida ciò che è finito su disco prima di dichiararlo salvato.
+    const writtenBytes = await platform.readFile(target);
+    const validation = await validateArchiveBytes(writtenBytes);
     const contentHash = await sha256HexAsync(writtenBytes);
     wb.markSaved(target, contentHash);
 
@@ -797,17 +797,23 @@ export class AppController {
       path: target,
       backup: report.backup,
       bytes: bytes.length,
-      validation: writtenValidation ?? validation,
+      validation,
     };
   }
 
-  public async saveAs(
-    newPath: string,
-    force: boolean = false,
-    desktopFs: boolean = false
-  ): Promise<SaveResultDto> {
+  public async saveAs(newPath: string, force: boolean = false): Promise<SaveResultDto> {
     this.ensureWorkbook();
-    return await this.save(force, desktopFs, newPath);
+    return await this.save(force, newPath);
+  }
+
+  private requirePlatform(): Platform {
+    if (!this.platform) {
+      throw new XmapError(
+        CODE_IO,
+        'Accesso al disco non disponibile in questo ambiente: usa prepareArchiveBytes() e l’adapter di filesystem.'
+      );
+    }
+    return this.platform;
   }
 }
 

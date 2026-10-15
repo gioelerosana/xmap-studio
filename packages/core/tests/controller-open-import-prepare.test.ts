@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { AppController, CODE_NO_PATH, errorCode, readArchive } from '../src/index.js';
+import type { Platform } from '../src/index.js';
 import { minimalXmind } from './helpers.js';
+
+function fakePlatform(): Platform {
+  return {
+    readFile: async () => {
+      throw new Error('non deve leggere');
+    },
+    atomicWrite: async () => {
+      throw new Error('non deve scrivere');
+    },
+    xmindProcesses: async () => [],
+  };
+}
 
 describe('open senza percorso', () => {
   it('il workbook non ha percorso né default relativo al CWD', async () => {
@@ -26,11 +39,11 @@ describe('open senza percorso', () => {
   });
 
   it('save() senza percorso fallisce con no_path e non scrive nel CWD', async () => {
-    const c = new AppController();
+    const c = new AppController(fakePlatform());
     await c.open(await minimalXmind());
     let code: string | undefined;
     try {
-      await c.save(true, true);
+      await c.save(true);
     } catch (err) {
       code = errorCode(err);
     }

@@ -1,52 +1,7 @@
 /**
- * Rileva processi XMind in esecuzione per evitare corruzioni di file (Desktop / Linux / Posix).
+ * Riconoscimento puro di XMind a partire dall'argv di un processo. La scansione
+ * dei processi (che richiede Node) vive in `node/process.ts`.
  */
-export async function xmindProcesses(): Promise<string[]> {
-  const found: string[] = [];
-
-  // Se siamo in ambiente Node/Electron
-  if (typeof process === 'undefined' || !process.versions?.node) {
-    return found;
-  }
-
-  try {
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-
-    if (!fs.existsSync('/proc')) {
-      return found;
-    }
-
-    const selfPid = process.pid;
-    const entries = fs.readdirSync('/proc');
-
-    for (const name of entries) {
-      const pid = parseInt(name, 10);
-      if (isNaN(pid) || pid === selfPid) continue;
-
-      const cmdPath = path.join('/proc', name, 'cmdline');
-      try {
-        const raw = fs.readFileSync(cmdPath);
-        const tokens = raw
-          .toString('utf8')
-          .split('\0')
-          .filter((s) => s.length > 0);
-        if (tokens.length === 0) continue;
-
-        const cmdline = tokens.join(' ');
-        if (isXmindInvocation(tokens)) {
-          found.push(`${pid}: ${truncate(cmdline, 200)}`);
-        }
-      } catch {
-        // Processo terminato o permessi insufficienti
-      }
-    }
-  } catch {
-    // Non su Linux o /proc non accessibile
-  }
-
-  return found;
-}
 
 /** Frammenti del percorso della nostra app (anche nomi storici e AppImage estratta). */
 const OWN_APP_MARKERS = [
@@ -103,8 +58,4 @@ export function isXmindInvocation(argv: string | readonly string[]): boolean {
     default:
       return false;
   }
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max)}…`;
 }

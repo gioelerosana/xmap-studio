@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { atomicWrite, validateArchiveBytes, xmindProcesses } from '@xmap/core';
+import { validateArchiveBytes } from '@xmap/core';
+import { atomicWrite, xmindProcesses } from '@xmap/core/node';
 
 const initialFiles = new Map<number, string | null>();
 const allowedCloseIds = new Set<number>();
@@ -180,7 +181,7 @@ ipcMain.handle(
     }
     if (writesXmind || outputPath.toLowerCase().endsWith('.xmind')) {
       await validateArchiveBytes(bytes);
-      await atomicWrite(outputPath, bytes, true);
+      await atomicWrite(outputPath, bytes, { makeBackup: true });
     } else {
       fs.writeFileSync(outputPath, Buffer.from(bytes));
     }
@@ -200,7 +201,7 @@ ipcMain.handle(
   async (_, filePath: string, bytesArr: number[], expectedHash?: string) => {
     const bytes = new Uint8Array(bytesArr);
     await validateArchiveBytes(bytes);
-    const report = await atomicWrite(filePath, bytes, true, expectedHash);
+    const report = await atomicWrite(filePath, bytes, { makeBackup: true, expectedHash });
     return { backup: report.backup, bytes: report.bytesWritten };
   }
 );
