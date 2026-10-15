@@ -54,14 +54,33 @@ Principi:
   e topic principali senza trasformare ogni nodo in una card.
 - I topic staccati (`group: "detached"`) sono posizionati come floating; le
   relazioni sono restituite come `LayoutRelationship`.
-- `Layout` espone `nodes`, `edges` e i bounds per il fit-to-view.
+- **Tree Chart** (`structureClass: org.xmind.ui.tree.right` sul topic
+  centrale): la radice sta in alto a sinistra e i rami di primo livello
+  scendono in colonna lungo un tronco verticale in `trunkX(radice)`
+  (`LayoutNode.childrenBelow`, archi `kind: 'tree'`); i sottoalberi restano in
+  stile Logic Chart. Le altre strutture usano la Logic Chart.
+- **Sommari**: i topic del gruppo `summary` non stanno nella colonna dei
+  figli. Sono abbinati al descrittore `summaries[]` del genitore (stesso id) e
+  il loro `range` `(start,end)` decide i figli raccolti; senza descrittore
+  valido raccolgono tutti i figli. Una graffa (`LayoutSummary`) abbraccia
+  l'intervallo a destra del sottoalbero più largo e il topic di sommario è
+  centrato sulla sua punta. Se il sommario è più alto dell'intervallo, la
+  colonna si allarga attorno all'intervallo per non sovrapporsi ai fratelli.
+- `Layout` espone `nodes`, `edges`, `summaries`, `relationships` e i bounds
+  per il fit-to-view.
 
 ## 4. Canvas interattivo (`MapView.tsx`)
 
 - Trasformazione CSS `translate` (pan) + `scale` (zoom 0.12–3.5×) sull'SVG; le
   coordinate dei nodi restano in "mondo".
-- Rotella per lo zoom, trascinamento per il pan, pulsanti `+`/`−` e «Adatta alla
-  finestra» (`fitToView`, rieseguito al ridimensionamento).
+- **Navigazione fluida**: listener `wheel` nativo non passivo (così il pinch
+  non zooma la pagina). Il pinch del touchpad arriva come `wheel` con
+  `ctrlKey` e zooma in modo continuo (`exp(-deltaY · k)`), ancorato al
+  puntatore; la rotella semplice fa pan. Durante i gesti la trasformazione è
+  applicata direttamente al DOM in `requestAnimationFrame`, senza
+  ri-renderizzare i nodi React; lo stato React si allinea a gesto concluso.
+  Trascinamento con inerzia; pulsanti `+`/`−` e «Adatta alla finestra»
+  (`fitToView`, rieseguito al ridimensionamento) animati.
 - Click sul nodo → selezione sincronizzata con l'albero laterale e l'ispettore;
   click sull'indicatore → collapse/expand.
 - Cache degli SVG delle formule per stringa LaTeX; fallback al testo LaTeX se il
@@ -72,7 +91,7 @@ Principi:
 | Rischio | Mitigazione |
 |---|---|
 | Misura dei nodi stimata, non reale | `EstimatedMetrics` con limiti di larghezza; da rivalutare se servono misure esatte |
-| Strutture XMind non ad albero (org, fishbone, timeline) | Rese comunque come albero orizzontale |
+| Strutture XMind non ad albero (org, fishbone, timeline) | Rese come albero orizzontale; solo la Tree Chart verso destra ha un layout dedicato |
 | Mappe grandi / molte formule | Cache SVG delle formule; MathJax gira nel renderer, non in un worker |
 | Layout e rendering nel thread UI | Possibile evoluzione: spostarli in un worker |
 

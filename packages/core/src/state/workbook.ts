@@ -234,6 +234,7 @@ function collectTopicViews(
     position: topicPosition(topic),
     customWidth: topicCustomWidth(topic),
     fillColor: topicFillColor(topic),
+    structureClass: topic.structureClass,
   };
 
   out.push(view);

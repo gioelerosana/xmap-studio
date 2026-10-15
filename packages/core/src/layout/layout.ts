@@ -1,17 +1,20 @@
 import { SheetDto, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
-import { isLikelyLatex } from '../model/utils.js';
+import { isLikelyLatex, parseRange } from '../model/utils.js';
 import {
   BRANCH_COLORS,
-  DEFAULT_NODE_H,
-  DEFAULT_NODE_W,
   Layout,
   LayoutEdge,
-  LayoutNode,
   LayoutOpts,
+  LayoutSummary,
+  EdgeKind,
   LayoutRelationship,
   MapNode,
+  MapSummary,
   NodeMetrics,
+  SUMMARY_BRACE_W,
+  TREE_RIGHT_STRUCTURE,
+  trunkX,
 } from './types.js';
 
 export class EstimatedMetrics implements NodeMetrics {
@@ -95,21 +98,52 @@ export function buildSheetTrees(sheet: SheetDto): { trees: MapNode[]; floating: 
   return { trees, floating: floatingNodes };
 }
 
+type Size = { w: number; h: number };
+type Sizes = Map<string, Size>;
+
+/** Distanza fra la colonna dei figli di una Tree Chart e il tronco. */
+const TREE_STUB = 30.0;
+/** Spazio fra il blocco radice e il primo ramo di una Tree Chart. */
+const TREE_TOP_GAP = 26.0;
+const SUMMARY_GAP_BEFORE = 16.0;
+const SUMMARY_GAP_AFTER = 22.0;
+/** Distanza orizzontale fra il bordo destro dei figli raccolti e il topic di sommario. */
+const SUMMARY_OFFSET = SUMMARY_GAP_BEFORE + SUMMARY_BRACE_W + SUMMARY_GAP_AFTER;
+
+function isTreeRight(structureClass?: string): boolean {
+  return structureClass === TREE_RIGHT_STRUCTURE;
+}
+
 function buildNodeRecursive(
   topic: TopicView,
   childrenMap: Map<string, TopicView[]>,
   branchAccent?: string
 ): MapNode {
   const explicitFill = topic.fillColor;
+  // Il fill appartiene solo al topic che lo dichiara; ciò che si eredita è
+  // l'accento del ramo, usato da connettori e decorazioni.
   const accent = explicitFill || branchAccent;
 
   const rawChildren = childrenMap.get(topic.id) || [];
-  const children: MapNode[] = rawChildren.map((c, i) => {
+  const children: MapNode[] = [];
+  const summaryTopics: MapNode[] = [];
+  rawChildren.forEach((c, i) => {
     const childBranch =
-      topic.depth === 0 && !c.fillColor
-        ? BRANCH_COLORS[i % BRANCH_COLORS.length]
-        : accent;
-    return buildNodeRecursive(c, childrenMap, childBranch);
+      topic.depth === 0 && !c.fillColor ? BRANCH_COLORS[i % BRANCH_COLORS.length] : accent;
+    const node = buildNodeRecursive(c, childrenMap, childBranch);
+    if (c.group === 'summary') {
+      summaryTopics.push(node);
+    } else {
+      children.push(node);
+    }
+  });
+
+  // Senza descrittore valido il sommario abbraccia l'intera colonna.
+  const last = Math.max(children.length - 1, 0);
+  const summaries: MapSummary[] = summaryTopics.map((node) => {
+    const parsed = parseRange(topic.summaries.find((s) => s.id === node.id)?.range);
+    const [start, end] = parsed ? [Math.min(parsed[0], last), Math.min(parsed[1], last)] : [0, last];
+    return { start, end, node };
   });
 
   const effectiveLatex = topic.latex || (isLikelyLatex(topic.title) ? topic.title : undefined);
@@ -129,14 +163,16 @@ function buildNodeRecursive(
     markers: topic.markers,
     hasNotes: topic.notes.length > 0,
     notes: topic.notes,
-    childCount: Math.max(topic.childCount, children.length),
+    childCount: Math.max(topic.childCount, children.length + summaries.length),
     group: topic.group,
     depth: topic.depth,
     parentId: topic.parentId,
     sheetIndex: topic.sheetIndex,
     position: topic.position,
     customWidth: topic.customWidth,
+    structureClass: topic.structureClass,
     children,
+    summaries,
   };
 }
 
@@ -149,63 +185,30 @@ export function layoutSheets(
   const out: Layout = {
     nodes: [],
     edges: [],
+    summaries: [],
     relationships: [],
     width: 0,
     height: 0,
   };
 
+  const left = 20.0;
   let top = 20.0;
 
   for (const sheet of sheets) {
     const { trees, floating } = buildSheetTrees(sheet);
 
     for (const tree of trees) {
-      const sizes = new Map<string, { w: number; h: number }>();
+      const sizes: Sizes = new Map();
       computeSizes(tree, collapsed, metrics, opts, sizes);
-      const rootMeasure = metrics.measure(tree);
-      const rootCollapsed = collapsed.has(tree.id) || tree.children.length === 0;
+      const ctx: PlaceCtx = { collapsed, metrics, opts, sizes };
 
-      let childrenH = 0.0;
-      if (!rootCollapsed) {
-        tree.children.forEach((c, i) => {
-          const ch = sizes.get(c.id)?.h ?? 0.0;
-          childrenH += ch + (i > 0 ? opts.vGap : 0.0);
-        });
+      let totalH: number;
+      if (isTreeRight(tree.structureClass)) {
+        totalH = placeTreeRoot(tree, left, top, ctx, out);
+      } else {
+        placeSubtree(tree, left, top, undefined, ctx, out);
+        totalH = sizes.get(tree.id)?.h ?? 0.0;
       }
-
-      const totalH = rootCollapsed ? rootMeasure.h : Math.max(rootMeasure.h, childrenH);
-      const rootY = top + (totalH - rootMeasure.h) / 2.0;
-
-      const rootIndex = pushLayoutNode(
-        out,
-        tree,
-        20.0,
-        rootY,
-        rootMeasure.w,
-        rootMeasure.h,
-        collapsed.has(tree.id)
-      );
-
-      if (!rootCollapsed) {
-        const childX = 20.0 + rootMeasure.w + opts.hGap;
-        let cur = top + (totalH - childrenH) / 2.0;
-        for (const child of tree.children) {
-          const ch = sizes.get(child.id)?.h ?? 0.0;
-          placeSubtree(
-            child,
-            childX,
-            cur,
-            rootIndex,
-            collapsed,
-            metrics,
-            opts,
-            sizes,
-            out
-          );
-          cur += ch + opts.vGap;
-        }
-      }
-
       top += totalH + opts.sheetGap;
     }
 
@@ -215,7 +218,7 @@ export function layoutSheets(
       let floatYCursor = 20.0;
 
       for (const floatNode of floating) {
-        const floatSizes = new Map<string, { w: number; h: number }>();
+        const floatSizes: Sizes = new Map();
         computeSizes(floatNode, collapsed, metrics, opts, floatSizes);
         const fMeasure = metrics.measure(floatNode);
         const floatSubH = floatSizes.get(floatNode.id)?.h ?? fMeasure.h;
@@ -250,36 +253,14 @@ export function layoutSheets(
         }
 
         floatYCursor = fy + floatSubH + opts.vGap;
-        const isCollapsed = collapsed.has(floatNode.id);
-        const floatIdx = pushLayoutNode(
-          out,
+        placeSubtree(
           floatNode,
           fx,
           fy,
-          fMeasure.w,
-          fMeasure.h,
-          isCollapsed
+          undefined,
+          { collapsed, metrics, opts, sizes: floatSizes },
+          out
         );
-
-        if (!isCollapsed && floatNode.children.length > 0) {
-          const childX = fx + fMeasure.w + opts.hGap;
-          let cur = fy;
-          for (const child of floatNode.children) {
-            const ch = floatSizes.get(child.id)?.h ?? 0.0;
-            placeSubtree(
-              child,
-              childX,
-              cur,
-              floatIdx,
-              collapsed,
-              metrics,
-              opts,
-              floatSizes,
-              out
-            );
-            cur += ch + opts.vGap;
-          }
-        }
       }
     }
 
@@ -317,7 +298,8 @@ function pushLayoutNode(
   y: number,
   w: number,
   h: number,
-  collapsed: boolean
+  collapsed: boolean,
+  childrenBelow: boolean
 ): number {
   const index = out.nodes.length;
   out.nodes.push({
@@ -345,91 +327,197 @@ function pushLayoutNode(
     sheetIndex: node.sheetIndex,
     position: node.position,
     customWidth: node.customWidth,
+    childrenBelow,
   });
   return index;
 }
 
+/**
+ * Colonna dei figli: offset verticale di ciascun figlio rispetto alla cima e
+ * altezza totale. Se un sommario è più alto dei figli che raccoglie, la colonna
+ * si allarga attorno all'intervallo così che non invada i fratelli vicini.
+ */
+interface Column {
+  tops: number[];
+  height: number;
+}
+
+function column(node: MapNode, sizes: Sizes, opts: LayoutOpts): Column {
+  const n = node.children.length;
+  const childH = (i: number): number => sizes.get(node.children[i].id)?.h ?? 0.0;
+  const padBefore = new Array<number>(n).fill(0);
+  const padAfter = new Array<number>(n).fill(0);
+
+  for (const s of node.summaries) {
+    if (s.end >= n) continue;
+    let rangeH = opts.vGap * (s.end - s.start);
+    for (let i = s.start; i <= s.end; i++) rangeH += childH(i);
+    const sumH = sizes.get(s.node.id)?.h ?? 0.0;
+    if (sumH > rangeH) {
+      const extra = (sumH - rangeH) / 2.0;
+      padBefore[s.start] = Math.max(padBefore[s.start], extra);
+      padAfter[s.end] = Math.max(padAfter[s.end], extra);
+    }
+  }
+
+  const tops: number[] = [];
+  let cur = 0.0;
+  for (let i = 0; i < n; i++) {
+    if (i > 0) cur += opts.vGap;
+    cur += padBefore[i];
+    tops.push(cur);
+    cur += childH(i) + padAfter[i];
+  }
+  return { tops, height: cur };
+}
+
+function maxWidth(nodes: MapNode[], sizes: Sizes): number {
+  return nodes.reduce((max, c) => Math.max(max, sizes.get(c.id)?.w ?? 0.0), 0.0);
+}
+
+/** Larghezza occupata a destra della colonna dei figli, sommari compresi. */
+function columnWidth(node: MapNode, sizes: Sizes): number {
+  let width = maxWidth(node.children, sizes);
+  for (const s of node.summaries) {
+    const rangeW = maxWidth(node.children.slice(s.start, s.end + 1), sizes);
+    const summaryW = sizes.get(s.node.id)?.w ?? 0.0;
+    width = Math.max(width, rangeW + SUMMARY_OFFSET + summaryW);
+  }
+  return width;
+}
+
+function hasVisibleChildren(node: MapNode, collapsed: Set<string>): boolean {
+  return !collapsed.has(node.id) && (node.children.length > 0 || node.summaries.length > 0);
+}
+
+/** Prima passata: dimensioni di ogni sotto-albero, sommari inclusi. */
 function computeSizes(
   node: MapNode,
   collapsed: Set<string>,
   metrics: NodeMetrics,
   opts: LayoutOpts,
-  sizes: Map<string, { w: number; h: number }>
-): { w: number; h: number } {
-  const isCollapsed = collapsed.has(node.id) || node.children.length === 0;
-  const selfSize = metrics.measure(node);
-
-  if (isCollapsed) {
-    sizes.set(node.id, selfSize);
-    return selfSize;
+  sizes: Sizes
+): Size {
+  const self = metrics.measure(node);
+  let size: Size = self;
+  if (hasVisibleChildren(node, collapsed)) {
+    for (const child of node.children) computeSizes(child, collapsed, metrics, opts, sizes);
+    for (const s of node.summaries) computeSizes(s.node, collapsed, metrics, opts, sizes);
+    const col = column(node, sizes, opts);
+    size = {
+      w: self.w + opts.hGap + columnWidth(node, sizes),
+      h: Math.max(self.h, col.height),
+    };
   }
-
-  let childrenH = 0.0;
-  let maxChildW = 0.0;
-
-  for (let i = 0; i < node.children.length; i++) {
-    const child = node.children[i];
-    const cSize = computeSizes(child, collapsed, metrics, opts, sizes);
-    childrenH += cSize.h + (i > 0 ? opts.vGap : 0.0);
-    maxChildW = Math.max(maxChildW, cSize.w);
-  }
-
-  const totalH = Math.max(selfSize.h, childrenH);
-  const totalW = selfSize.w + opts.hGap + maxChildW;
-  const result = { w: totalW, h: totalH };
-  sizes.set(node.id, result);
-  return result;
+  sizes.set(node.id, size);
+  return size;
 }
 
+/** Parametri condivisi dalla seconda passata (posizionamento). */
+interface PlaceCtx {
+  collapsed: Set<string>;
+  metrics: NodeMetrics;
+  opts: LayoutOpts;
+  sizes: Sizes;
+}
+
+/** Posiziona un sotto-albero nella fascia che inizia in (`left`, `top`). */
 function placeSubtree(
   node: MapNode,
-  x: number,
-  y: number,
-  parentIndex: number,
-  collapsed: Set<string>,
-  metrics: NodeMetrics,
-  opts: LayoutOpts,
-  sizes: Map<string, { w: number; h: number }>,
+  left: number,
+  top: number,
+  parent: { index: number; kind: EdgeKind } | undefined,
+  ctx: PlaceCtx,
   out: Layout
-): void {
-  const isCollapsed = collapsed.has(node.id) || node.children.length === 0;
-  const selfSize = metrics.measure(node);
-  const subtreeSize = sizes.get(node.id) || selfSize;
+): number {
+  const { w, h } = ctx.metrics.measure(node);
+  const subH = ctx.sizes.get(node.id)?.h ?? h;
 
-  const nodeY = y + (subtreeSize.h - selfSize.h) / 2.0;
-  const nodeIndex = pushLayoutNode(
+  // Il blocco è centrato verticalmente nella fascia del proprio sotto-albero.
+  const index = pushLayoutNode(
     out,
     node,
-    x,
-    nodeY,
-    selfSize.w,
-    selfSize.h,
-    isCollapsed
+    left,
+    top + (subH - h) / 2.0,
+    w,
+    h,
+    ctx.collapsed.has(node.id),
+    false
   );
 
-  out.edges.push({
-    parent: parentIndex,
-    child: nodeIndex,
-    group: node.group,
+  if (parent) {
+    out.edges.push({ parent: parent.index, child: index, group: node.group, kind: parent.kind });
+  }
+
+  if (hasVisibleChildren(node, ctx.collapsed)) {
+    const col = column(node, ctx.sizes, ctx.opts);
+    const colTop = top + (subH - col.height) / 2.0;
+    placeChildren(node, index, left + w + ctx.opts.hGap, colTop, col, 'logic', ctx, out);
+  }
+  return index;
+}
+
+/**
+ * Radice di una Tree Chart: blocco in alto, rami di primo livello in colonna
+ * sotto di esso e spostati a destra del tronco. Ritorna l'altezza occupata.
+ */
+function placeTreeRoot(node: MapNode, left: number, top: number, ctx: PlaceCtx, out: Layout): number {
+  const { w, h } = ctx.metrics.measure(node);
+  const index = pushLayoutNode(out, node, left, top, w, h, ctx.collapsed.has(node.id), true);
+  if (!hasVisibleChildren(node, ctx.collapsed)) return h;
+
+  const col = column(node, ctx.sizes, ctx.opts);
+  placeChildren(
+    node,
+    index,
+    trunkX(out.nodes[index]) + TREE_STUB,
+    top + h + TREE_TOP_GAP,
+    col,
+    'tree',
+    ctx,
+    out
+  );
+  return h + TREE_TOP_GAP + col.height;
+}
+
+/** Dispone la colonna dei figli e i sommari, con le graffe a destra dei figli raccolti. */
+function placeChildren(
+  node: MapNode,
+  index: number,
+  childX: number,
+  colTop: number,
+  col: Column,
+  kind: EdgeKind,
+  ctx: PlaceCtx,
+  out: Layout
+): void {
+  node.children.forEach((child, i) => {
+    placeSubtree(child, childX, colTop + col.tops[i], { index, kind }, ctx, out);
   });
 
-  if (!isCollapsed) {
-    const childX = x + selfSize.w + opts.hGap;
-    let curY = y;
-    for (const child of node.children) {
-      const cSize = sizes.get(child.id) || metrics.measure(child);
-      placeSubtree(
-        child,
-        childX,
-        curY,
-        nodeIndex,
-        collapsed,
-        metrics,
-        opts,
-        sizes,
-        out
-      );
-      curY += cSize.h + opts.vGap;
-    }
+  const heightOf = (c: MapNode): number => ctx.sizes.get(c.id)?.h ?? 0.0;
+  for (const s of node.summaries) {
+    if (s.end >= node.children.length) continue;
+    const y1 = colTop + col.tops[s.start];
+    const y2 = colTop + col.tops[s.end] + heightOf(node.children[s.end]);
+    const rangeW = maxWidth(node.children.slice(s.start, s.end + 1), ctx.sizes);
+    const braceX = childX + rangeW + SUMMARY_GAP_BEFORE;
+    const sumTop = (y1 + y2) / 2.0 - heightOf(s.node) / 2.0;
+    const topic = placeSubtree(
+      s.node,
+      braceX + SUMMARY_BRACE_W + SUMMARY_GAP_AFTER,
+      sumTop,
+      undefined,
+      ctx,
+      out
+    );
+    const summary: LayoutSummary = {
+      x: braceX,
+      y1,
+      y2,
+      topic,
+      accent: s.node.accent ?? node.accent,
+    };
+    out.summaries.push(summary);
   }
 }
