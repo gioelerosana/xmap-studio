@@ -3,3 +3,12 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Mobile/iPad: niente rimbalzo della pagina né zoom da doppio tap; i gesti
+   (pan, pinch) li gestisce la mappa. */
+html,
+body {
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}

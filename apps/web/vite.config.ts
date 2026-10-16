@@ -16,5 +16,13 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    // Test da altri dispositivi via Tailscale (tailscale serve).
+    allowedHosts: ['.ts.net'],
+  },
+  // Build di produzione servita per i test su dispositivo (PWA, service worker).
+  preview: {
+    port: 4173,
+    host: true,
+    allowedHosts: ['.ts.net'],
   },
 });

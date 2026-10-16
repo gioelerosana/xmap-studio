@@ -12,7 +12,8 @@ espone come classi. Questa pagina è il contratto: chi tocca la UI la segue.
 1. **Chrome silenzioso, un solo colore d'azione.** Le superfici sono neutre.
    `primary` è l'unico colore saturo e significa "agisci ora": il bottone
    principale (uno per vista), switch, focus ring, selezione attiva nella mappa.
-   Niente blu decorativo su icone, titoli o radice della mappa.
+   Niente blu decorativo su icone e titoli; i colori dei rami della mappa sono
+   contenuto (vedi "Mappa mentale").
 2. **Bordi, non riempimenti.** Si separa con `border` hairline. In dark le card
    stanno appena sopra lo sfondo; niente grigi lattiginosi.
 3. **Denso.** Controlli desktop 32px (`h-8`, `text-sm`), compatti 28px (`h-7`),
@@ -167,12 +168,27 @@ Icona `Loader2` animata, `size-4`.
 
 ## Mappa mentale
 
-La mappa usa i token dedicati `--map-*`:
-- canvas `--map-canvas` con griglia a punti `--map-grid-dot`;
-- connettori `--map-link` (1.5px), mai blu salvo accento esplicito del topic;
-- radice: riempimento `--map-root` con testo `--map-root-foreground`
-  (inchiostro: nera in chiaro, bianca in scuro), `rounded-lg`;
-- nodi: `bg-card`, `border` hairline, testo `text-foreground`, `rounded-lg`;
+La mappa segue lo stile di XMind: ogni ramo principale ha un colore
+(`BRANCH_COLORS` in `packages/core/src/layout/types.ts`) e le sezioni si
+distinguono a colpo d'occhio. È l'unica eccezione al principio "chrome
+silenzioso": i colori appartengono al contenuto, non all'interfaccia.
+Token dedicati `--map-*`:
+- canvas `--map-canvas` (bianco in chiaro, grigio ardesia in scuro, mai nero)
+  con griglia a punti `--map-grid-dot`;
+- topic centrale: riempimento `--map-central` con testo
+  `--map-central-foreground`, `rx` 12;
+- rami principali (profondità 1): riempimento pieno del colore del ramo, testo
+  bianco o scuro secondo la luminanza;
+- sotto-blocchi: tinta del colore del ramo (`--map-tint`, 14% / 26%) sul canvas,
+  bordo del colore del ramo al 45%, testo `text-foreground`;
+- un `fill` esplicito del topic vince sempre ed è trattato come riempimento pieno;
+- connettori del colore del ramo (3px verso i rami principali, 2px oltre),
+  `--map-link` solo senza accento;
+- disposizione: vista ad albero (radice in alto, tronco verticale) predefinita,
+  vista a logica dall'interruttore nella barra dello zoom; la scelta è solo di
+  visualizzazione (`LayoutOpts.structure`) e non modifica il file;
+- `--map-root` / `--map-root-foreground` restano l'inchiostro del marchio
+  (`AppMark`), non della mappa;
 - selezione: bordo `primary` + alone `ring` al 24%;
 - toolbar flottanti: `surface-glass border rounded-xl shadow-composer`, bottoni
   `IconButton size="sm"`.

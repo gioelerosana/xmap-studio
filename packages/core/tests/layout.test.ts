@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   layoutSheets,
+  DEFAULT_LAYOUT_OPTS,
   NodeMetrics,
   SheetDto,
   TopicView,
@@ -234,5 +235,28 @@ describe('sommari', () => {
   it('childCount include i sommari', () => {
     const l = run(base([]));
     expect(byId(l, 'r').childCount).toBe(4);
+  });
+});
+
+describe('layout con struttura forzata', () => {
+  const plain = [topic('r', undefined), topic('a', 'r'), topic('b', 'r')];
+  const opts = { ...DEFAULT_LAYOUT_OPTS };
+
+  it('dispone ad albero una mappa senza structureClass', () => {
+    const l = layoutSheets([sheet(plain)], new Set(), metrics, { ...opts, structure: 'tree' });
+    expect(byId(l, 'r').childrenBelow).toBe(true);
+    expect(byId(l, 'a').y).toBeGreaterThan(byId(l, 'r').y);
+  });
+
+  it('dispone a logica una Tree Chart se richiesto', () => {
+    const tree = [topic('r', undefined, { structureClass: TREE_RIGHT_STRUCTURE }), topic('a', 'r')];
+    const l = layoutSheets([sheet(tree)], new Set(), metrics, { ...opts, structure: 'logic' });
+    expect(byId(l, 'r').childrenBelow).toBe(false);
+    expect(byId(l, 'a').x).toBeGreaterThan(byId(l, 'r').x + byId(l, 'r').w);
+  });
+
+  it('senza override rispetta la structureClass del file', () => {
+    const l = layoutSheets([sheet(plain)], new Set(), metrics, opts);
+    expect(byId(l, 'r').childrenBelow).toBe(false);
   });
 });

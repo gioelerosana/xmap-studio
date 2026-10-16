@@ -4,6 +4,11 @@ export interface FileHandleHolder {
   handle?: FileSystemFileHandle;
 }
 
+/** iPhone/iPad, incluso iPadOS che si presenta come Mac con touch. */
+function isIOS(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 export async function openLocalXmindFile(): Promise<{
   name: string;
   data: Uint8Array;
@@ -42,7 +47,8 @@ export async function openLocalXmindFile(): Promise<{
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.xmind';
+    // iOS non associa `.xmind` a un tipo noto e disabiliterebbe il file nel selettore.
+    if (!isIOS()) input.accept = '.xmind';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) {
@@ -141,7 +147,7 @@ export async function pickAnyFile(options?: {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    if (options?.extensions?.length) {
+    if (options?.extensions?.length && !isIOS()) {
       input.accept = options.extensions.map((e) => `.${e}`).join(',');
     }
     input.onchange = async () => {

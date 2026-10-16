@@ -46,25 +46,25 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false);
       }}
       onDrop={handleDrop}
-      className="relative flex flex-1 items-center justify-center overflow-hidden bg-background p-6 text-foreground select-none"
+      className="relative flex flex-1 overflow-y-auto overflow-x-hidden bg-background p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-foreground select-none"
     >
       <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={dotGridStyle} />
 
-      <div className="relative flex w-full max-w-md flex-col items-center text-center">
+      <div className="relative m-auto flex w-full max-w-md flex-col items-center text-center">
         <AppMark size={48} />
         <h1 className="mt-5 text-2xl font-semibold tracking-tight">XMap Studio</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
           Editor di mappe XMind con equazioni LaTeX native. Lossless, offline, senza account.
         </p>
 
-        <div className="mt-8 flex items-center gap-3">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button variant="default" size="lg" icon={<FolderOpen className="size-4" />} onClick={onOpenFile}>
             Apri mappa…
           </Button>
-          <Shortcut keys="Ctrl+O" />
+          <Shortcut keys="Ctrl+O" className="coarse:hidden" />
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
           <Button variant="outline" icon={<Plus className="size-4" />} onClick={onNewFile}>
             Nuova mappa
           </Button>

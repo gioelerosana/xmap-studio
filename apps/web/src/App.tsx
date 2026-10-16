@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   HeaderBar,
   ViewSwitcher,
@@ -10,6 +10,7 @@ import {
   Separator,
   ToastContainer,
   ToastMessage,
+  cn,
 } from '@xmap/ui-kit';
 import {
   AppController,
@@ -19,6 +20,7 @@ import {
   buildArchiveBytes,
   sha256HexAsync,
   RawArchive,
+  MapStructure,
 } from '@xmap/core';
 import {
   FolderOpen,
@@ -39,6 +41,7 @@ import {
   Trash2,
   Info,
   PanelRight,
+  PanelLeft,
 } from 'lucide-react';
 import {
   openLocalXmindFile,
@@ -108,6 +111,25 @@ function sanitizeName(name: string): string {
   );
 }
 
+const MAP_STRUCTURE_KEY = 'xmap-studio.map-structure';
+const COMPACT_QUERY = '(max-width: 639px)';
+const WIDE_QUERY = '(min-width: 1024px)';
+const SIDEBAR_KEY = 'xmap-studio.sidebar';
+/** Livelli di compattazione dell'header: da questo livello in poi l'elemento va nel menu. */
+const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, views: 6, max: 6 } as const;
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [query]);
+  return Boolean(matches);
+}
+
 export const App: React.FC = () => {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI);
   const [controller] = useState(() => new AppController());
@@ -120,6 +142,72 @@ export const App: React.FC = () => {
     () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
   );
   const [selectedTopicId, setSelectedTopicId] = useState<string | undefined>();
+  // Sotto lg la sidebar è un drawer, chiuso di default.
+  // Nascosta di default per lasciare spazio alla mappa; su desktop si ricorda la scelta.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia?.(WIDE_QUERY).matches &&
+      window.localStorage?.getItem(SIDEBAR_KEY) === 'open'
+  );
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((open) => {
+      if (window.matchMedia(WIDE_QUERY).matches) window.localStorage?.setItem(SIDEBAR_KEY, open ? 'closed' : 'open');
+      return !open;
+    });
+  }, []);
+  // Smartphone: il tap seleziona soltanto, il pannello dettagli (bottom sheet)
+  // si apre su richiesta per non coprire la mappa a ogni tocco.
+  const compact = useMediaQuery(COMPACT_QUERY);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const inspectorVisible = Boolean(selectedTopicId) && (!compact || detailsOpen);
+
+  // Header adattivo: se i pulsanti non ci stanno si sale di livello e le azioni
+  // meno usate passano nel menu ⋮ (vedi HEADER_LEVEL). Si misura lo spazio reale,
+  // non la viewport: conta anche la dimensione del testo impostata nel sistema.
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerLevel, setHeaderLevel] = useState(0);
+  const [, forceHeaderMeasure] = useReducer((n: number) => n + 1, 0);
+  const hasWorkbook = Boolean(workbook);
+  // Cambiano i pulsanti presenti: si riparte dal livello pieno. Va prima della misura,
+  // così i due aggiornamenti si compongono invece di annullarsi.
+  useLayoutEffect(() => setHeaderLevel(0), [hasWorkbook]);
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (el && el.scrollWidth > el.clientWidth + 1 && headerLevel < HEADER_LEVEL.max) {
+      setHeaderLevel((l) => l + 1);
+    }
+  });
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    let width = el.clientWidth;
+    // Si osservano anche i gruppi interni: font caricati tardi o pulsanti che
+    // cambiano possono creare overflow senza che l'header cambi larghezza.
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth !== width) {
+        width = el.clientWidth;
+        setHeaderLevel(0);
+      }
+      forceHeaderMeasure();
+    });
+    ro.observe(el);
+    for (const child of el.children) ro.observe(child);
+    return () => ro.disconnect();
+  }, []);
+  const showLabels = headerLevel < HEADER_LEVEL.iconsOnly;
+  const inlineRedo = headerLevel < HEADER_LEVEL.redoTheme;
+  const inlineUndo = headerLevel < HEADER_LEVEL.undo;
+  const inlineOpen = headerLevel < HEADER_LEVEL.open;
+  const inlineViews = headerLevel < HEADER_LEVEL.views;
+  const showTitle = headerLevel < HEADER_LEVEL.title;
+  useEffect(() => {
+    if (!selectedTopicId) setDetailsOpen(false);
+  }, [selectedTopicId]);
+  const openDetails = useCallback((id: string) => {
+    setSelectedTopicId(id);
+    setDetailsOpen(true);
+  }, []);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
@@ -170,10 +258,18 @@ export const App: React.FC = () => {
     [allTopics, selectedTopicId]
   );
 
+  // Solo visualizzazione: la struttura salvata nel file non cambia.
+  const [mapStructure, setMapStructure] = useState<MapStructure>(() =>
+    typeof window !== 'undefined' && window.localStorage?.getItem(MAP_STRUCTURE_KEY) === 'logic' ? 'logic' : 'tree'
+  );
+  useEffect(() => {
+    window.localStorage?.setItem(MAP_STRUCTURE_KEY, mapStructure);
+  }, [mapStructure]);
+
   const currentLayout = useMemo<Layout | null>(() => {
     if (!workbook || viewMode !== 'map') return null;
-    return controller.mapLayout(activeSheetIndex, collapsedIds);
-  }, [controller, workbook, activeSheetIndex, viewMode, collapsedIds]);
+    return controller.mapLayout(activeSheetIndex, collapsedIds, mapStructure);
+  }, [controller, workbook, activeSheetIndex, viewMode, collapsedIds, mapStructure]);
 
   const outlineText = useMemo(() => {
     if (!workbook || viewMode !== 'outline') return '';
@@ -475,6 +571,7 @@ export const App: React.FC = () => {
           return next;
         });
         setSelectedTopicId(newId);
+        setDetailsOpen(true);
         refreshState();
       } catch (err: any) {
         addToast('error', err.message);
@@ -581,9 +678,28 @@ export const App: React.FC = () => {
     window.electronAPI?.forceClose();
   };
 
+  // Azioni dell'header che non ci stanno: in testa al menu ⋮.
+  const overflowItems: MenuItem[] = [
+    ...(!inlineOpen ? [{ id: 'open', label: 'Apri…', icon: <FolderOpen className="size-4" />, onSelect: handleOpenLocalFile }] : []),
+    ...(workbook && !inlineUndo
+      ? [{ id: 'undo', label: 'Annulla', icon: <Undo2 className="size-4" />, disabled: !workbook.canUndo, onSelect: () => { controller.undo(); refreshState(); } }]
+      : []),
+    ...(workbook && !inlineRedo
+      ? [{ id: 'redo', label: 'Ripeti', icon: <Redo2 className="size-4" />, disabled: !workbook.canRedo, onSelect: () => { controller.redo(); refreshState(); } }]
+      : []),
+    ...(workbook && !inlineViews
+      ? [
+          viewMode === 'map'
+            ? { id: 'view-outline', label: 'Vista outliner', icon: <ListTree className="size-4" />, onSelect: () => setViewMode('outline') }
+            : { id: 'view-map', label: 'Vista mappa', icon: <Network className="size-4" />, onSelect: () => setViewMode('map') },
+        ]
+      : []),
+  ];
+
   const menuItems: MenuItem[] = workbook
     ? [
-        { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', onSelect: handleSaveAs },
+        ...overflowItems,
+        { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', separatorBefore: overflowItems.length > 0, onSelect: handleSaveAs },
         { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: () => setExportModalOpen(true) },
         { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="size-4" />, onSelect: () => setImportModalOpen(true) },
         {
@@ -617,20 +733,34 @@ export const App: React.FC = () => {
         { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ]
     : [
-        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, onSelect: () => setDarkMode((v) => !v) },
+        ...overflowItems,
+        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: overflowItems.length > 0, onSelect: () => setDarkMode((v) => !v) },
         { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ];
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground select-none">
+    <div className="flex flex-col h-dvh w-screen overflow-hidden bg-background text-foreground select-none">
       <HeaderBar
-        title={workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio'}
-        subtitle={workbook?.dirty ? 'Modifiche non salvate' : undefined}
+        title={showTitle ? (workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio') : undefined}
+        subtitle={showTitle && workbook?.dirty ? 'Modifiche non salvate' : undefined}
+        headerRef={headerRef}
         leftContent={
           <>
-            <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
-              Apri
-            </Button>
+            {workbook && (
+              <IconButton
+                size="sm"
+                active={sidebarOpen}
+                onClick={toggleSidebar}
+                label={sidebarOpen ? 'Nascondi elenco blocchi' : 'Mostra elenco blocchi'}
+              >
+                <PanelLeft className="size-4" />
+              </IconButton>
+            )}
+            {inlineOpen && (
+              <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
+                <span className={cn(!showLabels && 'sr-only')}>Apri</span>
+              </Button>
+            )}
             <Button
               variant={workbook?.dirty ? 'default' : 'ghost'}
               size="sm"
@@ -639,19 +769,24 @@ export const App: React.FC = () => {
               onClick={handleSave}
               title="Salva (Ctrl+S)"
             >
-              Salva
+              <span className={cn(!showLabels && 'sr-only')}>Salva</span>
             </Button>
-            <Separator orientation="vertical" className="h-4 mx-1" />
-            <IconButton size="sm" disabled={!workbook?.canUndo} onClick={() => { controller.undo(); refreshState(); }} label="Annulla (Ctrl+Z)">
-              <Undo2 className="size-4" />
-            </IconButton>
-            <IconButton size="sm" disabled={!workbook?.canRedo} onClick={() => { controller.redo(); refreshState(); }} label="Ripeti (Ctrl+Shift+Z)">
-              <Redo2 className="size-4" />
-            </IconButton>
+            {workbook && (inlineUndo || inlineRedo) && <Separator orientation="vertical" className="mx-1 h-4" />}
+            {workbook && inlineUndo && (
+              <IconButton size="sm" disabled={!workbook.canUndo} onClick={() => { controller.undo(); refreshState(); }} label="Annulla (Ctrl+Z)">
+                <Undo2 className="size-4" />
+              </IconButton>
+            )}
+            {workbook && inlineRedo && (
+              <IconButton size="sm" disabled={!workbook.canRedo} onClick={() => { controller.redo(); refreshState(); }} label="Ripeti (Ctrl+Shift+Z)">
+                <Redo2 className="size-4" />
+              </IconButton>
+            )}
           </>
         }
         centerContent={
-          workbook && (
+          workbook &&
+          inlineViews && (
             <ViewSwitcher
               items={[
                 { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
@@ -660,6 +795,7 @@ export const App: React.FC = () => {
               activeId={viewMode}
               onChange={(id) => setViewMode(id as 'map' | 'outline')}
               size="sm"
+              className={cn(!showLabels && '[&_span]:sr-only')}
             />
           )
         }
@@ -668,20 +804,26 @@ export const App: React.FC = () => {
             {workbook && (
               <IconButton
                 size="sm"
-                active={Boolean(selectedTopicId)}
-                disabled={!workbook}
+                active={inspectorVisible}
                 onClick={() => {
-                  if (selectedTopicId) setSelectedTopicId(undefined);
-                  else if (allTopics[0]) setSelectedTopicId(allTopics[0].id);
+                  if (inspectorVisible) {
+                    if (compact) setDetailsOpen(false);
+                    else setSelectedTopicId(undefined);
+                  } else {
+                    const id = selectedTopicId ?? allTopics[0]?.id;
+                    if (id) openDetails(id);
+                  }
                 }}
-                label={selectedTopicId ? 'Chiudi pannello dettagli' : 'Apri pannello dettagli'}
+                label={inspectorVisible ? 'Chiudi pannello dettagli' : 'Apri pannello dettagli'}
               >
                 <PanelRight className="size-4" />
               </IconButton>
             )}
-            <IconButton size="sm" onClick={() => setDarkMode((v) => !v)} label="Cambia tema">
-              {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </IconButton>
+            {inlineRedo && (
+              <IconButton size="sm" onClick={() => setDarkMode((v) => !v)} label="Cambia tema">
+                {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </IconButton>
+            )}
             <Menu items={menuItems} widthClass="w-72" trigger={
               <IconButton size="sm" label="Menu">
                 <MoreVertical className="size-4" />
@@ -702,7 +844,7 @@ export const App: React.FC = () => {
         }
       />
 
-      <main className="flex-1 flex overflow-hidden">
+      <main className="relative flex flex-1 overflow-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         {!workbook ? (
           <EmptyState
             onOpenFile={handleOpenLocalFile}
@@ -728,33 +870,42 @@ export const App: React.FC = () => {
               onFilter={setFilter}
               selectedTopicId={selectedTopicId}
               collapsedIds={collapsedIds}
-              onSelect={setSelectedTopicId}
+              onSelect={(id) => {
+                setSelectedTopicId(id);
+                // Sotto lg il drawer copre la mappa: si chiude dopo la scelta.
+                if (!window.matchMedia(WIDE_QUERY).matches) setSidebarOpen(false);
+              }}
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
               onToggleCollapse={handleToggleCollapse}
               onAddChild={handleAddChild}
               onAddRootChild={() => allTopics[0] && handleAddChild(allTopics[0].id)}
               onMove={handleMove}
             />
 
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
               {viewMode === 'map' ? (
                 <MapView
                   layout={currentLayout}
                   selectedTopicId={selectedTopicId}
                   onSelectTopic={setSelectedTopicId}
-                  onOpenDetails={(id) => setSelectedTopicId(id)}
-                  onOpenLatex={(id) => setSelectedTopicId(id)}
+                  onOpenDetails={openDetails}
+                  onOpenLatex={openDetails}
+                  detailsOpen={inspectorVisible}
                   onAddChild={handleAddChild}
                   onDeleteTopic={handleDeleteSelected}
                   onToggleCollapse={handleToggleCollapse}
                   resourceResolver={resolveResource}
                   darkMode={darkMode}
+                  structure={mapStructure}
+                  onStructureChange={setMapStructure}
                 />
               ) : (
                 <OutlineView text={outlineText} />
               )}
 
               {workbook.sheets.length > 1 && (
-                <div className="h-9 shrink-0 border-t bg-sidebar flex items-center gap-1 px-2 overflow-x-auto">
+                <div className="flex h-[calc(2.25rem+env(safe-area-inset-bottom))] shrink-0 items-center gap-1 overflow-x-auto border-t bg-sidebar px-2 pb-[env(safe-area-inset-bottom)]">
                   {workbook.sheets.map((sheet, idx) => (
                     <Button
                       key={sheet.id || idx}
@@ -773,14 +924,14 @@ export const App: React.FC = () => {
               )}
             </div>
 
-            {selectedTopicId && (
+            {inspectorVisible && (
               <Inspector
                 topic={selectedTopic}
                 allTopics={allTopics}
                 relationships={currentSheet?.relationships || []}
                 controller={controller}
                 onChanged={refreshState}
-                onClose={() => setSelectedTopicId(undefined)}
+                onClose={() => (compact ? setDetailsOpen(false) : setSelectedTopicId(undefined))}
                 darkMode={darkMode}
                 onToast={addToast}
               />

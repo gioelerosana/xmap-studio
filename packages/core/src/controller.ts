@@ -58,8 +58,8 @@ import { toMarkdown } from './exporters/markdown.js';
 import { toOPML } from './exporters/opml.js';
 import { toOutline } from './exporters/outline.js';
 import { importToSheet } from './exporters/import.js';
-import { Layout } from './layout/types.js';
-import { layoutSheets } from './layout/layout.js';
+import { Layout, MapStructure } from './layout/types.js';
+import { DEFAULT_LAYOUT_OPTS, layoutSheets } from './layout/layout.js';
 import {
   BatchResultDto,
   BatchSpec,
@@ -559,12 +559,16 @@ export class AppController {
     return toOutline(this.currentWorkbook.content);
   }
 
-  public mapLayout(sheetIndex: number = 0, collapsed: Set<string> = new Set()): Layout | null {
+  public mapLayout(
+    sheetIndex: number = 0,
+    collapsed: Set<string> = new Set(),
+    structure?: MapStructure
+  ): Layout | null {
     if (!this.currentWorkbook) return null;
     const dto = this.currentWorkbook.toDto();
     const sheet = dto.sheets[sheetIndex];
     if (!sheet) return null;
-    return layoutSheets([sheet], collapsed);
+    return layoutSheets([sheet], collapsed, undefined, { ...DEFAULT_LAYOUT_OPTS, structure });
   }
 
   public async importOutline(

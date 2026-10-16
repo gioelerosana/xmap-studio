@@ -44,6 +44,10 @@ export default {
   ],
   theme: {
     extend: {
+      // Dispositivi touch (iPad, telefono): puntatore grossolano.
+      screens: {
+        coarse: { raw: '(pointer: coarse)' },
+      },
       colors: {
         ...Object.fromEntries(tokens.map((t) => [t, withAlpha(t)])),
         destructive: withAlpha('error'),

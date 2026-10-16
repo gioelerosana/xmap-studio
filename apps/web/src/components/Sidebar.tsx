@@ -1,6 +1,6 @@
 import React from 'react';
 import { Plus, Search } from 'lucide-react';
-import { Badge, IconButton, Input, SegmentedControl } from '@xmap/ui-kit';
+import { Badge, IconButton, Input, SegmentedControl, cn } from '@xmap/ui-kit';
 import { TopicView } from '@xmap/core';
 import { TopicFilter, TopicTree, DropPlacement } from './TopicTree.js';
 
@@ -17,6 +17,9 @@ export interface SidebarProps {
   onAddChild: (id: string) => void;
   onAddRootChild: () => void;
   onMove: (id: string, targetId: string, placement: DropPlacement) => void;
+  /** Visibilità della sidebar: sotto `lg` è un drawer sovrapposto, da `lg` una colonna. */
+  open?: boolean;
+  onClose?: () => void;
 }
 
 const FILTERS: { id: TopicFilter; label: string }[] = [
@@ -39,12 +42,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAddChild,
   onAddRootChild,
   onMove,
+  open = false,
+  onClose,
 }) => {
   const filteredCount = topics.filter((t) => filter === 'all' || t.kind === filter).length;
   const isFiltered = Boolean(searchQuery) || filter !== 'all';
 
   return (
-    <aside className="flex w-sidebar shrink-0 flex-col gap-2 overflow-hidden border-r bg-sidebar p-2">
+    <>
+      {/* Backdrop del drawer (solo sotto lg) */}
+      <div
+        aria-hidden="true"
+        onClick={onClose}
+        className={cn(
+          'absolute inset-0 z-40 bg-black/32 transition-opacity duration-200 lg:hidden',
+          open ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+      />
+      <aside
+        className={cn(
+          'flex w-sidebar shrink-0 flex-col gap-2 overflow-hidden border-r bg-sidebar p-2',
+          'max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-[45] max-lg:max-w-[85%] max-lg:shadow-dialog',
+          'max-lg:pb-[max(0.5rem,env(safe-area-inset-bottom))] max-lg:pl-[max(0.5rem,env(safe-area-inset-left))]',
+          'max-lg:transition-[transform,visibility] max-lg:duration-200 max-lg:ease-sheet',
+          !open && 'max-lg:invisible max-lg:-translate-x-full lg:hidden',
+        )}
+      >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <h2 className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">Blocchi</h2>
@@ -89,6 +112,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onMove={onMove}
         />
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };

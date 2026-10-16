@@ -142,7 +142,7 @@ export function Menu({ items, trigger, align = 'end', className, widthClass = 'w
           aria-orientation="vertical"
           onKeyDown={onPanelKeyDown}
           className={cn(
-            'surface-glass absolute top-[calc(100%+6px)] z-50 max-h-[calc(100vh-4rem)] animate-pop-in overflow-y-auto rounded-lg border p-1 text-sm text-popover-foreground shadow-dialog',
+            'surface-glass absolute top-[calc(100%+6px)] z-50 max-h-[calc(100dvh-4rem)] animate-pop-in overflow-y-auto rounded-lg border p-1 text-sm text-popover-foreground shadow-dialog',
             widthClass,
             align === 'end' ? 'right-0' : 'left-0',
           )}
@@ -177,7 +177,7 @@ export function Menu({ items, trigger, align = 'end', className, widthClass = 'w
                   </span>
                 ) : null}
                 <span className="flex-1 truncate">{item.label}</span>
-                {item.shortcut ? <Shortcut keys={item.shortcut} className="shrink-0" /> : null}
+                {item.shortcut ? <Shortcut keys={item.shortcut} className="shrink-0 max-sm:hidden coarse:hidden" /> : null}
               </button>
             </Fragment>
           ))}
