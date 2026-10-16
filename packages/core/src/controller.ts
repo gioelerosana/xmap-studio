@@ -405,18 +405,22 @@ export class AppController {
     return wb.toDto();
   }
 
-  /** Sposta (o con `null` ripristina) un punto di controllo di una relazione. */
-  public setRelationshipControlPoint(
+  /**
+   * Imposta i punti di controllo di una relazione in un solo passo di undo:
+   * `undefined` = invariato, `null` = ripristina il default di XMind.
+   */
+  public setRelationshipControlPoints(
     relationshipId: string,
-    index: 0 | 1,
-    point: Point | null
+    points: [Point | null | undefined, Point | null | undefined]
   ): WorkbookDto {
     const wb = this.ensureWorkbook();
     for (const sheet of wb.content) {
-      if (setRelationshipControlPoint(sheet, relationshipId, index, point)) {
-        wb.pushHistory();
-        return wb.toDto();
-      }
+      if (!sheet.relationships?.some((r) => r.id === relationshipId)) continue;
+      points.forEach((point, i) => {
+        if (point !== undefined) setRelationshipControlPoint(sheet, relationshipId, i as 0 | 1, point);
+      });
+      wb.pushHistory();
+      return wb.toDto();
     }
     throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
   }

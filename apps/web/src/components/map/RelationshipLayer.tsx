@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { handleToControlPoint, relationshipGeometry } from '@xmap/core';
+import { dragHandle, relationshipGeometry } from '@xmap/core';
 import type { LayoutNode, LayoutRelationship, Point, RelationshipGeometry } from '@xmap/core';
 import { arrowPath, dashArray, resolveLineColor } from './arrows';
 
@@ -8,14 +8,19 @@ export interface RelationshipLayerProps {
   nodes: LayoutNode[];
   selectedRelationshipId?: string;
   onSelectRelationship?: (relationshipId: string | undefined) => void;
-  /** Punto di controllo da salvare (già relativo al blocco, `handleToControlPoint`); `null` = ripristina. */
-  onControlPointChange?: (relationshipId: string, index: 0 | 1, point: Point | null) => void;
+  /**
+   * Punti di controllo da salvare in un solo passo (relativi al blocco di
+   * estremità): `undefined` = invariato, `null` = ripristina il default.
+   * Nello zig-zag una maniglia sposta il tratto centrale, quindi cambiano entrambi.
+   */
+  onControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
   /** Coordinate client del puntatore → coordinate mondo della mappa. */
   toWorld: (clientX: number, clientY: number) => Point;
   darkMode?: boolean;
 }
 
 type ControlPoints = [Point | undefined, Point | undefined];
+export type ControlPointsPatch = [Point | null | undefined, Point | null | undefined];
 
 interface DragState {
   id: string;
@@ -35,7 +40,7 @@ export const RelationshipLayer: React.FC<RelationshipLayerProps> = ({
   nodes,
   selectedRelationshipId,
   onSelectRelationship,
-  onControlPointChange,
+  onControlPointsChange,
   toWorld,
   darkMode,
 }) => {
@@ -49,11 +54,7 @@ export const RelationshipLayer: React.FC<RelationshipLayerProps> = ({
       const from = nodes[rel.from];
       const to = nodes[rel.to];
       if (!from || !to) return null;
-      const other = (index === 0 ? 1 : 0) as 0 | 1;
-      const cps: ControlPoints = [undefined, undefined];
-      cps[index] = handleToControlPoint(index, world, from, to);
-      cps[other] =
-        rel.controlPoints?.[other] ?? handleToControlPoint(other, rel.geometry.handles[other], from, to);
+      const cps = dragHandle(index, world, from, to, rel.style, rel.controlPoints);
       return { id: rel.id, index, controlPoints: cps, geometry: relationshipGeometry(from, to, rel.style, cps) };
     },
     [nodes]
@@ -175,8 +176,13 @@ export const RelationshipLayer: React.FC<RelationshipLayerProps> = ({
                         const s = dragRef.current;
                         dragRef.current = null;
                         setDrag(null);
-                        const p = s?.controlPoints[i];
-                        if (s && p && s.id === rel.id && s.index === i) onControlPointChange?.(rel.id, i, p);
+                        if (s && s.id === rel.id && s.index === i) {
+                          const [c0, c1] = s.controlPoints;
+                          // Fuori dallo zig-zag l'altra maniglia resta com'è nel file.
+                          const keep0 = rel.style.shape !== 'zigzag' && i === 1;
+                          const keep1 = rel.style.shape !== 'zigzag' && i === 0;
+                          onControlPointsChange?.(rel.id, [keep0 ? undefined : c0, keep1 ? undefined : c1]);
+                        }
                       }}
                       onPointerCancel={() => {
                         dragRef.current = null;
@@ -187,7 +193,11 @@ export const RelationshipLayer: React.FC<RelationshipLayerProps> = ({
                         e.stopPropagation();
                         dragRef.current = null;
                         setDrag(null);
-                        onControlPointChange?.(rel.id, i, null);
+                        const both = rel.style.shape === 'zigzag';
+                        onControlPointsChange?.(rel.id, [
+                          both || i === 0 ? null : undefined,
+                          both || i === 1 ? null : undefined,
+                        ]);
                       }}
                     />
                   </g>
