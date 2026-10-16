@@ -1,6 +1,8 @@
 {
   "name": "@xmap/desktop",
   "version": "0.1.0",
+  "productName": "XMap Studio",
+  "desktopName": "org.joel.xmap_studio.desktop",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
