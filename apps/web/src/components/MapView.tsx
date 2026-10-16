@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Layout, LayoutNode, MapStructure, renderLatexToSvg, SUMMARY_BRACE_W, trunkX } from '@xmap/core';
+import { Layout, LayoutNode, MapStructure, Point, renderLatexToSvg, SUMMARY_BRACE_W, trunkX } from '@xmap/core';
 import {
   Plus,
   Minus,
@@ -13,6 +13,16 @@ import {
   GitFork,
 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+import { RichTitle, textStyleCss } from './map/RichTitle.js';
+import { RelationshipLayer } from './map/RelationshipLayer.js';
+import {
+  DropPlacement,
+  DropTarget,
+  buildDragIndex,
+  computeDropTarget,
+  isDraggable,
+  subtreeOf,
+} from './map/dragTarget.js';
 
 // MathJax produce SVG con colore letterale, non una variabile CSS: i valori
 // replicano il token foreground nei due temi e i testi su riempimento pieno.
@@ -40,6 +50,10 @@ const TREE_CORNER_R = 8;
 const TAP_SLOP_PX = { mouse: 3, touch: 8 }; // oltre questa distanza il gesto è un pan, non un tap
 const DOUBLE_TAP_MS = 320;
 const DOUBLE_TAP_ZOOM = 1.6;
+const LONG_PRESS_MS = 400; // touch: pressione prolungata su un blocco = inizia il trascinamento
+const DRAG_EDGE_ZONE = 48; // px dal bordo del canvas in cui il trascinamento fa scorrere la vista
+const DRAG_EDGE_SPEED = 16; // px per frame al bordo estremo
+const DRAG_DIM_OPACITY = '0.25';
 // Smartphone: sotto questa larghezza l'adattamento non scende sotto uno zoom
 // leggibile e il pannello dettagli è un bottom sheet che copre la parte bassa.
 const COMPACT_WIDTH = 640;
@@ -116,6 +130,13 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Stato visivo del trascinamento di un blocco: fantasma (angolo in alto a sinistra, mondo) e bersaglio. */
+interface DragOverlay {
+  sourceId: string;
+  ghost: Point;
+  drop: DropTarget | null;
+}
+
 export interface MapViewProps {
   layout: Layout | null;
   selectedTopicId?: string;
@@ -129,6 +150,10 @@ export interface MapViewProps {
   darkMode?: boolean;
   structure: MapStructure;
   onStructureChange: (structure: MapStructure) => void;
+  /** Rilascio di un blocco trascinato sulla mappa; stessa firma di `onMove` dell'albero. */
+  onMoveTopic?: (topicId: string, targetId: string, placement: DropPlacement) => void;
+  /** Punto di controllo di una relazione trascinato (`null` = ripristina il tracciato). */
+  onRelationshipControlPointChange?: (relationshipId: string, index: 0 | 1, point: Point | null) => void;
   /** Pannello dettagli aperto: su smartphone il blocco viene portato sopra il bottom sheet. */
   detailsOpen?: boolean;
 }
@@ -147,6 +172,8 @@ export const MapView: React.FC<MapViewProps> = ({
   structure,
   onStructureChange,
   detailsOpen = false,
+  onMoveTopic,
+  onRelationshipControlPointChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -164,8 +191,28 @@ export const MapView: React.FC<MapViewProps> = ({
   const zoomTargetRef = useRef<number | null>(null); // zoom di arrivo dei click +/- in corso
   const gestureCleanupRef = useRef<(() => void) | null>(null);
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
-  const handlers = useRef({ onSelectTopic, onOpenDetails, onToggleCollapse });
-  handlers.current = { onSelectTopic, onOpenDetails, onToggleCollapse };
+  const handlers = useRef({
+    onSelectTopic,
+    onOpenDetails,
+    onToggleCollapse,
+    onMoveTopic,
+    onRelationshipControlPointChange,
+  });
+  handlers.current = { onSelectTopic, onOpenDetails, onToggleCollapse, onMoveTopic, onRelationshipControlPointChange };
+  const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
+  const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
+  const layoutRef = useRef<Layout | null>(layout);
+  layoutRef.current = layout;
+  const dragIndex = useMemo(() => (layout ? buildDragIndex(layout) : null), [layout]);
+  const dragIndexRef = useRef(dragIndex);
+  dragIndexRef.current = dragIndex;
+
+  // Coordinate client -> coordinate mondo con pan/zoom correnti (anche a gesto in corso).
+  const toWorld = useCallback((clientX: number, clientY: number): Point => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const v = viewRef.current;
+    return { x: (clientX - (rect?.left ?? 0) - v.x) / v.k, y: (clientY - (rect?.top ?? 0) - v.y) / v.k };
+  }, []);
   // Cache delle risorse immagine / PNG come data URL
   const resourceUrls = useMemo(() => {
     const map = new Map<string, string>();
@@ -436,7 +483,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!container) return;
 
     const pointers = new Map<number, { x: number; y: number }>();
-    let mode: 'none' | 'pan' | 'pinch' = 'none';
+    let mode: 'none' | 'pan' | 'pinch' | 'nodepress' | 'drag' = 'none';
     let pointerType = 'mouse';
     let start = { x: 0, y: 0 };
     let last = { x: 0, y: 0 };
@@ -445,6 +492,20 @@ export const MapView: React.FC<MapViewProps> = ({
     let pinch = { dist: 1, mx: 0, my: 0, view: viewRef.current };
     let suppressClickUntil = 0;
     let lastTap = { t: 0, x: 0, y: 0, nodeId: null as string | null };
+    // Trascinamento di un blocco: `pressedNode` è il blocco premuto in attesa di capire
+    // se il gesto è un click, un pan (touch che si muove subito) o un drag.
+    let pressedNode = -1;
+    let longPressTimer = 0;
+    interface ActiveDrag {
+      src: number;
+      excluded: Set<number>;
+      ids: string[];
+      grab: Point;
+      ptr: { x: number; y: number };
+      raf: number;
+      lastSig: string;
+    }
+    let drag: ActiveDrag | null = null;
 
     const local = (x: number, y: number) => {
       const rect = container.getBoundingClientRect();
@@ -474,7 +535,94 @@ export const MapView: React.FC<MapViewProps> = ({
       motionRef.current = requestAnimationFrame(step);
     };
 
+    const setDim = (ids: string[], on: boolean) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      for (const id of ids) {
+        const sel = CSS.escape(id);
+        svg.querySelectorAll<SVGElement>(`[data-node-id="${sel}"],[data-edge-child="${sel}"]`).forEach((el) => {
+          el.style.opacity = on ? DRAG_DIM_OPACITY : '';
+        });
+      }
+    };
+
+    const dropAt = (d: ActiveDrag): DropTarget | null => {
+      const l = layoutRef.current;
+      const idx = dragIndexRef.current;
+      if (!l || !idx) return null;
+      return computeDropTarget(l, idx, d.src, toWorld(d.ptr.x, d.ptr.y), d.excluded);
+    };
+
+    const updateOverlay = (d: ActiveDrag) => {
+      const l = layoutRef.current;
+      if (!l) return;
+      const wp = toWorld(d.ptr.x, d.ptr.y);
+      const drop = dropAt(d);
+      const ghost = { x: wp.x - d.grab.x, y: wp.y - d.grab.y };
+      const sig = `${ghost.x.toFixed(1)},${ghost.y.toFixed(1)}|${drop?.targetId}:${drop?.placement}`;
+      if (sig === d.lastSig) return;
+      d.lastSig = sig;
+      setDragOverlay({ sourceId: l.nodes[d.src].id, ghost, drop });
+    };
+
+    // Ad ogni frame: scorrimento automatico vicino ai bordi e aggiornamento di fantasma/bersaglio.
+    const dragTick = () => {
+      const d = drag;
+      if (!d) return;
+      const rect = container.getBoundingClientRect();
+      const edge = (dist: number) => DRAG_EDGE_SPEED * Math.min(Math.max((DRAG_EDGE_ZONE - dist) / DRAG_EDGE_ZONE, 0), 1);
+      const dx = edge(d.ptr.x - rect.left) - edge(rect.right - d.ptr.x);
+      const dy = edge(d.ptr.y - rect.top) - edge(rect.bottom - d.ptr.y);
+      if (dx !== 0 || dy !== 0) {
+        const v = viewRef.current;
+        viewRef.current = { ...v, x: v.x + dx, y: v.y + dy };
+        applyView();
+        scheduleSync();
+      }
+      updateOverlay(d);
+      d.raf = requestAnimationFrame(dragTick);
+    };
+
+    const onDragKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') finishDrag(false);
+    };
+
+    const finishDrag = (commit: boolean) => {
+      const d = drag;
+      if (!d) return;
+      drag = null;
+      cancelAnimationFrame(d.raf);
+      window.removeEventListener('keydown', onDragKey);
+      setDim(d.ids, false);
+      setDragOverlay(null);
+      const l = layoutRef.current;
+      const drop = commit ? dropAt(d) : null;
+      if (drop && l) handlers.current.onMoveTopic?.(l.nodes[d.src].id, drop.targetId, drop.placement);
+    };
+
+    const beginDrag = () => {
+      window.clearTimeout(longPressTimer);
+      const l = layoutRef.current;
+      const [p] = [...pointers.values()];
+      if (!l || !p || pressedNode < 0 || !l.nodes[pressedNode]) return;
+      cancelMotion();
+      const src = pressedNode;
+      const n = l.nodes[src];
+      const wp = toWorld(p.x, p.y);
+      const excluded = subtreeOf(l, src);
+      const ids = [...excluded].map((i) => l.nodes[i].id);
+      mode = 'drag';
+      moved = true;
+      drag = { src, excluded, ids, grab: { x: wp.x - n.x, y: wp.y - n.y }, ptr: { ...p }, raf: 0, lastSig: '' };
+      setDim(ids, true);
+      window.addEventListener('keydown', onDragKey);
+      if (pointerType !== 'mouse') navigator.vibrate?.(12);
+      dragTick();
+    };
+
     const beginPinch = () => {
+      window.clearTimeout(longPressTimer);
+      pressedNode = -1;
       const [a, b] = [...pointers.values()];
       const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
       pinch = { dist: Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1), mx: mid.x, my: mid.y, view: { ...viewRef.current } };
@@ -511,6 +659,22 @@ export const MapView: React.FC<MapViewProps> = ({
     const onMove = (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (mode === 'drag') {
+        if (drag) drag.ptr = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      if (mode === 'nodepress') {
+        const slopPress = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < slopPress) return;
+        if (pointerType === 'mouse') {
+          beginDrag();
+          return;
+        }
+        // Touch: un dito che si muove prima della pressione prolungata fa pan.
+        window.clearTimeout(longPressTimer);
+        pressedNode = -1;
+        beginPan({ x: start.x, y: start.y });
+      }
       if (mode === 'pinch' && pointers.size >= 2) {
         const [a, b] = [...pointers.values()];
         const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -538,6 +702,18 @@ export const MapView: React.FC<MapViewProps> = ({
 
     const onUp = (e: PointerEvent) => {
       if (!pointers.delete(e.pointerId)) return;
+      if (mode === 'drag') {
+        // Anche un drag annullato con Esc resta in questa modalità fino al rilascio.
+        if (drag) drag.ptr = { x: e.clientX, y: e.clientY };
+        finishDrag(e.type === 'pointerup');
+        mode = 'none';
+        pressedNode = -1;
+        cleanup();
+        suppressClickUntil = performance.now() + 400;
+        return;
+      }
+      window.clearTimeout(longPressTimer);
+      pressedNode = -1;
       if (pointers.size >= 2) {
         beginPinch();
         return;
@@ -561,6 +737,7 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const cleanup = () => {
+      window.clearTimeout(longPressTimer);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -570,10 +747,21 @@ export const MapView: React.FC<MapViewProps> = ({
     const onDown = (e: PointerEvent) => {
       const target = e.target as Element;
       if (target.closest('[data-map-ui]')) return;
+      if (mode === 'drag') return;
+      // Blocco trascinabile sotto il puntatore (non la radice, né l'indicatore di collasso).
+      let nodeIdx = -1;
+      const nodeEl = target.closest('[data-node-id]');
+      const l = layoutRef.current;
+      const di = dragIndexRef.current;
+      if (nodeEl && l && di && !target.closest('[data-collapse-toggle]')) {
+        const i = di.byId.get(nodeEl.getAttribute('data-node-id') ?? '');
+        if (i !== undefined && isDraggable(l, di, i)) nodeIdx = i;
+      }
       if (e.pointerType === 'mouse') {
-        // Col mouse si trascina solo dallo sfondo: sui blocchi restano click e doppio click.
+        // Col mouse il pan parte dallo sfondo; su un blocco trascinabile parte il drag
+        // oltre la soglia, altrimenti restano click e doppio click.
         const onBackground = target === container || target.tagName === 'svg' || target.id === 'map-bg';
-        if (e.button !== 0 || !onBackground || pointers.size > 0) return;
+        if (e.button !== 0 || (!onBackground && nodeIdx < 0) || pointers.size > 0) return;
       }
       if (pointers.size >= 2) return;
       cancelMotion();
@@ -588,8 +776,27 @@ export const MapView: React.FC<MapViewProps> = ({
         gestureCleanupRef.current = cleanup;
       }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 2) beginPinch();
-      else beginPan({ x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        beginPinch();
+      } else if (nodeIdx >= 0) {
+        mode = 'nodepress';
+        pressedNode = nodeIdx;
+        last = { x: e.clientX, y: e.clientY };
+        samples = [];
+        // Touch: il drag parte con pressione prolungata, così il pan col dito resta possibile.
+        if (e.pointerType !== 'mouse') {
+          longPressTimer = window.setTimeout(() => {
+            if (mode === 'nodepress') beginDrag();
+          }, LONG_PRESS_MS);
+        }
+      } else {
+        beginPan({ x: e.clientX, y: e.clientY });
+      }
+    };
+
+    // Il menu contestuale della pressione prolungata (touch) coprirebbe il drag.
+    const onContextMenu = (e: Event) => {
+      if (mode === 'nodepress' || mode === 'drag') e.preventDefault();
     };
 
     const onClickCapture = (e: MouseEvent) => {
@@ -626,19 +833,22 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     container.addEventListener('pointerdown', onDown);
+    container.addEventListener('contextmenu', onContextMenu);
     container.addEventListener('click', onClickCapture, true);
     container.addEventListener('gesturestart', onGestureStart);
     container.addEventListener('gesturechange', onGestureChange);
     container.addEventListener('gestureend', onGestureEnd);
     return () => {
       cleanup();
+      finishDrag(false);
+      container.removeEventListener('contextmenu', onContextMenu);
       container.removeEventListener('pointerdown', onDown);
       container.removeEventListener('click', onClickCapture, true);
       container.removeEventListener('gesturestart', onGestureStart);
       container.removeEventListener('gesturechange', onGestureChange);
       container.removeEventListener('gestureend', onGestureEnd);
     };
-  }, [hasContent, animateTo, applyView, cancelMotion, scheduleApply, scheduleSync]);
+  }, [hasContent, animateTo, applyView, cancelMotion, scheduleApply, scheduleSync, toWorld]);
 
   const selectedNode = useMemo(() => {
     if (!layout || !selectedTopicId) return null;
@@ -708,9 +918,6 @@ export const MapView: React.FC<MapViewProps> = ({
             <circle cx="2" cy="2" r="1" fill="var(--map-grid-dot)" />
           </pattern>
 
-          <marker id="rel-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--muted-foreground)" />
-          </marker>
         </defs>
 
         <rect
@@ -757,65 +964,13 @@ export const MapView: React.FC<MapViewProps> = ({
           return (
             <path
               key={`edge-${idx}`}
+              data-edge-child={c.id}
               d={pathD}
               fill="none"
               stroke={c.accent || 'var(--map-link)'}
               strokeWidth={c.depth <= 1 ? 3 : 2}
               strokeLinecap="round"
             />
-          );
-        })}
-
-        {/* Relazioni tra nodi */}
-        {layout.relationships.map((rel) => {
-          const from = layout.nodes[rel.from];
-          const to = layout.nodes[rel.to];
-          if (!from || !to) return null;
-          const sx = from.x + from.w / 2;
-          const sy = from.y + from.h / 2;
-          const ex = to.x + to.w / 2;
-          const ey = to.y + to.h / 2;
-          const cx = (sx + ex) / 2 - (ey - sy) * 0.2;
-          const cy = (sy + ey) / 2 + (ex - sx) * 0.2;
-          // Larghezza stimata della pillola: ~6px per carattere a 11px.
-          const labelW = rel.title ? rel.title.length * 6 + 14 : 0;
-
-          return (
-            <g key={`rel-${rel.id}`}>
-              <path
-                d={`M ${sx} ${sy} Q ${cx} ${cy}, ${ex} ${ey}`}
-                fill="none"
-                stroke="var(--muted-foreground)"
-                strokeWidth={1.5}
-                strokeDasharray="5 4"
-                markerEnd="url(#rel-arrow)"
-                opacity={0.8}
-              />
-              {rel.title && (
-                <>
-                  <rect
-                    x={cx - labelW / 2}
-                    y={cy - 18}
-                    width={labelW}
-                    height={16}
-                    rx={6}
-                    fill="var(--background)"
-                    stroke="var(--border)"
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={cx}
-                    y={cy - 10}
-                    fill="var(--muted-foreground)"
-                    className="text-2xs font-medium"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    {rel.title}
-                  </text>
-                </>
-              )}
-            </g>
           );
         })}
 
@@ -867,6 +1022,7 @@ export const MapView: React.FC<MapViewProps> = ({
               className="cursor-pointer group"
               onClick={(e) => {
                 e.stopPropagation();
+                setSelectedRelationshipId(undefined);
                 handlers.current.onSelectTopic(node.id);
               }}
               onDoubleClick={(e) => {
@@ -939,9 +1095,10 @@ export const MapView: React.FC<MapViewProps> = ({
                               ? 'text-sm font-semibold tracking-tight'
                               : isBranch
                               ? 'text-xs font-semibold'
-                              : 'text-xs font-medium'
+                              : 'text-xs font-normal'
                           )}
                           style={{
+                            ...textStyleCss(node.textStyle),
                             display: '-webkit-box',
                             WebkitLineClamp: Math.max(Math.floor((node.h - 8) / 16), 1),
                             WebkitBoxOrient: 'vertical',
@@ -949,7 +1106,7 @@ export const MapView: React.FC<MapViewProps> = ({
                           }}
                           title={node.displayTitle || node.title}
                         >
-                          {node.displayTitle || node.title || '(senza titolo)'}
+                          <RichTitle text={node.displayTitle || node.title || '(senza titolo)'} runs={node.titleRuns} />
                         </span>
                       )}
 
@@ -1004,6 +1161,7 @@ export const MapView: React.FC<MapViewProps> = ({
               {/* Indicatore comprimi / espandi: bordo destro, o sotto il blocco per la Tree Chart */}
               {hasChildren && (
                 <g
+                  data-collapse-toggle
                   transform={
                     node.childrenBelow
                       ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
@@ -1033,9 +1191,100 @@ export const MapView: React.FC<MapViewProps> = ({
             </g>
           );
         })}
+
+        {/* Relazioni dopo i blocchi: le maniglie di piegatura devono restare cliccabili anche
+            sopra i blocchi. `data-map-ui` esclude il layer da pan e drag del contenitore. */}
+        <g data-map-ui>
+          <RelationshipLayer
+            relationships={layout.relationships}
+            nodes={layout.nodes}
+            selectedRelationshipId={selectedRelationshipId}
+            onSelectRelationship={setSelectedRelationshipId}
+            onControlPointChange={(relId, index, point) =>
+              handlers.current.onRelationshipControlPointChange?.(relId, index, point)
+            }
+            toWorld={toWorld}
+            darkMode={darkMode}
+          />
+        </g>
       </>
     );
-  }, [layout, selectedTopicId, darkMode, resourceUrls, formulaSvgCache]);
+  }, [layout, selectedTopicId, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld]);
+
+  // Fantasma del blocco trascinato e indicatore del bersaglio, sopra tutto il resto.
+  const dragLayer = useMemo(() => {
+    if (!dragOverlay || !layout) return null;
+    const src = layout.nodes.find((n) => n.id === dragOverlay.sourceId);
+    if (!src) return null;
+    const look = nodeLook(src, darkMode);
+    const { ghost, drop } = dragOverlay;
+    const target = drop ? layout.nodes[drop.targetIndex] : undefined;
+    const ind = drop?.indicator;
+    return (
+      <g pointerEvents="none">
+        {target && drop && (
+          <rect
+            x={target.x - 3}
+            y={target.y - 3}
+            width={target.w + 6}
+            height={target.h + 6}
+            rx={13}
+            fill={drop.placement === 'into' ? 'color-mix(in oklab, var(--primary) 14%, transparent)' : 'none'}
+            stroke="var(--primary)"
+            strokeWidth={drop.placement === 'into' ? 2 : 1}
+            strokeOpacity={drop.placement === 'into' ? 1 : 0.45}
+          />
+        )}
+        {ind?.kind === 'line' && (
+          <g stroke="var(--primary)" fill="var(--primary)">
+            <line x1={ind.x1} x2={ind.x2} y1={ind.y} y2={ind.y} strokeWidth={3} strokeLinecap="round" />
+            <circle cx={ind.x1} cy={ind.y} r={4} stroke="none" />
+          </g>
+        )}
+        {ind?.kind === 'child' && (
+          <g stroke="var(--primary)" fill="none">
+            <path
+              d={`M ${ind.from.x} ${ind.from.y} C ${ind.from.x + 28} ${ind.from.y}, ${ind.to.x - 28} ${ind.to.y}, ${ind.to.x} ${ind.to.y}`}
+              strokeWidth={2.5}
+              strokeDasharray="6 4"
+              strokeLinecap="round"
+            />
+            <rect
+              x={ind.to.x}
+              y={ind.to.y - ind.h / 2}
+              width={ind.w}
+              height={ind.h}
+              rx={10}
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              fill="color-mix(in oklab, var(--primary) 10%, transparent)"
+            />
+          </g>
+        )}
+        <g transform={`translate(${ghost.x}, ${ghost.y})`} opacity={0.75}>
+          <rect
+            width={src.w}
+            height={src.h}
+            rx={10}
+            fill={look.fill}
+            stroke={look.stroke}
+            strokeWidth={1}
+            style={{ filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.3))' }}
+          />
+          <foreignObject x={10} y={4} width={Math.max(src.w - 18, 10)} height={Math.max(src.h - 8, 10)}>
+            <div
+              className="flex h-full w-full items-center overflow-hidden text-xs leading-snug"
+              style={{ color: look.text }}
+            >
+              <span className="line-clamp-3 break-words" style={textStyleCss(src.textStyle)}>
+                {src.latex ? src.latex : src.displayTitle || src.title || '(senza titolo)'}
+              </span>
+            </div>
+          </foreignObject>
+        </g>
+      </g>
+    );
+  }, [dragOverlay, layout, darkMode]);
 
   if (!layout || layout.nodes.length === 0) {
     return (
@@ -1054,7 +1303,15 @@ export const MapView: React.FC<MapViewProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 h-full w-full overflow-clip bg-[var(--map-canvas)] select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150"
+      className={cn(
+        'relative flex-1 h-full w-full overflow-clip bg-[var(--map-canvas)] select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150',
+        dragOverlay && '!cursor-grabbing'
+      )}
+      onClick={(e) => {
+        // Click sullo sfondo: deseleziona la relazione.
+        const t = e.target as Element;
+        if (t === e.currentTarget || t.tagName === 'svg' || t.id === 'map-bg') setSelectedRelationshipId(undefined);
+      }}
     >
       {/* Controlli zoom flottanti in basso a destra */}
       <div
@@ -1175,6 +1432,7 @@ export const MapView: React.FC<MapViewProps> = ({
         style={{ transformOrigin: '0 0', willChange: 'transform', textRendering: 'geometricPrecision' }}
       >
         {content}
+        {dragLayer}
       </svg>
     </div>
   );

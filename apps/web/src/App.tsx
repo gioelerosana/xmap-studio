@@ -15,6 +15,7 @@ import {
 import {
   AppController,
   Layout,
+  Point,
   TopicView,
   WorkbookDto,
   buildArchiveBytes,
@@ -593,6 +594,18 @@ export const App: React.FC = () => {
     [controller, refreshState, addToast]
   );
 
+  const handleRelationshipControlPoint = useCallback(
+    (relationshipId: string, index: 0 | 1, point: Point | null) => {
+      try {
+        controller.setRelationshipControlPoint(relationshipId, index, point);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Relazione non modificata: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
   const handleExportEquation = async (format: 'svg' | 'png') => {
     if (!selectedTopic || selectedTopic.kind !== 'equation') return;
     try {
@@ -899,6 +912,8 @@ export const App: React.FC = () => {
                   darkMode={darkMode}
                   structure={mapStructure}
                   onStructureChange={setMapStructure}
+                  onMoveTopic={handleMove}
+                  onRelationshipControlPointChange={handleRelationshipControlPoint}
                 />
               ) : (
                 <OutlineView text={outlineText} />
