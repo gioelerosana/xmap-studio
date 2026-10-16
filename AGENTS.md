@@ -21,6 +21,21 @@ formato. Posizionamento, inventario delle feature e roadmap in
 
 Niente account, niente telemetria. Apre, mostra, modifica, salva.
 
+### Macro-obiettivo: feature parity con XMind
+
+La direzione del progetto è **pareggiare XMind, e superarlo dove Free è
+bloccato**. Un file aperto qui deve apparire come in XMind (grassetti, forme
+delle relazioni, sommari, colori del tema) e deve potersi modificare **sulla
+mappa** con i gesti di XMind (drag & drop, editing in place, scorciatoie). La
+matrice di parità con lo stato di ogni voce è in
+[`docs/PRODUCT.md`](docs/PRODUCT.md) §4 "Fase 8"; ogni feature nuova:
+
+1. parte dal riscontro su XMind reale (ricetta §"Verificare un campo di formato
+   su XMind reale": il codice di rendering di XMind è nell'`app.asar`);
+2. passa per *render* → *edit* → *round-trip* (XMind riapre il file salvato e lo
+   mostra uguale);
+3. aggiorna la riga corrispondente della matrice.
+
 - Stack: monorepo **TypeScript** gestito con **pnpm**:
   - `packages/core` — motore (modello, archivio, sicurezza, LaTeX/MathJax,
     export, layout). Non dipende dalla UI.
@@ -303,9 +318,10 @@ punto da verificare in UI.
 ## Limiti noti (non introdurre regressioni)
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 non è supportato.
-- Editing: testo, note, marker e task dei blocchi, aggiunta di sotto-blocchi,
-  eliminazione (con i figli) e spostamento (riordino/riannidamento) via drag &
-  drop nell'albero. Restano fuori scope i temi. Inventario aggiornato in
+- Editing: testo, stile del testo, note, marker e task dei blocchi, aggiunta di
+  sotto-blocchi, eliminazione (con i figli), spostamento (riordino/riannidamento)
+  via drag & drop nell'albero e sulla mappa, punti di controllo delle relazioni.
+  I temi non si modificano ancora (vedi matrice di parità). Inventario aggiornato in
   [`docs/PRODUCT.md`](docs/PRODUCT.md).
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della
   sicurezza dei dati e dell'undo).

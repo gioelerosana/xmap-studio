@@ -287,6 +287,52 @@ bounds), `MapView` e `App` in `apps/web` (sincronia selezione).
 renderizzate con cache, interazione v1 = selezione + collapse + zoom, nessuna
 dipendenza nuova.
 
+### Fase 8 — Feature parity con XMind (macro-obiettivo in corso)
+**Idea:** la mappa non è più solo una vista: si edita **sulla mappa** come in
+XMind, e tutto ciò che XMind mostra o permette di fare su un file locale deve
+esistere anche qui — pareggiandolo, e superandolo dove Free è bloccato
+(equazioni, export, task). Il riferimento è sempre il comportamento di XMind
+26.x sullo stesso file, verificato col metodo di §3.
+**Regola:** ogni voce della matrice passa per *render* (il file di XMind si vede
+uguale) → *edit* (si modifica dall'app) → *round-trip* (XMind riapre il file
+salvato e lo mostra uguale).
+
+Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
+
+| Area | Feature XMind | Stato | Note |
+|---|---|---|---|
+| Editing sulla mappa | Drag & drop dei blocchi (riordino e riannidamento) | ✅ | `MapView`; stesse regole di `moveTopic` |
+| | Modifica del titolo direttamente nel blocco (doppio clic / F2) | ⬜ | oggi dall'ispettore |
+| | Tab = figlio, Invio = fratello, Canc = elimina sulla mappa | ⬜ | scorciatoie di XMind |
+| | Copia/incolla e duplica di sottoalberi | ⬜ | rigenerare gli id (`remapIds`) |
+| | Selezione multipla e spostamento di gruppo | ⬜ | |
+| | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | resi, non trascinabili |
+| Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | ispettore |
+| | Formattazione parziale del titolo (`attributedTitle`) | 🟡 | resa; edit da fare |
+| | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti |
+| Relazioni | Forme curved/straight/angled/zigzag, tratteggio, frecce dal tema | ✅ | `layout/relationship.ts` |
+| | Punti di controllo trascinabili (`controlPoints`) | ✅ | maniglie sulla relazione selezionata |
+| | Creazione di una relazione trascinando dalla mappa | ⬜ | oggi dall'ispettore |
+| | Titolo della relazione modificabile in place | ⬜ | |
+| Struttura | Sommari (graffa + topic) e boundary | 🟡 | sommari resi; boundary da disegnare |
+| | Logic Chart, Tree Chart | ✅ | |
+| | Mind map bilanciata, org chart, fishbone, timeline, matrice | ⬜ | oggi rese come Logic Chart |
+| Stile | Tema del foglio (colori, forme dei blocchi, linee dei rami) | 🟡 | colori dei rami; forme/linee dal tema da fare |
+| | Forma, riempimento e bordo del singolo blocco | 🟡 | riempimento fatto |
+| | Linee dei rami a gomito/curve come da tema | ⬜ | |
+| Contenuto | Equazioni LaTeX native (MathJax) | ✅ | supera Free |
+| | Note, etichette, marker, link, task, allegati, immagini | ✅ | |
+| | Callout | 🟡 | letti, non disegnati come callout |
+| Navigazione | Pan, zoom, fit, collapse, ricerca | ✅ | |
+| | Outliner, presentazione (Pitch), focus su un ramo | 🟡 | outliner sì |
+| Export | Markdown, OPML, testo | ✅ | |
+| | PNG/SVG/PDF della mappa | ⬜ | |
+
+**Ordine di attacco:** prima ciò che rende la mappa leggibile come in XMind
+(stile testo, relazioni, boundary, linee del tema), poi l'editing diretto sulla
+mappa (titolo in place, scorciatoie, copia/incolla, relazioni da mouse), poi le
+strutture alternative e l'export grafico.
+
 ### Fuori scope (per scelta)
 Cloud/account/collaborazione/AI; Set Password (cifratura ZIP); sticker e
 IconFinder proprietari (asset XMind, licenza); export Word/Excel e PDF nativi
@@ -351,5 +397,8 @@ l'arrivo di nuove feature:
 9. **Fase 7 — vista mappa ad albero**: completata! Piano in
    [`MAP-VIEW.md`](MAP-VIEW.md). Layout ad albero puro (`packages/core/src/layout/`), vista interattiva
    con pan/zoom/collapse (`MapView`) e integrazione primaria in UI.
-10. **Ogni fase**: branch dedicato (`feat/<slug>`), MR verso `main`, test e
+10. **Fase 8 — feature parity**: in corso, matrice in §4 Fase 8. Primo
+    blocco fatto: drag & drop sulla mappa, stile del testo, relazioni in stile
+    XMind con punti di controllo.
+11. **Ogni fase**: branch dedicato (`feat/<slug>`), MR verso `main`, test e
     verifica in XMind prima dell'unione.
