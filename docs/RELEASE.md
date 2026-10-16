@@ -35,8 +35,17 @@ allineati a ogni release.
 | Web app (build Vite) | `apps/web/dist/` | no (usata da Electron) |
 | Processo Electron compilato | `apps/desktop/dist/` | no |
 
-Al momento non esiste uno script che produca un pacchetto installabile
-(AppImage, deb o simili): `pnpm build:desktop` compila solo il processo
-Electron. Per distribuire un pacchetto occorre aggiungere un packager
-(ad esempio `electron-builder`) e dichiarare l'estensione `.xmind` per la
-piattaforma scelta. `dist/` è in `.gitignore`.
+## Pacchetto Arch Linux
+
+[`packaging/arch/PKGBUILD`](../packaging/arch/PKGBUILD) costruisce un pacchetto
+pacman dall'ultimo commit del branch corrente e lo installa:
+
+```bash
+cd packaging/arch && makepkg -si
+```
+
+Usa l'Electron di sistema (`electron43`), installa l'app in
+`/usr/lib/xmap-studio`, il comando `xmap-studio`, la voce di menu, le icone
+`hicolor` e il tipo MIME `application/xmind`. Le modifiche non committate non
+entrano nel pacchetto. Non esistono ancora pacchetti per altre distribuzioni.
+`dist/` è in `.gitignore`.

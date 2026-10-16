@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
 export default defineConfig({
+  // Percorsi relativi: in Electron la UI compilata si carica da file://.
+  base: './',
   plugins: [react()],
   resolve: {
     alias: {

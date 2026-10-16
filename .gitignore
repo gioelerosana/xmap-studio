@@ -23,3 +23,9 @@ dist/
 
 # worktree dei sotto-agenti (lavoro parallelo)
 .claude/worktrees/
+
+# Build di makepkg
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/xmap-studio/
+packaging/arch/*.pkg.tar.*

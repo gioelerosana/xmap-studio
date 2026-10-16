@@ -354,7 +354,7 @@ export const App: React.FC = () => {
 
   const handleLoadDemo = async () => {
     try {
-      const response = await fetch('/demo.xmind');
+      const response = await fetch('demo.xmind');
       if (!response.ok) throw new Error('File demo non reperibile');
       const buffer = await response.arrayBuffer();
       await requestWorkbookReplacement(async () => {
