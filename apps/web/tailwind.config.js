@@ -44,10 +44,6 @@ export default {
   ],
   theme: {
     extend: {
-      // Dispositivi touch (iPad, telefono): puntatore grossolano.
-      screens: {
-        coarse: { raw: '(pointer: coarse)' },
-      },
       colors: {
         ...Object.fromEntries(tokens.map((t) => [t, withAlpha(t)])),
         destructive: withAlpha('error'),
@@ -97,5 +93,10 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // Dispositivi touch (iPad, telefono): puntatore grossolano. È una variante e
+    // non uno `screen` raw: in Tailwind 3 uno screen raw disattiva tutte le
+    // varianti `max-*` (`max-lg:`, `max-sm:`).
+    ({ addVariant }) => addVariant('coarse', '@media (pointer: coarse)'),
+  ],
 };
