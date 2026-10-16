@@ -182,6 +182,11 @@ nella build di produzione). Per una modifica alla UI controlla anche:
   doppio tap; il pinch da trackpad in Safari arriva come `GestureEvent`;
 - sotto `lg` sidebar e inspector sono pannelli sovrapposti; la sidebar è
   nascosta di default ovunque.
+- la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
+  `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
+  disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (drawer,
+  bottom sheet, toast). Dopo modifiche al config verifica che la CSS generata
+  le contenga.
 
 Per provarla su un dispositivo: `pnpm build`, poi `cd apps/web && npx vite preview`
 (porta 4173, host `.ts.net` ammessi in `vite.config.ts`).
