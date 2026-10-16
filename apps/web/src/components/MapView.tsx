@@ -13,8 +13,8 @@ import {
   GitFork,
 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
-import { RichTitle, textStyleCss } from './map/RichTitle.js';
-import { RelationshipLayer } from './map/RelationshipLayer.js';
+import { hexLuminance, RichTitle, textStyleCss } from './map/RichTitle.js';
+import { RelationshipLayer, type ControlPointsPatch } from './map/RelationshipLayer.js';
 import {
   DropPlacement,
   DropTarget,
@@ -65,19 +65,6 @@ interface SafariGestureEvent extends UIEvent {
   scale: number;
   clientX: number;
   clientY: number;
-}
-
-/** Luminanza relativa di un colore `#rgb`/`#rrggbb[aa]`; `null` se non è esadecimale. */
-function hexLuminance(color: string): number | null {
-  const m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color.trim());
-  if (!m) return null;
-  let hex = m[1];
-  if (hex.length === 3) hex = [...hex].map((c) => c + c).join('');
-  const [r, g, b] = [0, 2, 4].map((i) => {
-    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 interface NodeLook {
@@ -152,8 +139,8 @@ export interface MapViewProps {
   onStructureChange: (structure: MapStructure) => void;
   /** Rilascio di un blocco trascinato sulla mappa; stessa firma di `onMove` dell'albero. */
   onMoveTopic?: (topicId: string, targetId: string, placement: DropPlacement) => void;
-  /** Punto di controllo di una relazione trascinato (`null` = ripristina il tracciato). */
-  onRelationshipControlPointChange?: (relationshipId: string, index: 0 | 1, point: Point | null) => void;
+  /** Punti di controllo di una relazione trascinati (`null` = ripristina, `undefined` = invariato). */
+  onRelationshipControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
   /** Pannello dettagli aperto: su smartphone il blocco viene portato sopra il bottom sheet. */
   detailsOpen?: boolean;
 }
@@ -173,7 +160,7 @@ export const MapView: React.FC<MapViewProps> = ({
   onStructureChange,
   detailsOpen = false,
   onMoveTopic,
-  onRelationshipControlPointChange,
+  onRelationshipControlPointsChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -196,9 +183,9 @@ export const MapView: React.FC<MapViewProps> = ({
     onOpenDetails,
     onToggleCollapse,
     onMoveTopic,
-    onRelationshipControlPointChange,
+    onRelationshipControlPointsChange,
   });
-  handlers.current = { onSelectTopic, onOpenDetails, onToggleCollapse, onMoveTopic, onRelationshipControlPointChange };
+  handlers.current = { onSelectTopic, onOpenDetails, onToggleCollapse, onMoveTopic, onRelationshipControlPointsChange };
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
   const layoutRef = useRef<Layout | null>(layout);
@@ -1098,7 +1085,7 @@ export const MapView: React.FC<MapViewProps> = ({
                               : 'text-xs font-normal'
                           )}
                           style={{
-                            ...textStyleCss(node.textStyle),
+                            ...textStyleCss(node.textStyle, look.textLight),
                             display: '-webkit-box',
                             WebkitLineClamp: Math.max(Math.floor((node.h - 8) / 16), 1),
                             WebkitBoxOrient: 'vertical',
@@ -1106,7 +1093,7 @@ export const MapView: React.FC<MapViewProps> = ({
                           }}
                           title={node.displayTitle || node.title}
                         >
-                          <RichTitle text={node.displayTitle || node.title || '(senza titolo)'} runs={node.titleRuns} />
+                          <RichTitle text={node.displayTitle || node.title || '(senza titolo)'} runs={node.titleRuns} textLight={look.textLight} />
                         </span>
                       )}
 
@@ -1200,8 +1187,8 @@ export const MapView: React.FC<MapViewProps> = ({
             nodes={layout.nodes}
             selectedRelationshipId={selectedRelationshipId}
             onSelectRelationship={setSelectedRelationshipId}
-            onControlPointChange={(relId, index, point) =>
-              handlers.current.onRelationshipControlPointChange?.(relId, index, point)
+            onControlPointsChange={(relId, points) =>
+              handlers.current.onRelationshipControlPointsChange?.(relId, points)
             }
             toWorld={toWorld}
             darkMode={darkMode}

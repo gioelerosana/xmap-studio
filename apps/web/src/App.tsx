@@ -595,9 +595,9 @@ export const App: React.FC = () => {
   );
 
   const handleRelationshipControlPoint = useCallback(
-    (relationshipId: string, index: 0 | 1, point: Point | null) => {
+    (relationshipId: string, points: [Point | null | undefined, Point | null | undefined]) => {
       try {
-        controller.setRelationshipControlPoint(relationshipId, index, point);
+        controller.setRelationshipControlPoints(relationshipId, points);
         refreshState();
       } catch (err: any) {
         addToast('error', `Relazione non modificata: ${err.message}`);
@@ -913,7 +913,7 @@ export const App: React.FC = () => {
                   structure={mapStructure}
                   onStructureChange={setMapStructure}
                   onMoveTopic={handleMove}
-                  onRelationshipControlPointChange={handleRelationshipControlPoint}
+                  onRelationshipControlPointsChange={handleRelationshipControlPoint}
                 />
               ) : (
                 <OutlineView text={outlineText} />
