@@ -94,7 +94,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/32 p-4"
+      className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/32 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -108,7 +108,7 @@ export function Modal({
         tabIndex={-1}
         onKeyDown={trapFocus}
         className={cn(
-          'surface-glass flex max-h-[calc(100vh-2rem)] w-full animate-pop-in flex-col overflow-hidden rounded-xl border text-popover-foreground shadow-dialog outline-none',
+          'surface-glass flex max-h-[calc(100dvh-2rem)] w-full animate-pop-in flex-col overflow-hidden rounded-xl border text-popover-foreground shadow-dialog outline-none',
           size ? SIZES[size] : maxWidth,
           className,
         )}

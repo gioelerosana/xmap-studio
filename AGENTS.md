@@ -119,7 +119,9 @@ direttamente, uno spawn costa più del lavoro.
   (`feat/<slug>-<parte>`); l'orchestratore integra i branch nel branch di
   lavoro e risolve i conflitti.
 - Nessun sotto-agente aggiunge dipendenze, fa commit su `main`, push o apre MR:
-  sono decisioni dell'orchestratore (e, per push/MR, dell'utente).
+  sono decisioni dell'orchestratore. Commit e push del branch di lavoro li fa
+  l'orchestratore a fine task (vedi §"Chiusura di ogni task"); la MR resta una
+  decisione dell'utente.
 - I sotto-agenti rispettano le regole non negoziabili sotto: nel prompt di
   delega richiamale esplicitamente quando il compito tocca salvataggio,
   formato `.xmind` o MathJax.
@@ -152,6 +154,42 @@ Prima di considerare concluso un cambiamento:
    `pnpm dev:desktop`)
 4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale in
    XMind con un file salvato dall'app (vedi [`docs/TESTING.md`](docs/TESTING.md))
+5. commit e push del branch, come in §"Chiusura di ogni task"
+
+### Chiusura di ogni task
+
+Ogni task si chiude **sempre** così, senza aspettare che l'utente lo chieda:
+
+1. se sei su `main`, crea prima un branch di lavoro (`feat/<slug>`, `fix/<slug>`, …);
+2. committa **tutte** le modifiche del working tree (Conventional Commits, vedi
+   §"Git e GitLab"), divise in più commit se toccano argomenti distinti;
+3. `git push -u origin <branch>`;
+4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato.
+
+Non si fa push su `main` né force-push; la Merge Request la apre l'utente o la
+si apre solo su sua richiesta.
+
+### Mobile e PWA
+
+La web app è usabile su smartphone e tablet e installabile come PWA
+(`apps/web/public/manifest.webmanifest`, `sw.js`, registrato in `main.tsx` solo
+nella build di produzione). Per una modifica alla UI controlla anche:
+
+- larghezze strette (≈360–430 px) e testo di sistema ingrandito: l'header non
+  usa breakpoint fissi ma misura l'overflow e sposta le azioni nel menu ⋮
+  (`HEADER_LEVEL` in `App.tsx`); nessun pulsante deve sovrapporsi;
+- gesti sulla mappa (`MapView.tsx`): pan con un dito, pinch a due dita, tap e
+  doppio tap; il pinch da trackpad in Safari arriva come `GestureEvent`;
+- sotto `lg` sidebar e inspector sono pannelli sovrapposti; la sidebar è
+  nascosta di default ovunque.
+- la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
+  `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
+  disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (drawer,
+  bottom sheet, toast). Dopo modifiche al config verifica che la CSS generata
+  le contenga.
+
+Per provarla su un dispositivo: `pnpm build`, poi `cd apps/web && npx vite preview`
+(porta 4173, host `.ts.net` ammessi in `vite.config.ts`).
 
 ## Struttura del repository
 

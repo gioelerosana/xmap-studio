@@ -177,7 +177,7 @@ export const TopicTree: React.FC<TopicTreeProps> = ({
             onDrop={(e) => handleDrop(e, topic)}
             onClick={() => onSelect(topic.id)}
             className={cn(
-              'group relative flex h-7 items-center gap-1.5 rounded-md pr-2 text-sm text-foreground cursor-default transition-colors',
+              'group relative flex h-7 coarse:h-10 items-center gap-1.5 rounded-md pr-2 text-sm text-foreground cursor-default transition-colors',
               isSelected ? 'bg-sidebar-row-active shadow-control' : 'hover:bg-accent',
               drop === 'into' && 'drop-into',
               drop === 'before' && 'drop-before',
@@ -205,7 +205,7 @@ export const TopicTree: React.FC<TopicTreeProps> = ({
                   e.stopPropagation();
                   onToggleCollapse(topic.id);
                 }}
-                className="flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                className="flex size-4 coarse:size-8 coarse:-mx-2 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <ChevronRight
                   className={cn('size-3.5 transition-transform duration-150', !isCollapsed && 'rotate-90')}
@@ -246,7 +246,7 @@ export const TopicTree: React.FC<TopicTreeProps> = ({
             </span>
 
             {/* Badge meta */}
-            <span className="flex shrink-0 items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="flex shrink-0 items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 coarse:opacity-100">
               {topic.notes && <FileText className="size-3.5" />}
               {topic.labels.length > 0 && (
                 <span className="flex items-center gap-0.5 text-3xs tabular-nums">
@@ -267,7 +267,7 @@ export const TopicTree: React.FC<TopicTreeProps> = ({
               variant="ghost"
               size="xs"
               label="Aggiungi sotto-blocco"
-              className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+              className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 coarse:size-9 coarse:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
                 onAddChild(topic.id);

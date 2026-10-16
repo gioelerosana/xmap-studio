@@ -203,7 +203,8 @@ export function layoutSheets(
       const ctx: PlaceCtx = { collapsed, metrics, opts, sizes };
 
       let totalH: number;
-      if (isTreeRight(tree.structureClass)) {
+      const asTree = opts.structure ? opts.structure === 'tree' : isTreeRight(tree.structureClass);
+      if (asTree) {
         totalH = placeTreeRoot(tree, left, top, ctx, out);
       } else {
         placeSubtree(tree, left, top, undefined, ctx, out);

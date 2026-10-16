@@ -20,8 +20,8 @@ export const OutlineView: React.FC<OutlineViewProps> = ({ text }) => {
   }
   return (
     <div className="flex-1 overflow-auto bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-6">
-        <Card className="p-4">
+      <div className="max-w-3xl mx-auto px-6 py-6 max-sm:px-2 max-sm:py-2 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <Card className="p-4 max-sm:p-3">
           <pre className="font-mono text-xs leading-5 text-foreground whitespace-pre-wrap">{text}</pre>
         </Card>
       </div>

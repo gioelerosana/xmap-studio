@@ -135,8 +135,16 @@ export interface NodeMetrics {
   measure(node: MapNode): { w: number; h: number };
 }
 
+/** Disposizione della radice: Tree Chart (radice in alto, tronco verticale) o Logic Chart. */
+export type MapStructure = 'tree' | 'logic';
+
 export interface LayoutOpts {
   hGap: number;
   vGap: number;
   sheetGap: number;
+  /**
+   * Forza la disposizione della radice solo in visualizzazione; se assente vale
+   * la `structureClass` del file. Non modifica mai `content.json`.
+   */
+  structure?: MapStructure;
 }

@@ -383,7 +383,14 @@ const InspectorBody: React.FC<InspectorProps> = ({
   };
 
   return (
-    <aside className="flex w-inspector shrink-0 animate-slide-in-right flex-col overflow-hidden border-l bg-background">
+    <aside
+      className={[
+        'flex w-inspector shrink-0 animate-slide-in-right flex-col overflow-hidden border-l bg-background pb-[env(safe-area-inset-bottom)]',
+        // Sotto lg: pannello sovrapposto a destra; sotto sm: bottom sheet a larghezza piena.
+        'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:max-w-full max-lg:shadow-dialog',
+        'max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:h-[60dvh] max-sm:w-full max-sm:rounded-t-xl max-sm:border-l-0 max-sm:border-t',
+      ].join(' ')}
+    >
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         <div className="min-w-0 flex-1">

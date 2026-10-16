@@ -45,12 +45,17 @@
     /* Tinte di stato: 8% in chiaro, 16% in scuro (README T3 "Status is tinted"). */
     --tint-strength: 8%;
 
-    /* Mappa: inchiostro della radice e connettori. */
-    --map-canvas: var(--background);
-    --map-grid-dot: oklch(0.871 0.006 286.286);
-    --map-link: oklch(0.82 0.006 286.3);
+    /* Mappa: inchiostro del marchio, canvas, connettori e topic centrale. */
+    --map-canvas: #ffffff;
+    --map-grid-dot: oklch(0.9 0.004 286.3);
+    --map-link: oklch(0.78 0.006 286.3);
     --map-root: oklch(0.21 0.006 285.885);
     --map-root-foreground: #ffffff;
+    /* Topic centrale stile XMind: pieno, scuro, testo bianco in entrambi i temi. */
+    --map-central: oklch(0.32 0.03 265);
+    --map-central-foreground: #ffffff;
+    /* Intensità della tinta del ramo dietro i sotto-blocchi. */
+    --map-tint: 14%;
 
     --radius-sm: 6px;
     --radius-md: 8px;
@@ -108,10 +113,14 @@
 
     --tint-strength: 16%;
 
-    --map-grid-dot: rgba(255, 255, 255, 0.09);
-    --map-link: rgba(255, 255, 255, 0.18);
+    /* Grigio ardesia, non nero: i colori dei rami devono staccare. */
+    --map-canvas: oklch(0.215 0.008 265);
+    --map-grid-dot: rgba(255, 255, 255, 0.07);
+    --map-link: rgba(255, 255, 255, 0.28);
     --map-root: oklch(0.97 0 0);
     --map-root-foreground: oklch(0.145 0 0);
+    --map-central: oklch(0.42 0.03 265);
+    --map-tint: 26%;
 
     --shadow-composer: 0 14px 32px -18px rgba(0, 0, 0, 0.75);
     --shadow-dialog: inset 0 1px rgba(255, 255, 255, 0.04), 0 24px 72px -20px rgba(0, 0, 0, 0.9);
@@ -265,5 +274,23 @@
   ::after {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
+  }
+}
+
+/*
+ * Touch (iPad, telefono): area di tocco >= 40px per i controlli della barra
+ * superiore e delle voci di menu. Su desktop (puntatore fine) non cambia nulla.
+ */
+@media (pointer: coarse) {
+  .app-header button:not([role='radio']),
+  .app-header [role='menuitem'] {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  .app-header [role='menuitem'] {
+    min-width: 0;
+  }
+  .app-header [role='radiogroup'] {
+    height: 40px;
   }
 }

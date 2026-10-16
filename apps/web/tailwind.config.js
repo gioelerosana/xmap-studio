@@ -93,5 +93,10 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // Dispositivi touch (iPad, telefono): puntatore grossolano. È una variante e
+    // non uno `screen` raw: in Tailwind 3 uno screen raw disattiva tutte le
+    // varianti `max-*` (`max-lg:`, `max-sm:`).
+    ({ addVariant }) => addVariant('coarse', '@media (pointer: coarse)'),
+  ],
 };
