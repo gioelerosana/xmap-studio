@@ -1,4 +1,5 @@
 import { readControlPoints, resolveRelationshipStyle } from '../model/relationship.js';
+import { readTextStyle, readTitleRuns } from '../model/style.js';
 import { CODE_INVALID_INPUT, XmapError } from '../errors.js';
 import { RawArchive } from '../archive/types.js';
 import { CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
@@ -245,6 +246,8 @@ function collectTopicViews(
     customWidth: topicCustomWidth(topic),
     fillColor: topicFillColor(topic),
     structureClass: topic.structureClass,
+    textStyle: readTextStyle(topic),
+    titleRuns: readTitleRuns(topic),
   };
 
   out.push(view);

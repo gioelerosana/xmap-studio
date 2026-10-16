@@ -18,6 +18,18 @@ import {
 export function setTitle(topic: Topic, title: string): void {
   topic.title = title;
   delete topic.titleUnedited;
+  // XMind mostra `attributedTitle` al posto di `title`: se il testo cambia i
+  // frammenti diventano incoerenti, quindi vanno scartati.
+  const runs = topic.attributedTitle;
+  if (Array.isArray(runs)) {
+    const joined = runs
+      .map((r) => {
+        const text = typeof r === 'object' && r !== null ? (r as { text?: unknown }).text : undefined;
+        return typeof text === 'string' ? text : '';
+      })
+      .join('');
+    if (joined !== title) delete topic.attributedTitle;
+  }
 }
 
 export function addChild(parent: Topic, title: string): string {

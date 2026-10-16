@@ -47,7 +47,18 @@ export class EstimatedMetrics implements NodeMetrics {
     }
 
     const text = node.displayTitle || node.title || '';
-    const chars = text.length;
+    // Il grassetto è ~8% più largo; la dimensione scala rispetto a 13px.
+    const blockSize = node.textStyle?.fontSizePx ? node.textStyle.fontSizePx / 13.0 : 1.0;
+    const blockBold = node.textStyle?.bold ?? false;
+    let chars = text.length * (blockBold ? 1.08 : 1.0) * blockSize;
+    if (node.titleRuns && node.titleRuns.map((r) => r.text).join('') === text) {
+      chars = 0;
+      for (const r of node.titleRuns) {
+        const bold = r.bold ?? blockBold;
+        const size = r.fontSizePx ? r.fontSizePx / 13.0 : blockSize;
+        chars += r.text.length * (bold ? 1.08 : 1.0) * size;
+      }
+    }
     const maxW = node.customWidth ?? 360.0;
     let w = Math.min(Math.max(chars * 8.5 + 44.0, 96.0), maxW);
     if (node.markers.length > 0) {
@@ -172,6 +183,8 @@ function buildNodeRecursive(
     position: topic.position,
     customWidth: topic.customWidth,
     structureClass: topic.structureClass,
+    textStyle: topic.textStyle,
+    titleRuns: topic.titleRuns,
     children,
     summaries,
   };
@@ -337,6 +350,8 @@ function pushLayoutNode(
     sheetIndex: node.sheetIndex,
     position: node.position,
     customWidth: node.customWidth,
+    textStyle: node.textStyle,
+    titleRuns: node.titleRuns,
     childrenBelow,
   });
   return index;
