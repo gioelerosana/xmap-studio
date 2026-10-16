@@ -13,7 +13,8 @@ arch=('x86_64')
 license=('custom')
 _electron=electron43
 depends=("$_electron")
-makedepends=('git' 'nodejs' 'pnpm')
+# pnpm serve nel PATH (anche installato fuori da pacman).
+makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
 source=("$pkgname::git+file://$(realpath "$startdir/../..")#branch=$(git -C "$startdir" branch --show-current)"
         'xmap-studio.sh'
