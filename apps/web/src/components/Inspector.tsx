@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppController,
   GROUPS,
+  RelationshipShape,
   RelationshipView,
   TaskData,
+  TextStyle,
   TitleMode,
   TopicView,
   markerDisplayName,
@@ -24,6 +26,10 @@ import {
   ChevronRight,
   X,
   AlertCircle,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
 } from 'lucide-react';
 import {
   Badge,
@@ -54,6 +60,13 @@ const TITLE_MODE_ITEMS: { id: 'formula_only' | 'keep_title' | 'custom'; label: s
   { id: 'keep_title', label: 'Mantieni titolo' },
   { id: 'custom', label: 'Titolo custom' },
 ];
+const RELATIONSHIP_SHAPES: { id: RelationshipShape; label: string }[] = [
+  { id: 'curved', label: 'Curva' },
+  { id: 'straight', label: 'Dritta' },
+  { id: 'angled', label: 'Ad angolo' },
+  { id: 'zigzag', label: 'Zig-zag' },
+];
+type TextStylePatch = Parameters<AppController['setTopicTextStyle']>[1];
 
 export interface InspectorProps {
   topic: TopicView | null;
@@ -155,6 +168,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
   onToast,
 }) => {
   const t = topic as TopicView;
+  const ts: TextStyle = t.textStyle ?? {};
 
   const [title, setTitle] = useState(t.title);
   const [notes, setNotes] = useState(t.notes);
@@ -211,6 +225,27 @@ const InspectorBody: React.FC<InspectorProps> = ({
     () => relationships.filter((r) => r.end1Id === t.id || r.end2Id === t.id),
     [relationships, t.id]
   );
+
+  // Ctrl/Cmd+B e Ctrl/Cmd+I: attivi solo con questo ispettore montato (blocco selezionato)
+  // e fuori da campi di testo, così non interferiscono con la digitazione.
+  useEffect(() => {
+    if (t.kind !== 'text') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+      const key = e.key.toLowerCase();
+      if (key === 'b') {
+        e.preventDefault();
+        applyTextStyle({ bold: !ts.bold });
+      } else if (key === 'i') {
+        e.preventDefault();
+        applyTextStyle({ italic: !ts.italic });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [t.kind, t.id, ts.bold, ts.italic, controller]);
 
   const otherTopics = useMemo(() => allTopics.filter((x) => x.id !== t.id), [allTopics, t.id]);
   const hasChildren = t.childCount > 0;
@@ -278,6 +313,41 @@ const InspectorBody: React.FC<InspectorProps> = ({
       onToast('error', err.message);
     }
   };
+
+  const applyTextStyle = (patch: TextStylePatch) => {
+    try {
+      controller.setTopicTextStyle(t.id, patch);
+      onChanged();
+    } catch (err: any) {
+      onToast('error', err.message);
+    }
+  };
+
+  const applyRelationshipShape = (relationshipId: string, shape: RelationshipShape) => {
+    try {
+      controller.setRelationshipShape(relationshipId, shape);
+      onChanged();
+    } catch (err: any) {
+      onToast('error', err.message);
+    }
+  };
+
+  const textStyleItems: { label: string; icon: React.ReactNode; active: boolean; patch: TextStylePatch }[] = [
+    { label: 'Grassetto', icon: <Bold className="size-4" />, active: !!ts.bold, patch: { bold: !ts.bold } },
+    { label: 'Corsivo', icon: <Italic className="size-4" />, active: !!ts.italic, patch: { italic: !ts.italic } },
+    {
+      label: 'Sottolineato',
+      icon: <Underline className="size-4" />,
+      active: !!ts.underline,
+      patch: { underline: !ts.underline },
+    },
+    {
+      label: 'Barrato',
+      icon: <Strikethrough className="size-4" />,
+      active: !!ts.strikethrough,
+      patch: { strikethrough: !ts.strikethrough },
+    },
+  ];
 
   const toggleMarker = (markerId: string) => {
     try {
@@ -426,6 +496,58 @@ const InspectorBody: React.FC<InspectorProps> = ({
             />
           </Field>
         </InspectorSection>
+
+        {/* Stile testo (solo blocchi di testo) */}
+        {t.kind === 'text' && (
+          <InspectorSection title="Stile testo" icon={<Bold className="size-3.5" />}>
+            <div className="flex items-center gap-1">
+              {textStyleItems.map((item) => (
+                <IconButton
+                  key={item.label}
+                  size="sm"
+                  variant="outline"
+                  label={item.label}
+                  aria-pressed={item.active}
+                  active={item.active}
+                  onClick={() => applyTextStyle(item.patch)}
+                >
+                  {item.icon}
+                </IconButton>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Colore testo</span>
+              <button
+                type="button"
+                aria-pressed={!ts.color}
+                onClick={() => applyTextStyle({ color: null })}
+                className={cn(chipClass(!ts.color), 'flex h-6 items-center px-2')}
+              >
+                Predefinito
+              </button>
+              {BRANCH_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Colore testo ${c}`}
+                  aria-pressed={ts.color?.toLowerCase() === c.toLowerCase()}
+                  onClick={() => applyTextStyle({ color: c })}
+                  className={cn(
+                    'size-5 rounded-full',
+                    FOCUS_RING,
+                    ts.color?.toLowerCase() === c.toLowerCase() ? swatchSelected : swatchHairline
+                  )}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+
+            {t.titleRuns && t.titleRuns.length > 0 && (
+              <div className="text-2xs text-muted-foreground">Il titolo contiene formattazione parziale da XMind.</div>
+            )}
+          </InspectorSection>
+        )}
 
         {/* Equazione */}
         <InspectorSection
@@ -734,6 +856,19 @@ const InspectorBody: React.FC<InspectorProps> = ({
                     {r.end1Id === t.id ? '→' : '←'} {other?.displayTitle || otherId}
                     {r.title ? ` · ${r.title}` : ''}
                   </span>
+                  <Select
+                    size="sm"
+                    aria-label="Forma della relazione"
+                    className="w-28 shrink-0"
+                    value={r.style.shape}
+                    onChange={(e) => applyRelationshipShape(r.id, e.target.value as RelationshipShape)}
+                  >
+                    {RELATIONSHIP_SHAPES.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </Select>
                   <button
                     type="button"
                     aria-label="Rimuovi relazione"
