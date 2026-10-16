@@ -1,10 +1,59 @@
 import { ValidationReport } from '../safety/validate.js';
 
+/**
+ * Stile di testo di un blocco o di un frammento di titolo, letto da
+ * `style.properties` (`fo:font-weight`, `fo:font-style`, `fo:text-decoration`,
+ * `fo:color`, `fo:font-size`). Campi assenti = valore del tema.
+ */
+export interface TextStyle {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  /** Colore CSS (`#RRGGBB` o `#RRGGBBAA`). */
+  color?: string;
+  /** Dimensione in px (da `fo:font-size`, es. `14pt`). */
+  fontSizePx?: number;
+}
+
+/** Frammento di titolo con stile proprio (da `attributedTitle` di XMind). */
+export interface TitleRun extends TextStyle {
+  text: string;
+}
+
+/** Forma XMind di una relazione (`shape-class` senza il prefisso `org.xmind.relationshipShape.`). */
+export type RelationshipShape = 'curved' | 'straight' | 'angled' | 'zigzag';
+
+export type LinePattern = 'solid' | 'dash' | 'dot' | 'dash-dot';
+
+/** Punta di freccia (`arrow-*-class` senza il prefisso `org.xmind.arrowShape.`). */
+export type ArrowShape = 'none' | 'triangle' | 'spearhead' | 'dot' | 'square' | 'diamond' | 'attached';
+
+/** Stile risolto di una relazione: proprietà della relazione sopra quelle di `theme.relationship`. */
+export interface RelationshipStyle {
+  shape: RelationshipShape;
+  linePattern: LinePattern;
+  lineWidth: number;
+  /** Colore CSS; assente = colore neutro della vista. */
+  lineColor?: string;
+  arrowBegin: ArrowShape;
+  arrowEnd: ArrowShape;
+}
+
+/** Punto di controllo XMind, relativo al centro del blocco di estremità. */
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface RelationshipView {
   id: string;
   end1Id: string;
   end2Id: string;
   title: string;
+  style: RelationshipStyle;
+  /** `controlPoints["0"]` (lato end1) e `["1"]` (lato end2), se presenti nel file. */
+  controlPoints?: [Point | undefined, Point | undefined];
 }
 
 export interface BoundaryView {
@@ -54,6 +103,10 @@ export interface TopicView {
   fillColor?: string;
   /** Struttura XMind dichiarata (`structureClass`), es. `org.xmind.ui.tree.right`. */
   structureClass?: string;
+  /** Stile del blocco intero (`style.properties`). */
+  textStyle?: TextStyle;
+  /** Titolo a frammenti (`attributedTitle`), solo se coerente con `title`. */
+  titleRuns?: TitleRun[];
 }
 
 export interface SheetDto {

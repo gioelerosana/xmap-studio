@@ -1,3 +1,4 @@
+import { readControlPoints, resolveRelationshipStyle } from '../model/relationship.js';
 import { CODE_INVALID_INPUT, XmapError } from '../errors.js';
 import { RawArchive } from '../archive/types.js';
 import { CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
@@ -126,6 +127,8 @@ export class OpenWorkbook {
         end1Id: rel.end1Id || '',
         end2Id: rel.end2Id || '',
         title: rel.title || '',
+        style: resolveRelationshipStyle(sheet, rel),
+        controlPoints: readControlPoints(rel),
       }));
 
       return {

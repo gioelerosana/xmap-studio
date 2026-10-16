@@ -32,6 +32,8 @@ import {
   toggleMarker,
 } from './model/edit.js';
 import { Sheet, Topic } from './model/types.js';
+import { setTextStyle, TextStylePatch } from './model/style.js';
+import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
 import {
   countTopics,
   collectAttachmentRefs,
@@ -64,6 +66,8 @@ import {
   BatchResultDto,
   BatchSpec,
   MergeResultDto,
+  Point,
+  RelationshipShape,
   SaveResultDto,
   WorkbookDto,
 } from './state/types.js';
@@ -276,6 +280,17 @@ export class AppController {
     return wb.toDto();
   }
 
+  /** Grassetto, corsivo, sottolineato, barrato, colore e dimensione del blocco intero. */
+  public setTopicTextStyle(topicId: string, patch: TextStylePatch): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    setTextStyle(topic, patch);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
   public setTopicNotes(topicId: string, text: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
@@ -388,6 +403,33 @@ export class AppController {
     addRelationship(sheet, end1Id, end2Id, title);
     wb.pushHistory();
     return wb.toDto();
+  }
+
+  /** Sposta (o con `null` ripristina) un punto di controllo di una relazione. */
+  public setRelationshipControlPoint(
+    relationshipId: string,
+    index: 0 | 1,
+    point: Point | null
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    for (const sheet of wb.content) {
+      if (setRelationshipControlPoint(sheet, relationshipId, index, point)) {
+        wb.pushHistory();
+        return wb.toDto();
+      }
+    }
+    throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
+  }
+
+  public setRelationshipShape(relationshipId: string, shape: RelationshipShape): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    for (const sheet of wb.content) {
+      if (setRelationshipShape(sheet, relationshipId, shape)) {
+        wb.pushHistory();
+        return wb.toDto();
+      }
+    }
+    throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
   }
 
   public removeTopicRelationship(relationshipId: string): WorkbookDto {

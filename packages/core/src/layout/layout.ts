@@ -1,3 +1,4 @@
+import { relationshipGeometry } from './relationship.js';
 import { SheetDto, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
 import { parseRange } from '../model/utils.js';
@@ -277,6 +278,14 @@ export function layoutSheets(
           from: fromIdx,
           to: toIdx,
           accent,
+          style: rel.style,
+          controlPoints: rel.controlPoints,
+          geometry: relationshipGeometry(
+            out.nodes[fromIdx],
+            out.nodes[toIdx],
+            rel.style,
+            rel.controlPoints
+          ),
         });
       }
     }
