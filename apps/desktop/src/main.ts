@@ -79,6 +79,11 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
   initialFiles.set(id, initialFile);
   window.once('ready-to-show', () => window.show());
 
+  // La conferma di chiusura è già gestita dal main process (evento 'close' →
+  // 'app:beforeClose' → dialog nel renderer), quindi il beforeunload del
+  // renderer non deve bloccare la chiusura.
+  window.webContents.on('will-prevent-unload', (event) => event.preventDefault());
+
   // Senza renderer caricato nessuno risponderebbe a `app:beforeClose` e la
   // finestra non si chiuderebbe più: la conferma si chiede solo a UI pronta.
   let rendererReady = false;
