@@ -1,0 +1,57 @@
+# Configurazione electron-builder per XMap Studio.
+# Genera release standalone per Linux (.AppImage x86_64) e Windows (.exe portable x64).
+
+appId: org.joel.xmap_studio
+productName: XMap Studio
+
+directories:
+  output: release
+  buildResources: build
+
+# asar: true con asarUnpack per i binari nativi .node.
+# Motivo: per l'eseguibile portable Windows (.exe), asar impacchetta decine di migliaia di file
+# di node_modules e web assets in un singolo archivio, riducendo drasticamente il tempo di estrazione
+# all'avvio. I soli moduli nativi (.node, es. @resvg/resvg-js) vengono estratti in app.asar.unpacked
+# per consentirne il caricamento tramite dlopen del sistema operativo.
+asar: true
+asarUnpack:
+  - "**/*.node"
+
+files:
+  - "package.json"
+  - "apps/desktop/dist/**/*"
+  - "apps/web/dist/**/*"
+  - "node_modules/**/*"
+
+# Disabilita ricompilazioni automatiche durante il packaging: i binari precompilati per la
+# piattaforma target corretta vengono predisposti dalla pipeline di staging in dist.mjs.
+npmRebuild: false
+nodeGypRebuild: false
+
+compression: normal
+forceCodeSigning: false
+publish: null
+
+fileAssociations:
+  - ext: xmind
+    name: XMind Map
+    description: Mappa XMind
+    mimeType: application/xmind
+    role: Editor
+
+linux:
+  category: Office
+  mimeTypes:
+    - application/xmind
+  target:
+    - target: appimage
+      arch:
+        - x64
+  artifactName: "XMap-Studio-${version}-x86_64.${ext}"
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: "XMap-Studio-${version}-portable-x64.${ext}"
