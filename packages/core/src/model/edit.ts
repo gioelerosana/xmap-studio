@@ -48,6 +48,63 @@ export function addChild(parent: Topic, title: string): string {
   return id;
 }
 
+/** Aggiorna i range numerici di bordi e sommari dopo l'inserimento di un figlio `attached` in `index`. */
+function shiftRangesOnInsert(parent: Topic, index: number): void {
+  const shift = (range: string | undefined): string | undefined => {
+    if (range === undefined) return undefined;
+    const parsed = parseRange(range);
+    if (!parsed) return range;
+    const [start, end] = parsed;
+    if (end < index) return range;
+    if (start >= index) return formatRange(start + 1, end + 1);
+    return formatRange(start, end + 1);
+  };
+  for (const b of parent.boundaries ?? []) {
+    const next = shift(b.range);
+    if (next !== undefined) b.range = next;
+  }
+  for (const s of parent.summaries ?? []) {
+    const next = shift(s.range);
+    if (next !== undefined) s.range = next;
+  }
+}
+
+/**
+ * Inserisce un nuovo fratello di `topicId` nello stesso gruppo `children.attached`
+ * del genitore, subito dopo o prima. Restituisce l'id del nuovo blocco.
+ * Errore per la radice (non ha fratelli) e per blocchi `detached`/`summary`:
+ * il chiamante decide il ripiego (di norma un figlio).
+ */
+export function insertSibling(
+  sheets: Sheet[],
+  topicId: string,
+  title: string,
+  where: 'after' | 'before' = 'after'
+): string {
+  for (const sheet of sheets) {
+    const root = sheet.rootTopic;
+    if (!root) continue;
+    if (root.id === topicId) {
+      throw new XmapError(CODE_MOVE, 'La radice non ha fratelli.');
+    }
+    const path: PathItem[] = [];
+    if (!findPath(root, topicId, path)) continue;
+    const last = path[path.length - 1];
+    if (last.group !== 'attached') {
+      throw new XmapError(CODE_MOVE, 'Questo blocco non può avere fratelli (è staccato o è un sommario).');
+    }
+    const parent = descend(root, path.slice(0, -1));
+    const list = parent.children?.attached;
+    if (!list) break;
+    const id = newTopicId();
+    const index = where === 'after' ? last.index + 1 : last.index;
+    list.splice(index, 0, { id, title });
+    shiftRangesOnInsert(parent, index);
+    return id;
+  }
+  throw new XmapError(CODE_MOVE, 'Blocco non trovato.');
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
