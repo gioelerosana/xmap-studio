@@ -216,7 +216,9 @@ sotto-blocco · `Ctrl+,` impostazioni.
 Sulla mappa, come in XMind: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello
 (`Maiusc+Invio` prima) · `F2`, `Spazio` o doppio clic per modificare il testo nel
 blocco (o inizia a scrivere) · `Canc` elimina (si annulla con `Ctrl+Z`) · frecce per
-spostarsi · `Esc` deseleziona. I blocchi liberi si trascinano dove vuoi.
+spostarsi · `Ctrl+I` dettagli del blocco (barra destra, chiusa di base; anche il
+pulsante in alto) · `Ctrl+Maiusc+L` formula · `Esc` chiude i dettagli, poi deseleziona.
+La barra flottante sul blocco compare solo su touch. I blocchi liberi si trascinano dove vuoi.
 
 Nell'albero a sinistra puoi **cercare**, filtrare per tipo (**Testo/Formule/
 Immagini**) e **trascinare un blocco** su un altro: rilasciando al centro diventa

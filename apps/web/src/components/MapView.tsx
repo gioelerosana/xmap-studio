@@ -133,6 +133,22 @@ export interface MapEditing {
   text?: string;
 }
 
+const INTERACTIVE = 'input, textarea, select, button, [contenteditable="true"]';
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.(query).matches),
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
+
 export interface MapViewProps {
   /** Identità del documento/foglio mostrato: quando cambia la vista si riadatta. */
   viewKey?: string;
@@ -189,6 +205,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const editorLayerRef = useRef<HTMLDivElement>(null);
+  const isCoarse = useMediaQuery('(pointer: coarse)');
   // Trasformazione "viva": durante i gesti si aggiorna solo questo ref e lo style
   // dell'SVG; `view` (stato React) viene allineato a gesto concluso.
   const viewRef = useRef<View>({ x: 60, y: 60, k: 1 });
@@ -207,6 +224,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const handlers = useRef({
     onSelectTopic,
     onOpenDetails,
+    onOpenLatex,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
@@ -215,6 +233,7 @@ export const MapView: React.FC<MapViewProps> = ({
   handlers.current = {
     onSelectTopic,
     onOpenDetails,
+    onOpenLatex,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
@@ -1024,6 +1043,35 @@ export const MapView: React.FC<MapViewProps> = ({
       240
     );
   }, [detailsOpen, selectedNode, animateTo]);
+  // Scorciatoie da tastiera della mappa su desktop:
+  // - Ctrl+I / Cmd+I: apre il pannello dettagli sul blocco selezionato.
+  // - Ctrl+Maiusc+L / Cmd+Maiusc+L: apre l'editor della formula LaTeX.
+  // Usiamo Ctrl/Cmd anziché lettere semplici (D, L) perché la digitazione
+  // di lettere su un blocco di testo selezionato avvia l'editing in place del titolo.
+  useEffect(() => {
+    if (!selectedTopicId || editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return;
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrMeta || e.altKey) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+
+      const key = e.key.toLowerCase();
+      if (!e.shiftKey && key === 'i') {
+        e.preventDefault();
+        handlers.current.onOpenDetails(selectedTopicId);
+      } else if (e.shiftKey && key === 'l') {
+        if (handlers.current.onOpenLatex) {
+          e.preventDefault();
+          handlers.current.onOpenLatex(selectedTopicId);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedTopicId, editing]);
+
   // Dopo ogni render riapplica la vista viva (SVG appena montato, barra del nodo).
   useLayoutEffect(() => {
     applyView();
@@ -1516,8 +1564,8 @@ export const MapView: React.FC<MapViewProps> = ({
         </IconButton>
       </div>
 
-      {/* Barra contestuale flottante sul nodo selezionato */}
-      {selectedNode && (
+      {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse) */}
+      {isCoarse && selectedNode && (
         <div
           ref={toolbarRef}
           data-map-ui

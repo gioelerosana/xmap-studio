@@ -20,7 +20,7 @@ export interface Settings {
   /** Barra laterale aperta all'avvio su desktop (la scelta fatta dal pulsante viene ricordata). */
   sidebarOnStartup: boolean;
   /** Su desktop, selezionare un blocco apre il pannello dettagli. */
-  openDetailsOnSelect: boolean;
+  detailsOnSelect: boolean;
   /** Azzera transizioni e animazioni (classe `reduce-motion` su `<html>`). */
   reduceMotion: boolean;
 }
@@ -43,7 +43,7 @@ export function defaultSettings(): Settings {
     theme: 'system',
     mapStructure: 'tree',
     sidebarOnStartup: false,
-    openDetailsOnSelect: true,
+    detailsOnSelect: false,
     reduceMotion: systemPrefers(REDUCE_MOTION_QUERY),
   };
 }
@@ -63,8 +63,8 @@ export function sanitizeSettings(value: unknown, base: Settings): Settings {
     theme: pickOneOf(record.theme, THEMES, base.theme),
     mapStructure: pickOneOf(record.mapStructure, STRUCTURES, base.mapStructure),
     sidebarOnStartup: typeof record.sidebarOnStartup === 'boolean' ? record.sidebarOnStartup : base.sidebarOnStartup,
-    openDetailsOnSelect:
-      typeof record.openDetailsOnSelect === 'boolean' ? record.openDetailsOnSelect : base.openDetailsOnSelect,
+    detailsOnSelect:
+      typeof record.detailsOnSelect === 'boolean' ? record.detailsOnSelect : base.detailsOnSelect,
     reduceMotion: typeof record.reduceMotion === 'boolean' ? record.reduceMotion : base.reduceMotion,
   };
 }

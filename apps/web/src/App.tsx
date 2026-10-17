@@ -180,7 +180,8 @@ export const App: React.FC = () => {
   // Su desktop la selezione apre i dettagli solo se l'impostazione lo chiede.
   const compact = useMediaQuery(COMPACT_QUERY);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const inspectorVisible = Boolean(selectedTopicId) && (compact ? detailsOpen : detailsOpen || settings.openDetailsOnSelect);
+  const [detailsClosed, setDetailsClosed] = useState(false);
+  const inspectorVisible = Boolean(selectedTopicId) && (compact ? detailsOpen : !detailsClosed && (detailsOpen || settings.detailsOnSelect));
 
   // Header adattivo: se i pulsanti non ci stanno si sale di livello e le azioni
   // meno usate passano nel menu ⋮ (vedi HEADER_LEVEL). Si misura lo spazio reale,
@@ -216,18 +217,35 @@ export const App: React.FC = () => {
     return () => ro.disconnect();
   }, []);
   const showLabels = headerLevel < HEADER_LEVEL.iconsOnly;
+  const inlineDetails = headerLevel < HEADER_LEVEL.redoTheme;
   const inlineRedo = headerLevel < HEADER_LEVEL.redoTheme;
   const inlineUndo = headerLevel < HEADER_LEVEL.undo;
   const inlineOpen = headerLevel < HEADER_LEVEL.open;
   const inlineViews = headerLevel < HEADER_LEVEL.views;
   const showTitle = headerLevel < HEADER_LEVEL.title;
+
   useEffect(() => {
+    setDetailsClosed(false);
     if (!selectedTopicId) setDetailsOpen(false);
   }, [selectedTopicId]);
+
   const openDetails = useCallback((id: string) => {
     setSelectedTopicId(id);
+    setDetailsClosed(false);
     setDetailsOpen(true);
   }, []);
+
+  const toggleDetails = useCallback(() => {
+    if (!selectedTopicId) return;
+    if (inspectorVisible) {
+      setDetailsClosed(true);
+      setDetailsOpen(false);
+    } else {
+      setDetailsClosed(false);
+      setDetailsOpen(true);
+    }
+  }, [selectedTopicId, inspectorVisible]);
+
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
@@ -576,6 +594,24 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
 
+  // Esc chiude l'Inspector se aperto e non si sta editando testo
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (editing) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+      if (inspectorVisible) {
+        e.preventDefault();
+        setDetailsClosed(true);
+        setDetailsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editing, inspectorVisible]);
+
   // Chiusura con modifiche non salvate
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -860,6 +896,9 @@ export const App: React.FC = () => {
     ...(workbook && !inlineRedo
       ? [{ id: 'redo', label: 'Ripeti', icon: <Redo2 className="size-4" />, disabled: !workbook.canRedo, onSelect: () => doUndoRedo('redo') }]
       : []),
+    ...(workbook && !inlineDetails
+      ? [{ id: 'details', label: 'Dettagli blocco', icon: <PanelRight className="size-4" />, disabled: !selectedTopicId, onSelect: toggleDetails }]
+      : []),
     ...(workbook && !inlineViews
       ? [
           viewMode === 'map'
@@ -931,6 +970,18 @@ export const App: React.FC = () => {
                 <PanelLeft className="size-4" />
               </IconButton>
             )}
+            {workbook && inlineDetails && (
+              <IconButton
+                size="sm"
+                active={inspectorVisible}
+                disabled={!selectedTopicId}
+                onClick={toggleDetails}
+                title="Dettagli blocco"
+                label="Dettagli blocco"
+              >
+                <PanelRight className="size-4" />
+              </IconButton>
+            )}
             {inlineOpen && (
               <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
                 <span className={cn(!showLabels && 'sr-only')}>Apri</span>
@@ -976,24 +1027,6 @@ export const App: React.FC = () => {
         }
         rightContent={
           <>
-            {workbook && (
-              <IconButton
-                size="sm"
-                active={inspectorVisible}
-                onClick={() => {
-                  if (inspectorVisible) {
-                    if (compact) setDetailsOpen(false);
-                    else setSelectedTopicId(undefined);
-                  } else {
-                    const id = selectedTopicId ?? allTopics[0]?.id;
-                    if (id) openDetails(id);
-                  }
-                }}
-                label={inspectorVisible ? 'Chiudi pannello dettagli' : 'Apri pannello dettagli'}
-              >
-                <PanelRight className="size-4" />
-              </IconButton>
-            )}
             {inlineRedo && (
               <IconButton size="sm" onClick={toggleDarkMode} label="Cambia tema">
                 {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -1117,7 +1150,10 @@ export const App: React.FC = () => {
                 relationships={currentSheet?.relationships || []}
                 controller={controller}
                 onChanged={refreshState}
-                onClose={() => (compact ? setDetailsOpen(false) : setSelectedTopicId(undefined))}
+                onClose={() => {
+                  setDetailsClosed(true);
+                  setDetailsOpen(false);
+                }}
                 darkMode={darkMode}
                 onToast={addToast}
                 width={inspectorWidth}

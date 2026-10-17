@@ -44,6 +44,9 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['F2'], action: 'Modifica testo' },
   { keys: ['Canc'], action: 'Elimina blocco' },
   { keys: ['←', '↑', '→', '↓'], action: 'Naviga tra i blocchi' },
+  { keys: ['Ctrl', 'I'], action: 'Apri i dettagli del blocco' },
+  { keys: ['Ctrl', 'Shift', 'L'], action: 'Modifica la formula del blocco' },
+  { keys: ['Esc'], action: 'Chiudi i dettagli, poi deseleziona' },
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 
@@ -133,12 +136,12 @@ export function SettingsPage({ isOpen, onClose, settings, onUpdate, onReset }: S
           </SettingRow>
           <SettingRow
             label="Apri i dettagli alla selezione"
-            hint="Su desktop. Se disattivo, i dettagli si aprono con doppio clic o con il pulsante dedicato."
+            hint="Su desktop. Di base i dettagli si aprono solo su richiesta (pulsante, scorciatoia o doppio clic)."
           >
             <Switch
               aria-label="Apri i dettagli alla selezione"
-              checked={settings.openDetailsOnSelect}
-              onCheckedChange={(openDetailsOnSelect) => onUpdate({ openDetailsOnSelect })}
+              checked={settings.detailsOnSelect}
+              onCheckedChange={(detailsOnSelect) => onUpdate({ detailsOnSelect })}
             />
           </SettingRow>
         </SettingsSection>
