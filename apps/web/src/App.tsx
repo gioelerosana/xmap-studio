@@ -594,6 +594,18 @@ export const App: React.FC = () => {
     [controller, refreshState, addToast]
   );
 
+  const handleMoveFloating = useCallback(
+    (id: string, position: Point) => {
+      try {
+        controller.setTopicPosition(id, position);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Spostamento non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
   const handleRelationshipControlPoint = useCallback(
     (relationshipId: string, points: [Point | null | undefined, Point | null | undefined]) => {
       try {
@@ -913,6 +925,7 @@ export const App: React.FC = () => {
                   structure={mapStructure}
                   onStructureChange={setMapStructure}
                   onMoveTopic={handleMove}
+                  onMoveFloatingTopic={handleMoveFloating}
                   onRelationshipControlPointsChange={handleRelationshipControlPoint}
                 />
               ) : (

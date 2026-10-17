@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AppController,
   CODE_MOVE,
+  DEFAULT_RELATIONSHIP_STYLE,
   DEFAULT_LAYOUT_OPTS,
   Layout,
   LayoutNode,
@@ -77,7 +78,7 @@ describe('layout dei topic liberi', () => {
         topic('a', 'r'),
         topic('f', 'r', { group: 'detached', position: { x: 10, y: -300 } }),
       ],
-      [{ id: 'rel', end1Id: 'a', end2Id: 'f', title: '' }]
+      [{ id: 'rel', end1Id: 'a', end2Id: 'f', title: '', style: DEFAULT_RELATIONSHIP_STYLE }]
     );
     const r = center(byId(l, 'r'));
     const f = center(byId(l, 'f'));

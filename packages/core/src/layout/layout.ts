@@ -288,30 +288,6 @@ export function layoutSheets(
         if (rootCenter) out.nodes[floatIdx].floatOrigin = { ...rootCenter };
       }
     }
-
-    // Risoluzione relationships
-    for (const rel of sheet.relationships) {
-      const fromIdx = out.nodes.findIndex((n) => n.id === rel.end1Id);
-      const toIdx = out.nodes.findIndex((n) => n.id === rel.end2Id);
-      if (fromIdx !== -1 && toIdx !== -1) {
-        const accent = out.nodes[fromIdx].accent || out.nodes[toIdx].accent;
-        out.relationships.push({
-          id: rel.id,
-          title: rel.title ? rel.title : undefined,
-          from: fromIdx,
-          to: toIdx,
-          accent,
-          style: rel.style,
-          controlPoints: rel.controlPoints,
-          geometry: relationshipGeometry(
-            out.nodes[fromIdx],
-            out.nodes[toIdx],
-            rel.style,
-            rel.controlPoints
-          ),
-        });
-      }
-    }
   }
 
   // I topic liberi possono cadere a sinistra/sopra la radice: riporta tutto in positivo.
@@ -329,6 +305,26 @@ export function layoutSheets(
       sm.x += dx;
       sm.y1 += dy;
       sm.y2 += dy;
+    }
+  }
+
+  // Risoluzione relationships dopo l'eventuale traslazione dei topic liberi.
+  for (const sheet of sheets) {
+    for (const rel of sheet.relationships) {
+      const fromIdx = out.nodes.findIndex((n) => n.id === rel.end1Id);
+      const toIdx = out.nodes.findIndex((n) => n.id === rel.end2Id);
+      if (fromIdx === -1 || toIdx === -1) continue;
+      const accent = out.nodes[fromIdx].accent || out.nodes[toIdx].accent;
+      out.relationships.push({
+        id: rel.id,
+        title: rel.title ? rel.title : undefined,
+        from: fromIdx,
+        to: toIdx,
+        accent,
+        style: rel.style,
+        controlPoints: rel.controlPoints,
+        geometry: relationshipGeometry(out.nodes[fromIdx], out.nodes[toIdx], rel.style, rel.controlPoints),
+      });
     }
   }
 

@@ -139,6 +139,8 @@ export interface MapViewProps {
   onStructureChange: (structure: MapStructure) => void;
   /** Rilascio di un blocco trascinato sulla mappa; stessa firma di `onMove` dell'albero. */
   onMoveTopic?: (topicId: string, targetId: string, placement: DropPlacement) => void;
+  /** Rilascio di un topic libero (detached): `position` è il suo centro relativo al centro della radice. */
+  onMoveFloatingTopic?: (topicId: string, position: Point) => void;
   /** Punti di controllo di una relazione trascinati (`null` = ripristina, `undefined` = invariato). */
   onRelationshipControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
   /** Pannello dettagli aperto: su smartphone il blocco viene portato sopra il bottom sheet. */
@@ -160,6 +162,7 @@ export const MapView: React.FC<MapViewProps> = ({
   onStructureChange,
   detailsOpen = false,
   onMoveTopic,
+  onMoveFloatingTopic,
   onRelationshipControlPointsChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -184,9 +187,17 @@ export const MapView: React.FC<MapViewProps> = ({
     onOpenDetails,
     onToggleCollapse,
     onMoveTopic,
+    onMoveFloatingTopic,
     onRelationshipControlPointsChange,
   });
-  handlers.current = { onSelectTopic, onOpenDetails, onToggleCollapse, onMoveTopic, onRelationshipControlPointsChange };
+  handlers.current = {
+    onSelectTopic,
+    onOpenDetails,
+    onToggleCollapse,
+    onMoveTopic,
+    onMoveFloatingTopic,
+    onRelationshipControlPointsChange,
+  };
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
   const layoutRef = useRef<Layout | null>(layout);
@@ -535,6 +546,8 @@ export const MapView: React.FC<MapViewProps> = ({
       ptr: { x: number; y: number };
       raf: number;
       lastSig: string;
+      /** Topic libero: si muove senza bersaglio di rilascio; `delta` è lo spostamento in coordinate mondo. */
+      floating?: { delta: Point };
     }
     let drag: ActiveDrag | null = null;
 
@@ -584,6 +597,38 @@ export const MapView: React.FC<MapViewProps> = ({
       return computeDropTarget(l, idx, d.src, toWorld(d.ptr.x, d.ptr.y), d.excluded);
     };
 
+    // Anteprima di un topic libero: sposta i blocchi del sotto-albero e i loro connettori.
+    const previewFloating = (d: ActiveDrag) => {
+      const l = layoutRef.current;
+      const svg = svgRef.current;
+      if (!l || !svg || !d.floating) return;
+      const n = l.nodes[d.src];
+      const wp = toWorld(d.ptr.x, d.ptr.y);
+      const delta = { x: wp.x - d.grab.x - n.x, y: wp.y - d.grab.y - n.y };
+      d.floating.delta = delta;
+      for (const i of d.excluded) {
+        const m = l.nodes[i];
+        const sel = CSS.escape(m.id);
+        svg.querySelector(`[data-node-id="${sel}"]`)?.setAttribute('transform', `translate(${m.x + delta.x}, ${m.y + delta.y})`);
+        const edge = svg.querySelector<SVGElement>(`[data-edge-child="${sel}"]`);
+        if (edge) edge.style.transform = `translate(${delta.x}px, ${delta.y}px)`;
+      }
+    };
+
+    const restoreFloating = (d: ActiveDrag) => {
+      const l = layoutRef.current;
+      const svg = svgRef.current;
+      if (!l || !svg) return;
+      for (const i of d.excluded) {
+        const m = l.nodes[i];
+        if (!m) continue;
+        const sel = CSS.escape(m.id);
+        svg.querySelector(`[data-node-id="${sel}"]`)?.setAttribute('transform', `translate(${m.x}, ${m.y})`);
+        const edge = svg.querySelector<SVGElement>(`[data-edge-child="${sel}"]`);
+        if (edge) edge.style.transform = '';
+      }
+    };
+
     const updateOverlay = (d: ActiveDrag) => {
       const l = layoutRef.current;
       if (!l) return;
@@ -610,7 +655,8 @@ export const MapView: React.FC<MapViewProps> = ({
         applyView();
         scheduleSync();
       }
-      updateOverlay(d);
+      if (d.floating) previewFloating(d);
+      else updateOverlay(d);
       d.raf = requestAnimationFrame(dragTick);
     };
 
@@ -624,9 +670,22 @@ export const MapView: React.FC<MapViewProps> = ({
       drag = null;
       cancelAnimationFrame(d.raf);
       window.removeEventListener('keydown', onDragKey);
+      const l = layoutRef.current;
+      if (d.floating) {
+        previewFloating(d);
+        const { delta } = d.floating;
+        restoreFloating(d);
+        const n = l?.nodes[d.src];
+        if (commit && n?.floatOrigin && (Math.abs(delta.x) >= 1 || Math.abs(delta.y) >= 1)) {
+          handlers.current.onMoveFloatingTopic?.(n.id, {
+            x: n.x + delta.x + n.w / 2 - n.floatOrigin.x,
+            y: n.y + delta.y + n.h / 2 - n.floatOrigin.y,
+          });
+        }
+        return;
+      }
       setDim(d.ids, false);
       setDragOverlay(null);
-      const l = layoutRef.current;
       const drop = commit ? dropAt(d) : null;
       if (drop && l) handlers.current.onMoveTopic?.(l.nodes[d.src].id, drop.targetId, drop.placement);
     };
@@ -645,7 +704,11 @@ export const MapView: React.FC<MapViewProps> = ({
       mode = 'drag';
       moved = true;
       drag = { src, excluded, ids, grab: { x: wp.x - n.x, y: wp.y - n.y }, ptr: { ...p }, raf: 0, lastSig: '' };
-      setDim(ids, true);
+      if (n.floating && n.floatOrigin && handlers.current.onMoveFloatingTopic) {
+        drag.floating = { delta: { x: 0, y: 0 } };
+      } else {
+        setDim(ids, true);
+      }
       window.addEventListener('keydown', onDragKey);
       if (pointerType !== 'mouse') navigator.vibrate?.(12);
       dragTick();
@@ -786,7 +849,9 @@ export const MapView: React.FC<MapViewProps> = ({
       const di = dragIndexRef.current;
       if (nodeEl && l && di && !target.closest('[data-collapse-toggle]')) {
         const i = di.byId.get(nodeEl.getAttribute('data-node-id') ?? '');
-        if (i !== undefined && isDraggable(l, di, i)) nodeIdx = i;
+        if (i !== undefined && (isDraggable(l, di, i) || (l.nodes[i]?.floating && handlers.current.onMoveFloatingTopic))) {
+          nodeIdx = i;
+        }
       }
       if (e.pointerType === 'mouse') {
         // Col mouse il pan parte dallo sfondo; su un blocco trascinabile parte il drag
