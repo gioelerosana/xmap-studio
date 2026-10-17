@@ -87,6 +87,13 @@ export interface LayoutNode {
   sheetIndex: number;
   position?: { x: number; y: number };
   customWidth?: number;
+  /** Vero per un topic libero (gruppo `detached`): si può trascinare ovunque. */
+  floating?: boolean;
+  /**
+   * Solo per i topic liberi: centro della radice del foglio nelle coordinate del
+   * layout. `position` = centro del blocco - `floatOrigin`.
+   */
+  floatOrigin?: { x: number; y: number };
   /**
    * Vero per la radice di una Tree Chart: i figli scendono lungo un tronco
    * verticale in `trunkX(node)` e l'indicatore di collasso sta sotto il blocco.

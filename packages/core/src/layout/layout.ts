@@ -210,6 +210,7 @@ export function layoutSheets(
 
   for (const sheet of sheets) {
     const { trees, floating } = buildSheetTrees(sheet);
+    const sheetFirstNode = out.nodes.length;
 
     for (const tree of trees) {
       const sizes: Sizes = new Map();
@@ -231,6 +232,10 @@ export function layoutSheets(
     if (floating.length > 0) {
       const maxTreeX = out.nodes.reduce((max, n) => Math.max(max, n.x + n.w), 20.0);
       let floatYCursor = 20.0;
+      const rootNode = out.nodes[sheetFirstNode];
+      const rootCenter = rootNode
+        ? { x: rootNode.x + rootNode.w / 2.0, y: rootNode.y + rootNode.h / 2.0 }
+        : undefined;
 
       for (const floatNode of floating) {
         const floatSizes: Sizes = new Map();
@@ -252,23 +257,26 @@ export function layoutSheets(
             )
           : undefined;
 
+        const positioned = floatNode.position !== undefined && rootCenter !== undefined;
         let fx: number;
         let fy: number;
 
-        if (targetNode) {
+        if (floatNode.position && rootCenter) {
+          // `position` è il centro del topic relativo al centro della radice (XMind).
+          const m = fMeasure;
+          fx = rootCenter.x + floatNode.position.x - m.w / 2.0;
+          fy = rootCenter.y + floatNode.position.y - m.h / 2.0 - (floatSubH - m.h) / 2.0;
+        } else if (targetNode) {
           fx = Math.max(maxTreeX + 80.0, targetNode.x + targetNode.w + 60.0);
           const idealY = targetNode.y + (targetNode.h - floatSubH) / 2.0;
           fy = Math.max(idealY, floatYCursor);
-        } else if (floatNode.position) {
-          fx = Math.max(floatNode.position.x, maxTreeX + 60.0);
-          fy = Math.max(floatNode.position.y, 20.0);
         } else {
           fx = maxTreeX + 80.0;
           fy = floatYCursor;
         }
 
-        floatYCursor = fy + floatSubH + opts.vGap;
-        placeSubtree(
+        if (!positioned) floatYCursor = fy + floatSubH + opts.vGap;
+        const floatIdx = placeSubtree(
           floatNode,
           fx,
           fy,
@@ -276,31 +284,47 @@ export function layoutSheets(
           { collapsed, metrics, opts, sizes: floatSizes },
           out
         );
+        out.nodes[floatIdx].floating = true;
+        if (rootCenter) out.nodes[floatIdx].floatOrigin = { ...rootCenter };
       }
     }
+  }
 
-    // Risoluzione relationships
+  // I topic liberi possono cadere a sinistra/sopra la radice: riporta tutto in positivo.
+  const minX = out.nodes.reduce((min, n) => Math.min(min, n.x), Infinity);
+  const minY = out.nodes.reduce((min, n) => Math.min(min, n.y), Infinity);
+  const dx = out.nodes.length > 0 && minX < left ? left - minX : 0;
+  const dy = out.nodes.length > 0 && minY < 20.0 ? 20.0 - minY : 0;
+  if (dx !== 0 || dy !== 0) {
+    for (const n of out.nodes) {
+      n.x += dx;
+      n.y += dy;
+      if (n.floatOrigin) n.floatOrigin = { x: n.floatOrigin.x + dx, y: n.floatOrigin.y + dy };
+    }
+    for (const sm of out.summaries) {
+      sm.x += dx;
+      sm.y1 += dy;
+      sm.y2 += dy;
+    }
+  }
+
+  // Risoluzione relationships dopo l'eventuale traslazione dei topic liberi.
+  for (const sheet of sheets) {
     for (const rel of sheet.relationships) {
       const fromIdx = out.nodes.findIndex((n) => n.id === rel.end1Id);
       const toIdx = out.nodes.findIndex((n) => n.id === rel.end2Id);
-      if (fromIdx !== -1 && toIdx !== -1) {
-        const accent = out.nodes[fromIdx].accent || out.nodes[toIdx].accent;
-        out.relationships.push({
-          id: rel.id,
-          title: rel.title ? rel.title : undefined,
-          from: fromIdx,
-          to: toIdx,
-          accent,
-          style: rel.style,
-          controlPoints: rel.controlPoints,
-          geometry: relationshipGeometry(
-            out.nodes[fromIdx],
-            out.nodes[toIdx],
-            rel.style,
-            rel.controlPoints
-          ),
-        });
-      }
+      if (fromIdx === -1 || toIdx === -1) continue;
+      const accent = out.nodes[fromIdx].accent || out.nodes[toIdx].accent;
+      out.relationships.push({
+        id: rel.id,
+        title: rel.title ? rel.title : undefined,
+        from: fromIdx,
+        to: toIdx,
+        accent,
+        style: rel.style,
+        controlPoints: rel.controlPoints,
+        geometry: relationshipGeometry(out.nodes[fromIdx], out.nodes[toIdx], rel.style, rel.controlPoints),
+      });
     }
   }
 

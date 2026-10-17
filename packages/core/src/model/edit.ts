@@ -536,3 +536,27 @@ export function removeSummary(parent: Topic, summaryTopicId: string): boolean {
   }
   return removed;
 }
+
+/** Vero se il topic sta nel gruppo `detached` di un altro topic (topic libero). */
+export function isDetachedTopic(sheets: Sheet[], id: string): boolean {
+  let found = false;
+  for (const sheet of sheets) {
+    if (!sheet.rootTopic) continue;
+    walkTopic(sheet.rootTopic, (t) => {
+      if (t.children?.detached?.some((d) => d.id === id)) found = true;
+    });
+    if (found) return true;
+  }
+  return false;
+}
+
+/**
+ * Imposta `position` (centro del topic libero rispetto al centro della radice,
+ * come in XMind). Tocca solo quel campo e lo arrotonda a interi.
+ */
+export function setTopicPosition(topic: Topic, pos: { x: number; y: number }): void {
+  if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
+    throw new XmapError(CODE_MOVE, 'Posizione non valida.');
+  }
+  topic['position'] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+}

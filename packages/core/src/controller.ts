@@ -3,6 +3,7 @@ import {
   CODE_INVALID_INPUT,
   CODE_IO,
   CODE_LATEX,
+  CODE_MOVE,
   CODE_NO_PATH,
   CODE_NO_WORKBOOK,
   CODE_TOPIC_NOT_FOUND,
@@ -27,6 +28,8 @@ import {
   setHref,
   setLabels,
   setNotes,
+  setTopicPosition,
+  isDetachedTopic,
   setNotesDisplay,
   setTitle,
   toggleMarker,
@@ -297,6 +300,20 @@ export class AppController {
     if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setNotes(topic, text);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /** Sposta un topic libero (gruppo `detached`); `pos` è relativa al centro della radice. */
+  public setTopicPosition(topicId: string, pos: { x: number; y: number }): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    if (!isDetachedTopic(wb.content, topicId)) {
+      throw new XmapError(CODE_MOVE, 'Solo i topic liberi possono essere posizionati.');
+    }
+
+    setTopicPosition(topic, pos);
     wb.pushHistory();
     return wb.toDto();
   }
