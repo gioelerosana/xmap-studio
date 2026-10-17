@@ -3,6 +3,8 @@ import { Plus, Search } from 'lucide-react';
 import { Badge, IconButton, Input, SegmentedControl, cn } from '@xmap/ui-kit';
 import { TopicView } from '@xmap/core';
 import { TopicFilter, TopicTree, DropPlacement } from './TopicTree.js';
+import { ResizeHandle } from './ResizeHandle.js';
+import { SIDEBAR_PANEL, panelStyle } from './usePanelWidth.js';
 
 export interface SidebarProps {
   topics: TopicView[];
@@ -20,6 +22,9 @@ export interface SidebarProps {
   /** Visibilità della sidebar: sotto `lg` è un drawer sovrapposto, da `lg` una colonna. */
   open?: boolean;
   onClose?: () => void;
+  /** Larghezza da `lg` in su (px) e setter: la maniglia sul bordo destro la modifica. */
+  width: number;
+  onWidthChange: (width: number) => void;
 }
 
 const FILTERS: { id: TopicFilter; label: string }[] = [
@@ -44,6 +49,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onMove,
   open = false,
   onClose,
+  width,
+  onWidthChange,
 }) => {
   const filteredCount = topics.filter((t) => filter === 'all' || t.kind === filter).length;
   const isFiltered = Boolean(searchQuery) || filter !== 'all';
@@ -60,8 +67,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       />
       <aside
+        style={panelStyle(width)}
         className={cn(
           'flex w-sidebar shrink-0 flex-col gap-2 overflow-hidden border-r bg-sidebar p-2',
+          'lg:relative lg:w-[var(--panel-w)]',
           'max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-[45] max-lg:max-w-[85%] max-lg:shadow-dialog',
           'max-lg:pb-[max(0.5rem,env(safe-area-inset-bottom))] max-lg:pl-[max(0.5rem,env(safe-area-inset-left))]',
           'max-lg:transition-[transform,visibility] max-lg:duration-200 max-lg:ease-sheet',
@@ -112,6 +121,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onMove={onMove}
         />
       </div>
+      <ResizeHandle
+        side="right"
+        label="Ridimensiona elenco blocchi"
+        width={width}
+        min={SIDEBAR_PANEL.min}
+        max={SIDEBAR_PANEL.max}
+        defaultWidth={SIDEBAR_PANEL.defaultWidth}
+        onChange={onWidthChange}
+      />
       </aside>
     </>
   );

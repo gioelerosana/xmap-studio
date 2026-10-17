@@ -57,6 +57,7 @@ import { MapView } from './components/MapView.js';
 import { OutlineView } from './components/OutlineView.js';
 import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
+import { INSPECTOR_PANEL, SIDEBAR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
 import { ExportModal } from './components/ExportModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
@@ -150,6 +151,19 @@ export const App: React.FC = () => {
       typeof window !== 'undefined' &&
       window.matchMedia?.(WIDE_QUERY).matches &&
       window.localStorage?.getItem(SIDEBAR_KEY) === 'open'
+  );
+  const [sidebarWidth, setSidebarWidth] = usePanelWidth(
+    SIDEBAR_PANEL.storageKey,
+    SIDEBAR_PANEL.defaultWidth,
+    SIDEBAR_PANEL.min,
+    SIDEBAR_PANEL.max,
+  );
+  const [inspectorWidth, setInspectorWidth] = usePanelWidth(
+    INSPECTOR_PANEL.storageKey,
+    INSPECTOR_PANEL.defaultWidth,
+    INSPECTOR_PANEL.min,
+    INSPECTOR_PANEL.max,
+    sidebarOpen ? sidebarWidth : 0,
   );
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((open) => {
@@ -890,6 +904,8 @@ export const App: React.FC = () => {
               }}
               open={sidebarOpen}
               onClose={() => setSidebarOpen(false)}
+              width={sidebarWidth}
+              onWidthChange={setSidebarWidth}
               onToggleCollapse={handleToggleCollapse}
               onAddChild={handleAddChild}
               onAddRootChild={() => allTopics[0] && handleAddChild(allTopics[0].id)}
@@ -949,6 +965,8 @@ export const App: React.FC = () => {
                 onClose={() => (compact ? setDetailsOpen(false) : setSelectedTopicId(undefined))}
                 darkMode={darkMode}
                 onToast={addToast}
+                width={inspectorWidth}
+                onWidthChange={setInspectorWidth}
               />
             )}
           </>

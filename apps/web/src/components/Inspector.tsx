@@ -44,6 +44,9 @@ import {
   cn,
 } from '@xmap/ui-kit';
 
+import { ResizeHandle } from './ResizeHandle.js';
+import { INSPECTOR_PANEL, panelStyle } from './usePanelWidth.js';
+
 // I valori di colore sono dati salvati nel file XMind (compatibilità col formato), non stile.
 const BRANCH_COLORS = ['#E65D5D', '#E9863F', '#C99A12', '#79A83B', '#1599B5', '#7953A9', '#4E5D6C'];
 const INK_COLORS = ['#000000', '#ffffff', '#3b6cf6', '#e5484d', '#2f9e63', '#7953a9'];
@@ -77,6 +80,9 @@ export interface InspectorProps {
   onClose: () => void;
   darkMode: boolean;
   onToast: (type: 'info' | 'success' | 'warning' | 'error', message: string) => void;
+  /** Larghezza da `lg` in su (px) e setter: la maniglia sul bordo sinistro la modifica. */
+  width: number;
+  onWidthChange: (width: number) => void;
 }
 
 // Anello di focus dei bottoni ui-kit, riusato dai controlli che non sono `Button`.
@@ -140,6 +146,8 @@ export const Inspector: React.FC<InspectorProps> = ({
   onClose,
   darkMode,
   onToast,
+  width,
+  onWidthChange,
 }) => {
   if (!topic) return null;
   return (
@@ -153,6 +161,8 @@ export const Inspector: React.FC<InspectorProps> = ({
       onClose={onClose}
       darkMode={darkMode}
       onToast={onToast}
+      width={width}
+      onWidthChange={onWidthChange}
     />
   );
 };
@@ -166,6 +176,8 @@ const InspectorBody: React.FC<InspectorProps> = ({
   onClose,
   darkMode,
   onToast,
+  width,
+  onWidthChange,
 }) => {
   const t = topic as TopicView;
   const ts: TextStyle = t.textStyle ?? {};
@@ -454,13 +466,24 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
   return (
     <aside
+      style={panelStyle(width)}
       className={[
         'flex w-inspector shrink-0 animate-slide-in-right flex-col overflow-hidden border-l bg-background pb-[env(safe-area-inset-bottom)]',
+        'lg:relative lg:w-[var(--panel-w)]',
         // Sotto lg: pannello sovrapposto a destra; sotto sm: bottom sheet a larghezza piena.
         'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:max-w-full max-lg:shadow-dialog',
         'max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:h-[60dvh] max-sm:w-full max-sm:rounded-t-xl max-sm:border-l-0 max-sm:border-t',
       ].join(' ')}
     >
+      <ResizeHandle
+        side="left"
+        label="Ridimensiona pannello dettagli"
+        width={width}
+        min={INSPECTOR_PANEL.min}
+        max={INSPECTOR_PANEL.max}
+        defaultWidth={INSPECTOR_PANEL.defaultWidth}
+        onChange={onWidthChange}
+      />
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         <div className="min-w-0 flex-1">
