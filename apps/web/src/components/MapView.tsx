@@ -134,6 +134,8 @@ export interface MapEditing {
 }
 
 export interface MapViewProps {
+  /** Identità del documento/foglio mostrato: quando cambia la vista si riadatta. */
+  viewKey?: string;
   editing?: MapEditing | null;
   onStartEdit?: (topicId: string) => void;
   onCommitEdit?: (topicId: string, text: string, exit: EditExit) => void;

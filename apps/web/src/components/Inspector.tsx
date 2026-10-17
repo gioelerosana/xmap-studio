@@ -697,7 +697,9 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
         {/* Equazione: aperta di default solo se il blocco è già un'equazione */}
         <InspectorSection
-          id="equation"
+          // Stato ricordato separato per equazioni e testo; la key rimonta la sezione al cambio di tipo.
+          key={t.latex ? 'equation:eq' : 'equation:text'}
+          id={t.latex ? 'equation:eq' : 'equation:text'}
           title="Equazione LaTeX"
           icon={<Sigma className="size-3.5" />}
           defaultOpen={!!t.latex}

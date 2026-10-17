@@ -211,7 +211,12 @@ Per aprire i `.xmind` dal file manager con la versione desktop, associa il MIME
 
 `Ctrl+O` apri · `Ctrl+S` salva · `Ctrl+Shift+S` salva con nome · `Ctrl+Z` annulla ·
 `Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+M` vista mappa · `Ctrl+Shift+N` aggiungi
-sotto-blocco.
+sotto-blocco · `Ctrl+,` impostazioni.
+
+Sulla mappa, come in XMind: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello
+(`Maiusc+Invio` prima) · `F2`, `Spazio` o doppio clic per modificare il testo nel
+blocco (o inizia a scrivere) · `Canc` elimina (si annulla con `Ctrl+Z`) · frecce per
+spostarsi · `Esc` deseleziona. I blocchi liberi si trascinano dove vuoi.
 
 Nell'albero a sinistra puoi **cercare**, filtrare per tipo (**Testo/Formule/
 Immagini**) e **trascinare un blocco** su un altro: rilasciando al centro diventa

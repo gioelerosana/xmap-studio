@@ -384,9 +384,11 @@ punto da verificare in UI.
 ## Limiti noti (non introdurre regressioni)
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 non è supportato.
-- Editing: testo, stile del testo, note, marker e task dei blocchi, aggiunta di
-  sotto-blocchi, eliminazione (con i figli), spostamento (riordino/riannidamento)
-  via drag & drop nell'albero e sulla mappa, punti di controllo delle relazioni.
+- Editing: testo (anche in place sulla mappa), stile del testo, note, marker e
+  task dei blocchi, aggiunta di sotto-blocchi e fratelli (Tab/Invio), eliminazione
+  (con i figli, senza conferma: si annulla), spostamento (riordino/riannidamento)
+  via drag & drop nell'albero e sulla mappa, posizione dei blocchi liberi, punti
+  di controllo delle relazioni.
   I temi non si modificano ancora (vedi matrice di parità). Inventario aggiornato in
   [`docs/PRODUCT.md`](docs/PRODUCT.md).
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della

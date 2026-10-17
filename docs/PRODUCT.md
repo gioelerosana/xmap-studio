@@ -302,11 +302,11 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | Area | Feature XMind | Stato | Note |
 |---|---|---|---|
 | Editing sulla mappa | Drag & drop dei blocchi (riordino e riannidamento) | ✅ | `MapView`; stesse regole di `moveTopic` |
-| | Modifica del titolo direttamente nel blocco (doppio clic / F2) | ⬜ | oggi dall'ispettore |
-| | Tab = figlio, Invio = fratello, Canc = elimina sulla mappa | ⬜ | scorciatoie di XMind |
+| | Modifica del titolo direttamente nel blocco (doppio clic / F2 / Spazio / digitando) | ✅ | `map/NodeEditor.tsx`; creazione + rinomina = un solo undo |
+| | Tab = figlio, Invio = fratello, Canc = elimina sulla mappa | ✅ | anche Maiusc+Invio (fratello prima), frecce, Esc; eliminazione senza conferma |
 | | Copia/incolla e duplica di sottoalberi | ⬜ | rigenerare gli id (`remapIds`) |
 | | Selezione multipla e spostamento di gruppo | ⬜ | |
-| | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | resi, non trascinabili |
+| | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | trascinabili, `position` = centro relativo alla radice (dal codice di XMind); round-trip in XMind da verificare |
 | Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | ispettore |
 | | Formattazione parziale del titolo (`attributedTitle`) | 🟡 | resa; edit da fare |
 | | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti |
