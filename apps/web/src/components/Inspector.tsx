@@ -191,6 +191,19 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
   const [task, setTask] = useState<TaskData>(t.task || {});
 
+  // Undo/redo (o modifiche da altre viste) cambiano il topic mentre il pannello è aperto:
+  // i campi locali si riallineano al valore del modello.
+  const labelsKey = t.labels.join(', ');
+  const taskKey = JSON.stringify(t.task ?? null);
+  useEffect(() => setTitle(t.title), [t.title]);
+  useEffect(() => setNotes(t.notes), [t.notes]);
+  useEffect(() => setNotesDisplay((t.notesDisplay as 'icon' | 'block') || ''), [t.notesDisplay]);
+  useEffect(() => setLabelsStr(labelsKey), [labelsKey]);
+  useEffect(() => setHref(t.href || ''), [t.href]);
+  useEffect(() => setColor(t.fillColor || null), [t.fillColor]);
+  useEffect(() => setLatex(t.latex || ''), [t.latex]);
+  useEffect(() => setTask(t.task || {}), [taskKey]);
+
   // L'inchiostro salvato resta nero (compatibilità XMind); in tema scuro
   // l'anteprima usa il colore del testo solo per la visualizzazione.
   const previewInk = inkColor === '#000000' && darkMode ? '#ffffff' : inkColor;
@@ -435,12 +448,11 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
   const handleDelete = () => {
     if (t.depth === 0) return;
-    if (!confirm(`Eliminare «${t.displayTitle}» e i suoi sotto-blocchi?`)) return;
     try {
       controller.removeTopic(t.id);
       onChanged();
       onClose();
-      onToast('info', 'Blocco eliminato');
+      onToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
     } catch (err: any) {
       onToast('error', err.message);
     }
