@@ -144,6 +144,8 @@ export const App: React.FC = () => {
   const [controller] = useState(() => new AppController());
   const [workbook, setWorkbook] = useState<WorkbookDto | null>(null);
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
+  // Cresce a ogni documento aperto: la mappa si riadatta solo allora (o al cambio di foglio).
+  const [documentKey, setDocumentKey] = useState(0);
   const [viewMode, setViewMode] = useState<'map' | 'outline'>('map');
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<TopicFilter>('all');
@@ -315,6 +317,7 @@ export const App: React.FC = () => {
           setWorkbook(dto);
           setFileHandle(undefined);
           setActiveSheetIndex(0);
+          setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
           addToast('success', `Aperto: ${res.name}`);
@@ -344,6 +347,7 @@ export const App: React.FC = () => {
           setWorkbook(dto);
           setFileHandle(undefined);
           setActiveSheetIndex(0);
+          setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
           addToast('success', `Mappa aperta: ${res.name}`);
@@ -358,6 +362,7 @@ export const App: React.FC = () => {
         setWorkbook(dto);
         setFileHandle(res.handle);
         setActiveSheetIndex(0);
+        setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
         addToast('success', `Mappa aperta: ${res.name}`);
@@ -377,6 +382,7 @@ export const App: React.FC = () => {
         setWorkbook(dto);
         setFileHandle(undefined);
         setActiveSheetIndex(0);
+        setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
         addToast('info', 'Mappa demo caricata');
@@ -419,6 +425,7 @@ export const App: React.FC = () => {
       setWorkbook(dto);
       setFileHandle(undefined);
       setActiveSheetIndex(0);
+      setDocumentKey((k) => k + 1);
       setCollapsedIds(new Set());
       setSelectedTopicId(undefined);
       addToast('success', 'Nuova mappa creata');
@@ -1023,6 +1030,7 @@ export const App: React.FC = () => {
               const dto = await controller.open(new Uint8Array(buffer), undefined, file.name);
               setWorkbook(dto);
               setActiveSheetIndex(0);
+              setDocumentKey((k) => k + 1);
               setCollapsedIds(new Set());
               setSelectedTopicId(undefined);
               addToast('success', `Aperto ${file.name}`);
@@ -1057,6 +1065,7 @@ export const App: React.FC = () => {
               {viewMode === 'map' ? (
                 <MapView
                   layout={currentLayout}
+                  viewKey={`${documentKey}:${activeSheetIndex}`}
                   selectedTopicId={selectedTopicId}
                   onSelectTopic={setSelectedTopicId}
                   onOpenDetails={openDetails}

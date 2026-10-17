@@ -162,6 +162,7 @@ export interface MapViewProps {
 
 export const MapView: React.FC<MapViewProps> = ({
   layout,
+  viewKey,
   selectedTopicId,
   onSelectTopic,
   onOpenDetails,
@@ -193,6 +194,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const selectedNodeRef = useRef<LayoutNode | null>(null);
   const hasAutoFitted = useRef(false);
   const lastLayoutRef = useRef<Layout | null>(null);
+  const lastViewKeyRef = useRef<string | undefined>(undefined);
   const anchorIdRef = useRef<string | undefined>(selectedTopicId); // selezione prima dell'ultima modifica
   const frameRef = useRef(0);
   const syncTimerRef = useRef<number | undefined>(undefined);
@@ -418,7 +420,9 @@ export const MapView: React.FC<MapViewProps> = ({
     if (prev !== layout) {
       lastLayoutRef.current = layout;
       const rootOf = (l: Layout) => l.nodes.find((n) => n.depth === 0)?.id;
-      if (!prev || rootOf(prev) !== rootOf(layout)) {
+      const keyChanged = lastViewKeyRef.current !== viewKey;
+      lastViewKeyRef.current = viewKey;
+      if (!prev || keyChanged || rootOf(prev) !== rootOf(layout)) {
         hasAutoFitted.current = false;
       } else if (hasAutoFitted.current) {
         // Riferimento: il blocco selezionato prima della modifica, se esiste ancora, altrimenti la radice.
