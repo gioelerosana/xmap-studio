@@ -92,6 +92,15 @@ export class OpenWorkbook {
     this.pos = this.history.length - 1;
   }
 
+  /** Sostituisce l'ultimo snapshot con lo stato corrente (fonde due modifiche in un solo passo di undo). */
+  public replaceHistoryTop(): void {
+    if (this.pos !== this.history.length - 1) {
+      this.pushHistory();
+      return;
+    }
+    this.history[this.pos] = cloneSheets(this.content);
+  }
+
   public undo(): void {
     if (this.canUndo()) {
       this.pos--;
