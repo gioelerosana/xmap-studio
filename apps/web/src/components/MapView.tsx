@@ -13,6 +13,7 @@ import {
   GitFork,
 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+import { NodeEditor, type EditExit } from './map/NodeEditor.js';
 import { hexLuminance, RichTitle, textStyleCss } from './map/RichTitle.js';
 import { RelationshipLayer, type ControlPointsPatch } from './map/RelationshipLayer.js';
 import {
@@ -124,7 +125,19 @@ interface DragOverlay {
   drop: DropTarget | null;
 }
 
+/** Editing in place del titolo di un blocco, governato dal genitore. */
+export interface MapEditing {
+  id: string;
+  /** `all` = seleziona il testo esistente; `text` = parte da `text` (digitazione su blocco selezionato). */
+  mode: 'all' | 'text';
+  text?: string;
+}
+
 export interface MapViewProps {
+  editing?: MapEditing | null;
+  onStartEdit?: (topicId: string) => void;
+  onCommitEdit?: (topicId: string, text: string, exit: EditExit) => void;
+  onCancelEdit?: () => void;
   layout: Layout | null;
   selectedTopicId?: string;
   onSelectTopic: (topicId: string) => void;
@@ -161,10 +174,15 @@ export const MapView: React.FC<MapViewProps> = ({
   detailsOpen = false,
   onMoveTopic,
   onRelationshipControlPointsChange,
+  editing = null,
+  onStartEdit,
+  onCommitEdit,
+  onCancelEdit,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const editorLayerRef = useRef<HTMLDivElement>(null);
   // Trasformazione "viva": durante i gesti si aggiorna solo questo ref e lo style
   // dell'SVG; `view` (stato React) viene allineato a gesto concluso.
   const viewRef = useRef<View>({ x: 60, y: 60, k: 1 });
@@ -241,6 +259,9 @@ export const MapView: React.FC<MapViewProps> = ({
     const v = viewRef.current;
     if (svgRef.current) {
       svgRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
+    }
+    if (editorLayerRef.current) {
+      editorLayerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
     }
     const n = selectedNodeRef.current;
     if (toolbarRef.current && n) {
@@ -888,6 +909,31 @@ export const MapView: React.FC<MapViewProps> = ({
 
   selectedNodeRef.current = selectedNode;
 
+  const editingNode = useMemo(() => {
+    if (!layout || !editing) return null;
+    return layout.nodes.find((n) => n.id === editing.id) || null;
+  }, [layout, editing]);
+
+  // Un blocco appena creato può cadere fuori schermo: lo si porta in vista.
+  useEffect(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!editingNode || !rect) return;
+    const v = viewRef.current;
+    const left = v.x + editingNode.x * v.k;
+    const right = left + Math.max(editingNode.w, 120) * v.k;
+    const top = v.y + editingNode.y * v.k;
+    const bottom = top + editingNode.h * v.k;
+    let dx = 0;
+    let dy = 0;
+    if (left < 16) dx = 16 - left;
+    else if (right > rect.width - 16) dx = rect.width - 16 - right;
+    if (top < 56) dy = 56 - top;
+    else if (bottom > rect.height - 16) dy = rect.height - 16 - bottom;
+    if (dx !== 0 || dy !== 0) animateTo({ k: v.k, x: v.x + dx, y: v.y + dy }, 200);
+    // Solo quando si apre l'editor su un blocco.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id, Boolean(editingNode)]);
+
   useEffect(() => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!detailsOpen || !selectedNode || !rect || rect.width >= COMPACT_WIDTH) return;
@@ -1058,7 +1104,12 @@ export const MapView: React.FC<MapViewProps> = ({
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                handlers.current.onOpenDetails(node.id);
+                // Mouse: i blocchi di testo si modificano in place; formule, immagini e touch aprono i dettagli.
+                if (node.kind === 'text' && onStartEdit && !window.matchMedia?.('(pointer: coarse)').matches) {
+                  onStartEdit(node.id);
+                } else {
+                  handlers.current.onOpenDetails(node.id);
+                }
               }}
             >
               {/* Alone di selezione: anello esterno adiacente al bordo (3px, 24%) */}
@@ -1399,6 +1450,8 @@ export const MapView: React.FC<MapViewProps> = ({
         <div
           ref={toolbarRef}
           data-map-ui
+          // Niente focus sui pulsanti: le scorciatoie da tastiera sulla mappa restano attive.
+          onMouseDown={(e) => e.preventDefault()}
           className="absolute z-20 pointer-events-auto flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer"
           style={{ transform: 'translateY(-100%)' }}
         >
@@ -1440,16 +1493,35 @@ export const MapView: React.FC<MapViewProps> = ({
                 size="sm"
                 variant="ghost-destructive"
                 label="Elimina blocco"
-                onClick={() => {
-                  if (confirm('Eliminare questo blocco?')) {
-                    onDeleteTopic(selectedNode.id);
-                  }
-                }}
+                onClick={() => onDeleteTopic(selectedNode.id)}
               >
                 <Trash2 className="size-4" />
               </IconButton>
             </>
           )}
+        </div>
+      )}
+
+      {/* Editor in place del titolo: stesso sistema di coordinate dell'SVG, quindi segue pan e zoom. */}
+      {editingNode && editing && onCommitEdit && (
+        <div
+          ref={editorLayerRef}
+          data-map-ui
+          className="absolute left-0 top-0 z-10 size-0"
+          style={{ transformOrigin: '0 0' }}
+        >
+          <NodeEditor
+            key={editing.id}
+            x={editingNode.x}
+            y={editingNode.y}
+            w={editingNode.w}
+            h={editingNode.h}
+            isRoot={editingNode.depth === 0}
+            initialText={editing.mode === 'text' ? editing.text ?? '' : editingNode.title}
+            selectAll={editing.mode === 'all'}
+            onCommit={(text, exit) => onCommitEdit(editing.id, text, exit)}
+            onCancel={() => onCancelEdit?.()}
+          />
         </div>
       )}
 

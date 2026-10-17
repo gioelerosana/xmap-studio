@@ -53,7 +53,9 @@ import {
   downloadBlob,
 } from './adapters/fileSystem.js';
 import { Sidebar } from './components/Sidebar.js';
-import { MapView } from './components/MapView.js';
+import { MapView, type MapEditing } from './components/MapView.js';
+import type { EditExit } from './components/map/NodeEditor.js';
+import { neighborId, selectionAfterDelete } from './components/map/navigation.js';
 import { OutlineView } from './components/OutlineView.js';
 import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
@@ -61,6 +63,9 @@ import { ExportModal } from './components/ExportModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import { DropPlacement, TopicFilter } from './components/TopicTree.js';
+
+const TEXT_FIELD = 'input,textarea,select,[contenteditable=""],[contenteditable="true"]';
+const INTERACTIVE = `${TEXT_FIELD},button,a,[role="button"],[role="menuitem"],[role="dialog"]`;
 
 declare global {
   interface Window {
@@ -221,6 +226,7 @@ export const App: React.FC = () => {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [closePrompt, setClosePrompt] = useState<CloseAction>(null);
+  const [editing, setEditing] = useState<(MapEditing & { isNew?: boolean }) | null>(null);
 
   const addToast = useCallback((type: ToastMessage['type'], message: string) => {
     const id = Math.random().toString(36).slice(2);
@@ -504,20 +510,34 @@ export const App: React.FC = () => {
     }
   };
 
+  // Undo/redo: la selezione resta se il blocco esiste ancora, altrimenti risale al genitore.
+  const doUndoRedo = useCallback(
+    (kind: 'undo' | 'redo') => {
+      const parentOf = new Map(allTopics.map((t) => [t.id, t.parentId]));
+      kind === 'undo' ? controller.undo() : controller.redo();
+      const dto = controller.workbook();
+      const alive = new Set(dto?.sheets[activeSheetIndex]?.topics.map((t) => t.id));
+      let cur = selectedTopicId;
+      while (cur && !alive.has(cur)) cur = parentOf.get(cur);
+      setSelectedTopicId(cur);
+      setEditing(null);
+      refreshState();
+    },
+    [controller, allTopics, activeSheetIndex, selectedTopicId, refreshState]
+  );
+
   // Scorciatoie da tastiera
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       const key = e.key.toLowerCase();
-      if (key === 'z') {
+      const inField = (e.target as Element | null)?.closest?.(TEXT_FIELD);
+      if (key === 'z' || key === 'y') {
+        // In un campo di testo vale l'undo nativo del campo.
+        if (inField) return;
         e.preventDefault();
-        e.shiftKey ? controller.redo() : controller.undo();
-        refreshState();
-      } else if (key === 'y') {
-        e.preventDefault();
-        controller.redo();
-        refreshState();
+        doUndoRedo(key === 'y' || e.shiftKey ? 'redo' : 'undo');
       } else if (key === 's') {
         e.preventDefault();
         e.shiftKey ? handleSaveAs() : handleSave();
@@ -535,7 +555,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [controller, refreshState, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
+  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
 
   // Chiusura con modifiche non salvate
   useEffect(() => {
@@ -668,16 +688,125 @@ export const App: React.FC = () => {
 
   const handleDeleteSelected = () => {
     if (!selectedTopic || selectedTopic.depth === 0) return;
-    if (!confirm(`Eliminare «${selectedTopic.displayTitle}» e i suoi sotto-blocchi?`)) return;
     try {
+      const next = currentLayout ? selectionAfterDelete(currentLayout, selectedTopic.id) : undefined;
       controller.removeTopic(selectedTopic.id);
-      setSelectedTopicId(undefined);
+      setSelectedTopicId(next);
+      setEditing(null);
       refreshState();
-      addToast('info', 'Blocco eliminato');
+      addToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
     } catch (err: any) {
       addToast('error', err.message);
     }
   };
+
+  // Nuovo blocco da tastiera o dalla mappa: si seleziona ed entra subito in editing in place.
+  const createTopic = useCallback(
+    (anchorId: string, kind: 'child' | 'after' | 'before') => {
+      try {
+        const { newId } =
+          kind === 'child'
+            ? controller.addTopic(anchorId, 'Nuovo blocco')
+            : controller.addSiblingTopic(anchorId, 'Nuovo blocco', kind);
+        // Il genitore collassato va espanso (per i fratelli il genitore non cambia, ma è innocuo).
+        setCollapsedIds((prev) => {
+          if (!prev.has(anchorId)) return prev;
+          const next = new Set(prev);
+          next.delete(anchorId);
+          return next;
+        });
+        setSelectedTopicId(newId);
+        setEditing({ id: newId, mode: 'all', isNew: true });
+        refreshState();
+      } catch (err: any) {
+        addToast('error', err.message);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleCommitEdit = (id: string, text: string, exit: EditExit) => {
+    const isNew = editing?.id === id && editing.isNew;
+    setEditing(null);
+    const topic = allTopics.find((t) => t.id === id);
+    try {
+      if (topic && text.trim().length > 0 && text !== topic.title) {
+        controller.setTopicTitle(id, text, { mergeWithPrevious: isNew });
+        refreshState();
+      }
+    } catch (err: any) {
+      addToast('error', err.message);
+      return;
+    }
+    if (exit === 'tab') createTopic(id, 'child');
+  };
+
+  const startEdit = (id: string) => {
+    const t = allTopics.find((x) => x.id === id);
+    if (!t) return;
+    if (t.kind !== 'text') openDetails(id);
+    else setEditing({ id, mode: 'all' });
+  };
+
+  // Scorciatoie sulla mappa (stile XMind): solo con il focus fuori da campi e controlli, senza modali.
+  const keyCtx = useRef({ startEdit, createTopic, handleDeleteSelected });
+  keyCtx.current = { startEdit, createTopic, handleDeleteSelected };
+  const mapKeysEnabled =
+    viewMode === 'map' &&
+    Boolean(workbook) &&
+    !editing &&
+    !exportModalOpen &&
+    !importModalOpen &&
+    !aboutOpen &&
+    !replacePrompt &&
+    !closePrompt &&
+    !busy;
+  useEffect(() => {
+    if (!mapKeysEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+      const sel = selectedTopic;
+      if (!sel) return;
+      const c = keyCtx.current;
+      const go = (dir: 'up' | 'down' | 'left' | 'right') => {
+        const id = currentLayout ? neighborId(currentLayout, sel.id, dir) : undefined;
+        if (id) setSelectedTopicId(id);
+      };
+      switch (e.key) {
+        case 'Tab':
+          if (e.shiftKey) return;
+          c.createTopic(sel.id, 'child');
+          break;
+        case 'Enter':
+          c.createTopic(sel.id, e.shiftKey ? 'before' : 'after');
+          break;
+        case 'F2':
+        case ' ':
+          c.startEdit(sel.id);
+          break;
+        case 'Delete':
+        case 'Backspace':
+          if (sel.depth === 0) return;
+          c.handleDeleteSelected();
+          break;
+        case 'ArrowUp': go('up'); break;
+        case 'ArrowDown': go('down'); break;
+        case 'ArrowLeft': go('left'); break;
+        case 'ArrowRight': go('right'); break;
+        case 'Escape':
+          setSelectedTopicId(undefined);
+          break;
+        default:
+          if (e.key.length !== 1 || sel.kind !== 'text') return;
+          setEditing({ id: sel.id, mode: 'text', text: e.key });
+      }
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mapKeysEnabled, selectedTopic, currentLayout]);
 
   const handleConfirmClose = async (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') {
@@ -695,10 +824,10 @@ export const App: React.FC = () => {
   const overflowItems: MenuItem[] = [
     ...(!inlineOpen ? [{ id: 'open', label: 'Apri…', icon: <FolderOpen className="size-4" />, onSelect: handleOpenLocalFile }] : []),
     ...(workbook && !inlineUndo
-      ? [{ id: 'undo', label: 'Annulla', icon: <Undo2 className="size-4" />, disabled: !workbook.canUndo, onSelect: () => { controller.undo(); refreshState(); } }]
+      ? [{ id: 'undo', label: 'Annulla', icon: <Undo2 className="size-4" />, disabled: !workbook.canUndo, onSelect: () => doUndoRedo('undo') }]
       : []),
     ...(workbook && !inlineRedo
-      ? [{ id: 'redo', label: 'Ripeti', icon: <Redo2 className="size-4" />, disabled: !workbook.canRedo, onSelect: () => { controller.redo(); refreshState(); } }]
+      ? [{ id: 'redo', label: 'Ripeti', icon: <Redo2 className="size-4" />, disabled: !workbook.canRedo, onSelect: () => doUndoRedo('redo') }]
       : []),
     ...(workbook && !inlineViews
       ? [
@@ -786,12 +915,12 @@ export const App: React.FC = () => {
             </Button>
             {workbook && (inlineUndo || inlineRedo) && <Separator orientation="vertical" className="mx-1 h-4" />}
             {workbook && inlineUndo && (
-              <IconButton size="sm" disabled={!workbook.canUndo} onClick={() => { controller.undo(); refreshState(); }} label="Annulla (Ctrl+Z)">
+              <IconButton size="sm" disabled={!workbook.canUndo} onClick={() => doUndoRedo('undo')} label="Annulla (Ctrl+Z)">
                 <Undo2 className="size-4" />
               </IconButton>
             )}
             {workbook && inlineRedo && (
-              <IconButton size="sm" disabled={!workbook.canRedo} onClick={() => { controller.redo(); refreshState(); }} label="Ripeti (Ctrl+Shift+Z)">
+              <IconButton size="sm" disabled={!workbook.canRedo} onClick={() => doUndoRedo('redo')} label="Ripeti (Ctrl+Shift+Z)">
                 <Redo2 className="size-4" />
               </IconButton>
             )}
@@ -905,8 +1034,12 @@ export const App: React.FC = () => {
                   onOpenDetails={openDetails}
                   onOpenLatex={openDetails}
                   detailsOpen={inspectorVisible}
-                  onAddChild={handleAddChild}
+                  onAddChild={(id) => createTopic(id, 'child')}
                   onDeleteTopic={handleDeleteSelected}
+                  editing={editing}
+                  onStartEdit={startEdit}
+                  onCommitEdit={handleCommitEdit}
+                  onCancelEdit={() => setEditing(null)}
                   onToggleCollapse={handleToggleCollapse}
                   resourceResolver={resolveResource}
                   darkMode={darkMode}
