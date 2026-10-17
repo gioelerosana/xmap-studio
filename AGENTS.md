@@ -296,17 +296,20 @@ Per provarla su un dispositivo: `pnpm build`, poi `cd apps/web && npx vite previ
 xmap-studio/
 ├── package.json / pnpm-workspace.yaml / pnpm-lock.yaml
 ├── AGENTS.md                     # questo file
+├── .gitlab-ci.yml                # pipeline di release (solo sui tag vX.Y.Z)
 ├── TODO.md                       # backlog dell'utente: la direzione del lavoro
 ├── README.md                     # documentazione utente
 ├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata
 ├── docs/                         # documentazione tecnica
+├── packaging/arch/               # PKGBUILD (sviluppo `-git` e `release/`), bump-pkgver.sh
+├── scripts/                      # strumenti di repo (check-release-version.mjs)
 ├── packages/
 │   ├── core/                     # motore: src/{model,archive,safety,latex,…}, tests/
 │   └── ui-kit/                   # design system
 └── apps/
     ├── web/                      # UI React
-    └── desktop/                  # Electron (main, preload, scripts/dev.mjs)
+    └── desktop/                  # Electron (main, preload, scripts/{dev,dist}.mjs, electron-builder.yml)
 ```
 
 Mappa dei moduli e flusso dati: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
