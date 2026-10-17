@@ -1,9 +1,9 @@
 /**
- * Marchio di XMap Studio: un nodo centrale da cui partono rami curvi verso
- * tre nodi, uno dei quali contiene un Σ tracciato con path (niente font, così
- * il disegno è identico ovunque). Il Σ è l'unico dettaglio color ambra.
- * Il marchio ha colori fissi di brand (sfondo indaco, inchiostro bianco) e
- * non segue il tema: resta lo stesso in chiaro e in scuro, come l'icona
+ * Marchio di XMap Studio: una X fatta di mappa. Un blocco radice al centro e
+ * quattro argomenti agli angoli, collegati da rami curvi come nella vista
+ * mappa; l'argomento in alto a destra è l'unico dettaglio color ambra.
+ * Il marchio ha colori fissi di brand (sfondo blu, inchiostro bianco) e non
+ * segue il tema: resta lo stesso in chiaro e in scuro, come l'icona
  * installata. Il disegno coincide con `apps/web/public/icon.svg`.
  */
 import React, { useId } from 'react';
@@ -25,31 +25,23 @@ export const AppMark: React.FC<AppMarkProps> = ({ size = 40, className }) => {
       className={cn('shrink-0', className)}
     >
       <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#1e293b" />
-          <stop offset="1" stopColor="#312e81" />
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#5383ff" />
+          <stop offset="1" stopColor="#2440d8" />
         </linearGradient>
       </defs>
       <rect width="256" height="256" rx="56" fill={`url(#${gradientId})`} />
-      <g transform="translate(-4 -2)">
-        <g fill="none" stroke="#ffffff" strokeWidth="10" strokeLinecap="round">
-          <path d="M120 128C100 104 80 86 58 64" />
-          <path d="M120 128C150 118 172 102 194 74" />
-          <path d="M120 128C112 152 96 176 74 198" />
-        </g>
-        <circle cx="120" cy="128" r="26" fill="#ffffff" />
-        <circle cx="58" cy="64" r="13" fill="#ffffff" />
-        <circle cx="74" cy="198" r="13" fill="#ffffff" />
-        <circle cx="198" cy="70" r="24" fill="#1e293b" stroke="#ffffff" strokeWidth="8" />
-        <path
-          d="M206 59.5H190L199 70L190 80.5H206"
-          fill="none"
-          stroke="#f59e0b"
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+      <g fill="none" stroke="#ffffff" strokeWidth="12" strokeLinecap="round">
+        <path d="M100 128C76 128 82 76 58 76" />
+        <path d="M100 128C76 128 82 180 58 180" />
+        <path d="M156 128C180 128 174 76 198 76" />
+        <path d="M156 128C180 128 174 180 198 180" />
       </g>
+      <rect x="90" y="104" width="76" height="48" rx="15" fill="#ffffff" />
+      <rect x="34" y="60" width="44" height="32" rx="11" fill="#ffffff" />
+      <rect x="34" y="164" width="44" height="32" rx="11" fill="#ffffff" />
+      <rect x="178" y="164" width="44" height="32" rx="11" fill="#ffffff" />
+      <rect x="178" y="60" width="44" height="32" rx="11" fill="#fbbf24" />
     </svg>
   );
 };
