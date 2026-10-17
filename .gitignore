@@ -7,7 +7,7 @@ node_modules/
 dist/
 **/dist/
 *.AppImage
-**/release/
+apps/desktop/release/
 
 # Backup e file temporanei generati dall'app durante il salvataggio
 .xmap-studio/
@@ -30,3 +30,7 @@ packaging/arch/src/
 packaging/arch/pkg/
 packaging/arch/xmap-studio/
 packaging/arch/*.pkg.tar.*
+packaging/arch/release/src/
+packaging/arch/release/pkg/
+packaging/arch/release/xmap-studio/
+packaging/arch/release/*.pkg.tar.*

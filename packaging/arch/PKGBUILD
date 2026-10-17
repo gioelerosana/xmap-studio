@@ -1,35 +1,39 @@
-# Pacchetto Arch Linux di XMap Studio, costruito dal repository locale.
+# Pacchetto Arch Linux di sviluppo per XMap Studio (VCS: git).
+# Costruito dall'ultimo commit del branch corrente del repository locale.
 #
 #   cd packaging/arch && makepkg -si
 #
 # Compila l'ultimo commit del branch corrente (le modifiche non committate non
 # entrano nel pacchetto) e usa l'Electron di sistema invece di quello di npm.
 
-pkgname=xmap-studio
+_pkgname=xmap-studio
+pkgname=$_pkgname-git
 pkgver=0.1.0.r74.g8dae65c
 pkgrel=1
-pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato'
+pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato (development build)'
 arch=('x86_64')
 license=('custom')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
 _electron=electron43
 depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
-source=("$pkgname::git+file://$(realpath "$startdir/../..")#branch=$(git -C "$startdir" branch --show-current)"
+source=("$_pkgname::git+file://$(realpath "$startdir/../..")#branch=$(git -C "$startdir" branch --show-current)"
         'xmap-studio.sh'
         'org.joel.xmap_studio.desktop')
 sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 pkgver() {
-  cd "$pkgname"
+  cd "$_pkgname"
   local base
   base=$(node -p "require('./package.json').version")
   printf '%s.r%s.g%s' "$base" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {
-  cd "$pkgname"
+  cd "$_pkgname"
   # Electron arriva dal pacchetto di sistema: niente download del binario npm.
   export ELECTRON_SKIP_BINARY_DOWNLOAD=1
   pnpm install --frozen-lockfile --prefer-offline
@@ -39,8 +43,8 @@ build() {
 }
 
 package() {
-  cd "$pkgname"
-  local app="$pkgdir/usr/lib/$pkgname"
+  cd "$_pkgname"
+  local app="$pkgdir/usr/lib/$_pkgname"
 
   # main.js cerca la UI in ../../web/dist rispetto a apps/desktop/dist.
   install -d "$app/apps/desktop" "$app/apps/web"
@@ -48,7 +52,7 @@ package() {
   cp -a apps/web/dist "$app/apps/web/dist"
 
   sed "s/@ELECTRON@/$_electron/" "$srcdir/xmap-studio.sh" > xmap-studio.launcher
-  install -Dm755 xmap-studio.launcher "$pkgdir/usr/bin/$pkgname"
+  install -Dm755 xmap-studio.launcher "$pkgdir/usr/bin/$_pkgname"
   install -Dm644 "$srcdir/org.joel.xmap_studio.desktop" \
     "$pkgdir/usr/share/applications/org.joel.xmap_studio.desktop"
   install -Dm644 assets/org.joel.xmap_studio.xml \

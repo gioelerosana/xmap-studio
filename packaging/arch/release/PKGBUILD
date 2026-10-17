@@ -1,0 +1,61 @@
+# Pacchetto Arch Linux di release per XMap Studio.
+# Costruito a partire dal tag di release git ufficiale (es. v0.1.0).
+#
+#   cd packaging/arch/release && makepkg -si
+#
+# Per aggiornare pkgver e azzerare pkgrel=1, usare:
+#   ../bump-pkgver.sh [X.Y.Z]
+
+pkgname=xmap-studio
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato'
+arch=('x86_64')
+license=('custom')
+_electron=electron43
+depends=("$_electron")
+# pnpm serve nel PATH (anche installato fuori da pacman).
+makedepends=('git' 'nodejs')
+options=('!strip' '!debug')
+# Repository privato: richiede credenziali SSH configurate.
+# Per test locale senza rete:
+# source=("$pkgname::git+file://$(realpath "$startdir/../../..")#tag=v${pkgver}"
+source=("$pkgname::git+ssh://git@gitlab.com/JoelShepard/xmap-studio.git#tag=v${pkgver}"
+        'xmap-studio.sh'
+        'org.joel.xmap_studio.desktop')
+sha256sums=('SKIP'
+            'SKIP'
+            'SKIP')
+
+build() {
+  cd "$pkgname"
+  # Electron arriva dal pacchetto di sistema: niente download del binario npm.
+  export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+  pnpm install --frozen-lockfile --prefer-offline
+  pnpm build
+  rm -rf "$srcdir/deploy"
+  pnpm --filter @xmap/desktop deploy --prod --legacy "$srcdir/deploy"
+}
+
+package() {
+  cd "$pkgname"
+  local app="$pkgdir/usr/lib/$pkgname"
+
+  # main.js cerca la UI in ../../web/dist rispetto a apps/desktop/dist.
+  install -d "$app/apps/desktop" "$app/apps/web"
+  cp -a "$srcdir/deploy/." "$app/apps/desktop/"
+  cp -a apps/web/dist "$app/apps/web/dist"
+
+  sed "s/@ELECTRON@/$_electron/" "$srcdir/xmap-studio.sh" > xmap-studio.launcher
+  install -Dm755 xmap-studio.launcher "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 "$srcdir/org.joel.xmap_studio.desktop" \
+    "$pkgdir/usr/share/applications/org.joel.xmap_studio.desktop"
+  install -Dm644 assets/org.joel.xmap_studio.xml \
+    "$pkgdir/usr/share/mime/packages/org.joel.xmap_studio.xml"
+  install -Dm644 assets/icon.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/org.joel.xmap_studio.svg"
+  install -Dm644 assets/icon-256.png \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/org.joel.xmap_studio.png"
+  install -Dm644 assets/icon-512.png \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/org.joel.xmap_studio.png"
+}
