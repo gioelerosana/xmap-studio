@@ -172,6 +172,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const selectedNodeRef = useRef<LayoutNode | null>(null);
   const hasAutoFitted = useRef(false);
   const lastLayoutRef = useRef<Layout | null>(null);
+  const anchorIdRef = useRef<string | undefined>(selectedTopicId); // selezione prima dell'ultima modifica
   const frameRef = useRef(0);
   const syncTimerRef = useRef<number | undefined>(undefined);
   const motionRef = useRef(0); // rAF di animazione o inerzia
@@ -375,14 +376,52 @@ export const MapView: React.FC<MapViewProps> = ({
     [animateTo]
   );
 
-  // ResizeObserver e auto-fit al caricamento o ridimensionamento finestra
+  // ResizeObserver e auto-fit solo quando cambia il documento (file o foglio).
+  // Le modifiche (aggiunte, rinomine, spostamenti) non toccano lo zoom: la vista
+  // trasla soltanto perché il blocco di riferimento resti fermo sullo schermo.
   useEffect(() => {
     if (!layout) return;
 
-    // Se il layout o i nodi sono cambiati, permetti nuovo auto-fit
-    if (lastLayoutRef.current !== layout) {
+    const prev = lastLayoutRef.current;
+    if (prev !== layout) {
       lastLayoutRef.current = layout;
-      hasAutoFitted.current = false;
+      const rootOf = (l: Layout) => l.nodes.find((n) => n.depth === 0)?.id;
+      if (!prev || rootOf(prev) !== rootOf(layout)) {
+        hasAutoFitted.current = false;
+      } else if (hasAutoFitted.current) {
+        // Riferimento: il blocco selezionato prima della modifica, se esiste ancora, altrimenti la radice.
+        const pick = (id?: string) => {
+          const b = id ? prev.nodes.find((n) => n.id === id) : undefined;
+          const a = b && layout.nodes.find((n) => n.id === b.id);
+          return b && a ? { b, a } : null;
+        };
+        const pair = pick(anchorIdRef.current) ?? pick(rootOf(prev));
+        const v = viewRef.current;
+        let { x, y } = v;
+        if (pair) {
+          x -= (pair.a.x - pair.b.x) * v.k;
+          y -= (pair.a.y - pair.b.y) * v.k;
+        }
+        // Il blocco selezionato (es. appena creato) deve restare visibile: pan minimo, zoom invariato.
+        const sel = selectedTopicId ? layout.nodes.find((n) => n.id === selectedTopicId) : undefined;
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (sel && rect) {
+          const pad = 32;
+          const left = x + sel.x * v.k;
+          const right = x + (sel.x + sel.w) * v.k;
+          const top = y + sel.y * v.k;
+          const bottom = y + (sel.y + sel.h) * v.k;
+          if (right > rect.width - pad) x -= right - (rect.width - pad);
+          if (left < pad) x += pad - left;
+          if (bottom > rect.height - pad) y -= bottom - (rect.height - pad);
+          if (top < pad) y += pad - top;
+        }
+        if (x !== v.x || y !== v.y) {
+          viewRef.current = { ...v, x, y };
+          applyView();
+          setView({ ...viewRef.current });
+        }
+      }
     }
 
     const container = containerRef.current;
@@ -414,6 +453,11 @@ export const MapView: React.FC<MapViewProps> = ({
       clearTimeout(timer);
     };
   }, [layout, fitToView]);
+
+  // Dichiarato dopo l'effetto di auto-fit: lì serve ancora la selezione precedente.
+  useEffect(() => {
+    anchorIdRef.current = selectedTopicId;
+  }, [selectedTopicId]);
 
   const hasContent = Boolean(layout && layout.nodes.length > 0);
 
