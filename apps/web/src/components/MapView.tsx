@@ -209,6 +209,8 @@ export const MapView: React.FC<MapViewProps> = ({
   const toolbarRef = useRef<HTMLDivElement>(null);
   const editorLayerRef = useRef<HTMLDivElement>(null);
   const isCoarse = useMediaQuery('(pointer: coarse)');
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   // Trasformazione "viva": durante i gesti si aggiorna solo questo ref e lo style
   // dell'SVG; `view` (stato React) viene allineato a gesto concluso.
   const viewRef = useRef<View>({ x: 60, y: 60, k: 1 });
@@ -232,6 +234,7 @@ export const MapView: React.FC<MapViewProps> = ({
     onMoveTopic,
     onMoveFloatingTopic,
     onRelationshipControlPointsChange,
+    onStartEdit,
   });
   handlers.current = {
     onSelectTopic,
@@ -241,6 +244,7 @@ export const MapView: React.FC<MapViewProps> = ({
     onMoveTopic,
     onMoveFloatingTopic,
     onRelationshipControlPointsChange,
+    onStartEdit,
   };
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
@@ -582,6 +586,8 @@ export const MapView: React.FC<MapViewProps> = ({
     let samples: { t: number; x: number; y: number }[] = [];
     let pinch = { dist: 1, mx: 0, my: 0, view: viewRef.current };
     let suppressClickUntil = 0;
+    // Finestra più lunga dopo un doppio tap: il browser emette mousedown/click/dblclick sintetici.
+    let suppressSyntheticUntil = 0;
     let lastTap = { t: 0, x: 0, y: 0, nodeId: null as string | null };
     // Trascinamento di un blocco: `pressedNode` è il blocco premuto in attesa di capire
     // se il gesto è un click, un pan (touch che si muove subito) o un drag.
@@ -780,7 +786,8 @@ export const MapView: React.FC<MapViewProps> = ({
       samples = [];
     };
 
-    // Tap senza movimento: il doppio tap su un blocco apre i dettagli, sullo sfondo zooma.
+    // Tap senza movimento: il doppio tap su un blocco di testo avvia l'editing in place,
+    // su altri blocchi apre i dettagli, sullo sfondo zooma.
     const handleTap = (e: PointerEvent) => {
       const nodeId = (e.target as Element | null)?.closest('[data-node-id]')?.getAttribute('data-node-id') ?? null;
       const now = performance.now();
@@ -791,11 +798,22 @@ export const MapView: React.FC<MapViewProps> = ({
       lastTap = isDouble ? { t: 0, x: 0, y: 0, nodeId: null } : { t: now, x: e.clientX, y: e.clientY, nodeId };
       if (!isDouble) return;
       if (nodeId) {
-        handlers.current.onOpenDetails(nodeId);
+        setSelectedRelationshipId(undefined);
+        handlers.current.onSelectTopic(nodeId);
+        const node = layoutRef.current?.nodes.find((n) => n.id === nodeId);
+        if (node?.kind === 'text' && handlers.current.onStartEdit) {
+          if (editingRef.current?.id !== nodeId) {
+            handlers.current.onStartEdit(nodeId);
+          }
+        } else {
+          handlers.current.onOpenDetails(nodeId);
+        }
+        suppressSyntheticUntil = performance.now() + 400;
       } else {
         const p = local(e.clientX, e.clientY);
         const k = clampZoom(viewRef.current.k * DOUBLE_TAP_ZOOM);
         animateTo({ ...viewRef.current, k }, 220, { cx: p.x, cy: p.y });
+        suppressSyntheticUntil = performance.now() + 400;
       }
     };
 
@@ -944,9 +962,15 @@ export const MapView: React.FC<MapViewProps> = ({
       if (mode === 'nodepress' || mode === 'drag') e.preventDefault();
     };
 
-    const onClickCapture = (e: MouseEvent) => {
-      if (performance.now() < suppressClickUntil) {
+    const onMouseCapture = (e: MouseEvent) => {
+      const synthetic = performance.now() < suppressSyntheticUntil;
+      if (e.type === 'click' && !synthetic && performance.now() < suppressClickUntil) {
         suppressClickUntil = 0;
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
+      if (synthetic) {
         e.stopPropagation();
         e.preventDefault();
       }
@@ -979,7 +1003,9 @@ export const MapView: React.FC<MapViewProps> = ({
 
     container.addEventListener('pointerdown', onDown);
     container.addEventListener('contextmenu', onContextMenu);
-    container.addEventListener('click', onClickCapture, true);
+    container.addEventListener('click', onMouseCapture, true);
+    container.addEventListener('dblclick', onMouseCapture, true);
+    container.addEventListener('mousedown', onMouseCapture, true);
     container.addEventListener('gesturestart', onGestureStart);
     container.addEventListener('gesturechange', onGestureChange);
     container.addEventListener('gestureend', onGestureEnd);
@@ -988,7 +1014,9 @@ export const MapView: React.FC<MapViewProps> = ({
       finishDrag(false);
       container.removeEventListener('contextmenu', onContextMenu);
       container.removeEventListener('pointerdown', onDown);
-      container.removeEventListener('click', onClickCapture, true);
+      container.removeEventListener('click', onMouseCapture, true);
+      container.removeEventListener('dblclick', onMouseCapture, true);
+      container.removeEventListener('mousedown', onMouseCapture, true);
       container.removeEventListener('gesturestart', onGestureStart);
       container.removeEventListener('gesturechange', onGestureChange);
       container.removeEventListener('gestureend', onGestureEnd);
@@ -1226,9 +1254,10 @@ export const MapView: React.FC<MapViewProps> = ({
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                // Mouse: i blocchi di testo si modificano in place; formule, immagini e touch aprono i dettagli.
-                if (node.kind === 'text' && onStartEdit && !window.matchMedia?.('(pointer: coarse)').matches) {
-                  onStartEdit(node.id);
+                // I blocchi di testo si modificano in place (anche su touch); formule e immagini aprono i dettagli.
+                if (editingRef.current?.id === node.id) return;
+                if (node.kind === 'text' && handlers.current.onStartEdit) {
+                  handlers.current.onStartEdit(node.id);
                 } else {
                   handlers.current.onOpenDetails(node.id);
                 }
