@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppController,
   GROUPS,
+  RelationshipShape,
   RelationshipView,
   TaskData,
+  TextStyle,
   TitleMode,
   TopicView,
   markerDisplayName,
@@ -24,9 +26,12 @@ import {
   ChevronRight,
   X,
   AlertCircle,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
 } from 'lucide-react';
 import {
-  Badge,
   Banner,
   Button,
   Field,
@@ -37,6 +42,9 @@ import {
   Textarea,
   cn,
 } from '@xmap/ui-kit';
+
+import { ResizeHandle } from './ResizeHandle.js';
+import { INSPECTOR_PANEL, panelStyle } from './usePanelWidth.js';
 
 // I valori di colore sono dati salvati nel file XMind (compatibilità col formato), non stile.
 const BRANCH_COLORS = ['#E65D5D', '#E9863F', '#C99A12', '#79A83B', '#1599B5', '#7953A9', '#4E5D6C'];
@@ -51,9 +59,16 @@ const TEMPLATES = [
 ];
 const TITLE_MODE_ITEMS: { id: 'formula_only' | 'keep_title' | 'custom'; label: string }[] = [
   { id: 'formula_only', label: 'Solo formula' },
-  { id: 'keep_title', label: 'Mantieni titolo' },
-  { id: 'custom', label: 'Titolo custom' },
+  { id: 'keep_title', label: 'Mantieni' },
+  { id: 'custom', label: 'Custom' },
 ];
+const RELATIONSHIP_SHAPES: { id: RelationshipShape; label: string }[] = [
+  { id: 'curved', label: 'Curva' },
+  { id: 'straight', label: 'Dritta' },
+  { id: 'angled', label: 'Ad angolo' },
+  { id: 'zigzag', label: 'Zig-zag' },
+];
+type TextStylePatch = Parameters<AppController['setTopicTextStyle']>[1];
 
 export interface InspectorProps {
   topic: TopicView | null;
@@ -64,6 +79,9 @@ export interface InspectorProps {
   onClose: () => void;
   darkMode: boolean;
   onToast: (type: 'info' | 'success' | 'warning' | 'error', message: string) => void;
+  /** Larghezza da `lg` in su (px) e setter: la maniglia sul bordo sinistro la modifica. */
+  width: number;
+  onWidthChange: (width: number) => void;
 }
 
 // Anello di focus dei bottoni ui-kit, riusato dai controlli che non sono `Button`.
@@ -83,34 +101,165 @@ const chipClass = (active: boolean) =>
 const swatchHairline = 'ring-1 ring-inset ring-foreground/10';
 const swatchSelected = 'ring-2 ring-primary ring-offset-2 ring-offset-background';
 
+// Stato aperto/chiuso delle sezioni, ricordato tra una selezione e l'altra
+// (in memoria e in localStorage); il default vale solo finché l'utente non sceglie.
+const SECTIONS_STORAGE_KEY = 'xmap-studio.inspector-sections';
+let sectionState: Record<string, boolean> | null = null;
+
+function loadSectionState(): Record<string, boolean> {
+  if (sectionState) return sectionState;
+  const state: Record<string, boolean> = {};
+  sectionState = state;
+  try {
+    const raw = window.localStorage.getItem(SECTIONS_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object') {
+      for (const [k, v] of Object.entries(parsed)) if (typeof v === 'boolean') state[k] = v;
+    }
+  } catch {
+    // localStorage non disponibile o contenuto corrotto: si riparte dai default.
+  }
+  return state;
+}
+
+function saveSectionState(key: string, open: boolean) {
+  const state = loadSectionState();
+  state[key] = open;
+  try {
+    window.localStorage.setItem(SECTIONS_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Salvataggio best-effort: lo stato in memoria resta valido.
+  }
+}
+
 // Sezione richiudibile: il disclosure è comportamento locale, quindi non usa `Section` di ui-kit.
 const InspectorSection: React.FC<{
+  id: string;
   title: string;
   icon: React.ReactNode;
   defaultOpen?: boolean;
-  count?: number;
+  /** Riassunto breve mostrato a destra dell'intestazione quando la sezione è chiusa. */
+  summary?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, icon, defaultOpen = true, count, children }) => {
-  const [open, setOpen] = useState(defaultOpen);
+}> = ({ id, title, icon, defaultOpen = false, summary, children }) => {
+  const [open, setOpen] = useState(() => loadSectionState()[id] ?? defaultOpen);
+  const toggle = () => {
+    saveSectionState(id, !open);
+    setOpen(!open);
+  };
   return (
     <section className="border-b">
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        onClick={toggle}
+        className="flex h-8 w-full items-center gap-2 px-3 text-left text-xs font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <span className="flex items-center text-muted-foreground">{icon}</span>
         <span className="flex-1">{title}</span>
-        {typeof count === 'number' && count > 0 && <Badge variant="secondary" size="sm">{count}</Badge>}
+        {!open && summary != null && (
+          <span className="flex items-center text-2xs font-normal text-muted-foreground">{summary}</span>
+        )}
         {open ? (
           <ChevronDown className="size-3.5 text-muted-foreground" />
         ) : (
           <ChevronRight className="size-3.5 text-muted-foreground" />
         )}
       </button>
-      {open && <div className="flex flex-col gap-3 px-4 pb-4">{children}</div>}
+      {open && <div className="flex flex-col gap-2 px-3 pb-3 pt-1">{children}</div>}
     </section>
+  );
+};
+
+// Selettore colore compatto: pulsante con il pallino del colore corrente che apre una griglia.
+const ColorPopover: React.FC<{
+  label: string;
+  value: string | null;
+  colors: string[];
+  noneLabel: string;
+  onSelect: (value: string | null) => void;
+}> = ({ label, value, colors, noneLabel, onSelect }) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+
+  const pick = (c: string | null) => {
+    onSelect(c);
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={`${label}: ${value ?? noneLabel}`}
+        title={label}
+        onClick={() => setOpen((v) => !v)}
+        className={cn('flex h-7 items-center gap-1 rounded-sm border px-1.5 hover:bg-accent', FOCUS_RING)}
+      >
+        <span
+          className={cn('size-4 rounded-full', swatchHairline, !value && 'bg-foreground/80')}
+          style={value ? { backgroundColor: value } : undefined}
+        />
+        <ChevronDown className="size-3 text-muted-foreground" />
+      </button>
+      {open && (
+        <div
+          role="group"
+          aria-label={label}
+          className="absolute right-0 top-full z-20 mt-1 flex w-44 flex-col gap-2 rounded-md border bg-background p-2 shadow-dialog"
+        >
+          <button
+            type="button"
+            aria-pressed={!value}
+            onClick={() => pick(null)}
+            className={cn(chipClass(!value), 'flex h-6 items-center justify-center px-2')}
+          >
+            {noneLabel}
+          </button>
+          <div className="flex flex-wrap gap-2">
+            {colors.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={`${label} ${c}`}
+                aria-pressed={value?.toLowerCase() === c.toLowerCase()}
+                onClick={() => pick(c)}
+                className={cn(
+                  'size-5 rounded-full',
+                  FOCUS_RING,
+                  value?.toLowerCase() === c.toLowerCase() ? swatchSelected : swatchHairline
+                )}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -127,6 +276,8 @@ export const Inspector: React.FC<InspectorProps> = ({
   onClose,
   darkMode,
   onToast,
+  width,
+  onWidthChange,
 }) => {
   if (!topic) return null;
   return (
@@ -140,6 +291,8 @@ export const Inspector: React.FC<InspectorProps> = ({
       onClose={onClose}
       darkMode={darkMode}
       onToast={onToast}
+      width={width}
+      onWidthChange={onWidthChange}
     />
   );
 };
@@ -153,8 +306,11 @@ const InspectorBody: React.FC<InspectorProps> = ({
   onClose,
   darkMode,
   onToast,
+  width,
+  onWidthChange,
 }) => {
   const t = topic as TopicView;
+  const ts: TextStyle = t.textStyle ?? {};
 
   const [title, setTitle] = useState(t.title);
   const [notes, setNotes] = useState(t.notes);
@@ -176,6 +332,19 @@ const InspectorBody: React.FC<InspectorProps> = ({
   const [relTitle, setRelTitle] = useState('');
 
   const [task, setTask] = useState<TaskData>(t.task || {});
+
+  // Undo/redo (o modifiche da altre viste) cambiano il topic mentre il pannello è aperto:
+  // i campi locali si riallineano al valore del modello.
+  const labelsKey = t.labels.join(', ');
+  const taskKey = JSON.stringify(t.task ?? null);
+  useEffect(() => setTitle(t.title), [t.title]);
+  useEffect(() => setNotes(t.notes), [t.notes]);
+  useEffect(() => setNotesDisplay((t.notesDisplay as 'icon' | 'block') || ''), [t.notesDisplay]);
+  useEffect(() => setLabelsStr(labelsKey), [labelsKey]);
+  useEffect(() => setHref(t.href || ''), [t.href]);
+  useEffect(() => setColor(t.fillColor || null), [t.fillColor]);
+  useEffect(() => setLatex(t.latex || ''), [t.latex]);
+  useEffect(() => setTask(t.task || {}), [taskKey]);
 
   // L'inchiostro salvato resta nero (compatibilità XMind); in tema scuro
   // l'anteprima usa il colore del testo solo per la visualizzazione.
@@ -211,6 +380,27 @@ const InspectorBody: React.FC<InspectorProps> = ({
     () => relationships.filter((r) => r.end1Id === t.id || r.end2Id === t.id),
     [relationships, t.id]
   );
+
+  // Ctrl/Cmd+B e Ctrl/Cmd+I: attivi solo con questo ispettore montato (blocco selezionato)
+  // e fuori da campi di testo, così non interferiscono con la digitazione.
+  useEffect(() => {
+    if (t.kind !== 'text') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+      const key = e.key.toLowerCase();
+      if (key === 'b') {
+        e.preventDefault();
+        applyTextStyle({ bold: !ts.bold });
+      } else if (key === 'i') {
+        e.preventDefault();
+        applyTextStyle({ italic: !ts.italic });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [t.kind, t.id, ts.bold, ts.italic, controller]);
 
   const otherTopics = useMemo(() => allTopics.filter((x) => x.id !== t.id), [allTopics, t.id]);
   const hasChildren = t.childCount > 0;
@@ -278,6 +468,41 @@ const InspectorBody: React.FC<InspectorProps> = ({
       onToast('error', err.message);
     }
   };
+
+  const applyTextStyle = (patch: TextStylePatch) => {
+    try {
+      controller.setTopicTextStyle(t.id, patch);
+      onChanged();
+    } catch (err: any) {
+      onToast('error', err.message);
+    }
+  };
+
+  const applyRelationshipShape = (relationshipId: string, shape: RelationshipShape) => {
+    try {
+      controller.setRelationshipShape(relationshipId, shape);
+      onChanged();
+    } catch (err: any) {
+      onToast('error', err.message);
+    }
+  };
+
+  const textStyleItems: { label: string; icon: React.ReactNode; active: boolean; patch: TextStylePatch }[] = [
+    { label: 'Grassetto', icon: <Bold className="size-4" />, active: !!ts.bold, patch: { bold: !ts.bold } },
+    { label: 'Corsivo', icon: <Italic className="size-4" />, active: !!ts.italic, patch: { italic: !ts.italic } },
+    {
+      label: 'Sottolineato',
+      icon: <Underline className="size-4" />,
+      active: !!ts.underline,
+      patch: { underline: !ts.underline },
+    },
+    {
+      label: 'Barrato',
+      icon: <Strikethrough className="size-4" />,
+      active: !!ts.strikethrough,
+      patch: { strikethrough: !ts.strikethrough },
+    },
+  ];
 
   const toggleMarker = (markerId: string) => {
     try {
@@ -365,12 +590,11 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
   const handleDelete = () => {
     if (t.depth === 0) return;
-    if (!confirm(`Eliminare «${t.displayTitle}» e i suoi sotto-blocchi?`)) return;
     try {
       controller.removeTopic(t.id);
       onChanged();
       onClose();
-      onToast('info', 'Blocco eliminato');
+      onToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
     } catch (err: any) {
       onToast('error', err.message);
     }
@@ -384,18 +608,29 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
   return (
     <aside
+      style={panelStyle(width)}
       className={[
         'flex w-inspector shrink-0 animate-slide-in-right flex-col overflow-hidden border-l bg-background pb-[env(safe-area-inset-bottom)]',
+        'lg:relative lg:w-[var(--panel-w)]',
         // Sotto lg: pannello sovrapposto a destra; sotto sm: bottom sheet a larghezza piena.
         'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:max-w-full max-lg:shadow-dialog',
         'max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:h-[60dvh] max-sm:w-full max-sm:rounded-t-xl max-sm:border-l-0 max-sm:border-t',
       ].join(' ')}
     >
+      <ResizeHandle
+        side="left"
+        label="Ridimensiona pannello dettagli"
+        width={width}
+        min={INSPECTOR_PANEL.min}
+        max={INSPECTOR_PANEL.max}
+        defaultWidth={INSPECTOR_PANEL.defaultWidth}
+        onChange={onWidthChange}
+      />
       {/* Header */}
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+      <div className="flex h-10 shrink-0 items-center gap-1.5 border-b px-3">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{t.displayTitle || '(senza titolo)'}</div>
-          <div className="truncate text-2xs text-muted-foreground">
+          <div className="truncate text-xs font-semibold leading-4">{t.displayTitle || '(senza titolo)'}</div>
+          <div className="truncate text-2xs leading-3 text-muted-foreground">
             {t.path.slice(0, -1).join(' › ') || 'Radice'}
           </div>
         </div>
@@ -414,24 +649,61 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
-        {/* Testo del blocco */}
-        <InspectorSection title="Testo" icon={<FileText className="size-3.5" />}>
-          <Field label="Titolo del blocco">
-            <Input
-              value={title}
-              placeholder="Titolo…"
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            />
-          </Field>
+        {/* Testo del blocco: titolo, stile e colore su due righe */}
+        <InspectorSection id="text" title="Testo" icon={<FileText className="size-3.5" />} defaultOpen>
+          <Input
+            size="sm"
+            aria-label="Titolo del blocco"
+            value={title}
+            placeholder="Titolo…"
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          />
+          {t.kind === 'text' && (
+            <>
+              <div className="flex items-center gap-1">
+                {textStyleItems.map((item) => (
+                  <IconButton
+                    key={item.label}
+                    size="sm"
+                    variant="outline"
+                    label={item.label}
+                    aria-pressed={item.active}
+                    active={item.active}
+                    onClick={() => applyTextStyle(item.patch)}
+                  >
+                    {item.icon}
+                  </IconButton>
+                ))}
+                <div className="ml-auto">
+                  <ColorPopover
+                    label="Colore testo"
+                    value={ts.color ?? null}
+                    colors={BRANCH_COLORS}
+                    noneLabel="Predefinito"
+                    onSelect={(c) => applyTextStyle({ color: c })}
+                  />
+                </div>
+              </div>
+              {t.titleRuns && t.titleRuns.length > 0 && (
+                <div className="text-2xs text-muted-foreground">
+                  Il titolo contiene formattazione parziale da XMind.
+                </div>
+              )}
+            </>
+          )}
         </InspectorSection>
 
-        {/* Equazione */}
+        {/* Equazione: aperta di default solo se il blocco è già un'equazione */}
         <InspectorSection
+          // Stato ricordato separato per equazioni e testo; la key rimonta la sezione al cambio di tipo.
+          key={t.latex ? 'equation:eq' : 'equation:text'}
+          id={t.latex ? 'equation:eq' : 'equation:text'}
           title="Equazione LaTeX"
           icon={<Sigma className="size-3.5" />}
-          count={t.latex ? 1 : undefined}
+          defaultOpen={!!t.latex}
+          summary={t.latex ? <Sigma className="size-3" /> : undefined}
         >
           <div className="eq-preview">
             {preview?.error ? (
@@ -447,45 +719,39 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
           <Textarea
             mono
-            rows={3}
+            rows={2}
+            aria-label="Formula LaTeX"
             value={latex}
             placeholder="\\int_{0}^{1} x^2\\,dx"
             onChange={(e) => setLatex(e.target.value)}
           />
 
-          <div className="flex flex-wrap gap-1">
+          <div
+            role="group"
+            aria-label="Inserisci modello"
+            className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
+          >
             {TEMPLATES.map((tpl) => (
-              <Button
+              <button
                 key={tpl.label}
                 type="button"
-                variant="outline"
-                size="xs"
+                className={cn(chipClass(false), 'shrink-0')}
                 onClick={() => setLatex((prev) => (prev ? `${prev} ${tpl.latex}` : tpl.latex))}
               >
                 {tpl.label}
-              </Button>
+              </button>
             ))}
           </div>
 
-          <SegmentedControl
-            size="sm"
-            className="grid w-full grid-cols-3"
-            items={TITLE_MODE_ITEMS}
-            activeId={titleMode}
-            onChange={(id) => setTitleMode(id)}
-          />
-
-          {titleMode === 'custom' && (
-            <Input
-              value={customTitle}
-              placeholder="Titolo mostrato"
-              onChange={(e) => setCustomTitle(e.target.value)}
+          <div className="flex items-center gap-2">
+            <SegmentedControl
+              size="sm"
+              className="grid flex-1 grid-cols-3"
+              items={TITLE_MODE_ITEMS}
+              activeId={titleMode}
+              onChange={(id) => setTitleMode(id)}
             />
-          )}
-
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Colore</span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1" role="group" aria-label="Colore inchiostro">
               {INK_COLORS.map((c) => (
                 <button
                   key={c}
@@ -494,7 +760,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
                   aria-pressed={inkColor === c}
                   onClick={() => setInkColor(c)}
                   className={cn(
-                    'size-[18px] rounded-full',
+                    'size-4 shrink-0 rounded-full',
                     FOCUS_RING,
                     inkColor === c ? swatchSelected : swatchHairline
                   )}
@@ -503,6 +769,16 @@ const InspectorBody: React.FC<InspectorProps> = ({
               ))}
             </div>
           </div>
+
+          {titleMode === 'custom' && (
+            <Input
+              size="sm"
+              aria-label="Titolo mostrato"
+              value={customTitle}
+              placeholder="Titolo mostrato"
+              onChange={(e) => setCustomTitle(e.target.value)}
+            />
+          )}
 
           <div className="flex items-center gap-2">
             <Button
@@ -524,13 +800,13 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
         {/* Note */}
         <InspectorSection
+          id="notes"
           title="Note"
           icon={<FileText className="size-3.5" />}
-          defaultOpen={false}
-          count={t.notes ? 1 : undefined}
+          summary={t.notes ? '•' : undefined}
         >
           <Textarea
-            rows={4}
+            rows={3}
             value={notes}
             placeholder="Appunti estesi del blocco…"
             onChange={(e) => setNotes(e.target.value)}
@@ -538,6 +814,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
           />
           <Field label="Visualizzazione in XMind">
             <Select
+              size="sm"
               value={notesDisplay}
               onChange={(e) => commitNotesDisplay(e.target.value as 'icon' | 'block' | '')}
             >
@@ -550,10 +827,17 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
         {/* Etichette e link */}
         <InspectorSection
+          id="labels"
           title="Etichette e link"
           icon={<Tag className="size-3.5" />}
-          defaultOpen={false}
-          count={t.labels.length || (t.href ? 1 : 0)}
+          summary={
+            t.labels.length > 0 || t.href ? (
+              <span className="flex items-center gap-1">
+                {t.labels.length > 0 && <span>{t.labels.length}</span>}
+                {t.href && <Link2 className="size-3" />}
+              </span>
+            ) : undefined
+          }
         >
           <Field label="Etichette (separate da virgola)">
             <Input
@@ -577,10 +861,10 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
         {/* Marker */}
         <InspectorSection
+          id="markers"
           title="Marker"
           icon={<Flag className="size-3.5" />}
-          defaultOpen={false}
-          count={t.markers.length}
+          summary={t.markers.length > 0 ? t.markers.length : undefined}
         >
           {t.markers.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -630,7 +914,16 @@ const InspectorBody: React.FC<InspectorProps> = ({
         </InspectorSection>
 
         {/* Colore ramo */}
-        <InspectorSection title="Colore del ramo" icon={<Palette className="size-3.5" />} defaultOpen={false}>
+        <InspectorSection
+          id="branch-color"
+          title="Colore del ramo"
+          icon={<Palette className="size-3.5" />}
+          summary={
+            color ? (
+              <span className={cn('size-3 rounded-full', swatchHairline)} style={{ backgroundColor: color }} />
+            ) : undefined
+          }
+        >
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -660,10 +953,16 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
         {/* Task */}
         <InspectorSection
+          id="task"
           title="Task"
           icon={<ListChecks className="size-3.5" />}
-          defaultOpen={false}
-          count={t.task ? 1 : undefined}
+          summary={
+            task.progress != null
+              ? `${task.progress}%`
+              : task.priority || task.startDate || task.dueDate
+                ? '•'
+                : undefined
+          }
         >
           <div className="grid grid-cols-2 gap-2">
             <Field label="Priorità">
@@ -716,10 +1015,14 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
         {/* Struttura */}
         <InspectorSection
+          id="structure"
           title="Struttura"
           icon={<GitBranch className="size-3.5" />}
-          defaultOpen={false}
-          count={rels.length || t.boundaries.length || t.summaries.length}
+          summary={
+            rels.length + t.boundaries.length + t.summaries.length > 0
+              ? rels.length + t.boundaries.length + t.summaries.length
+              : undefined
+          }
         >
           <div className="flex flex-col gap-1.5">
             <GroupLabel>Relazioni</GroupLabel>
@@ -734,6 +1037,19 @@ const InspectorBody: React.FC<InspectorProps> = ({
                     {r.end1Id === t.id ? '→' : '←'} {other?.displayTitle || otherId}
                     {r.title ? ` · ${r.title}` : ''}
                   </span>
+                  <Select
+                    size="sm"
+                    aria-label="Forma della relazione"
+                    className="w-28 shrink-0"
+                    value={r.style.shape}
+                    onChange={(e) => applyRelationshipShape(r.id, e.target.value as RelationshipShape)}
+                  >
+                    {RELATIONSHIP_SHAPES.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </Select>
                   <button
                     type="button"
                     aria-label="Rimuovi relazione"

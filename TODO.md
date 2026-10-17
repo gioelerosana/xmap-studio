@@ -1,5 +1,10 @@
-- [x] Spostamento dei blocchi nell'albero di fianco con drag & drop (rientro aggiornato)
-- [x] Save on close (prompt Salva/Non salvare/Annulla)
-- [x] Tasto elimina blocco più evidente (cestino rosso nella testata)
-- [x] Quando premo il tasto applica la colonna di sinistra deve mantenere la posizione e non tornare ogni volta all'inizio del file
-- [x] Evita di creare tutti questi file di backup o per lo meno non farmeli vedere tutti. Mettili dentro una cartella nascosta e tienili sotto controllo 
+- [ ] Spostamento libero delle immagini legate da frecce (parziale: i blocchi liberi — immagini, formule o testo collegati da frecce — si trascinano sulla mappa e la posizione si salva in `position`; manca la verifica in XMind che li riapra nello stesso punto)
+- [x] Possibilità di ridimensionamento delle due barre laterali (quando visibili) (maniglia sul bordo interno da 1024px in su, larghezza ricordata; doppio clic = predefinita, frecce da tastiera)
+- [x] Aggiornamento del logo (mappa con nodo Σ in ambra su gradiente indaco; icone PNG, favicon e marchio in app rigenerati)
+- [x] Pagina impostazioni (menu ⋮ › Impostazioni… o Ctrl+,: tema sistema/chiaro/scuro, riduci animazioni, struttura predefinita, barra laterale all'avvio, dettagli alla selezione, info backup, scorciatoie)
+- [x] Snellimento generale della barra destra (intestazioni basse, Testo e stile uniti, equazione chiusa sui blocchi di testo, sezioni ricordate, riassunti nelle sezioni chiuse)
+- [x] Possibilità di modifica mappa direttamente tramite Invii (per creare nodi fratelli) e Tab per creare nodi figli (come XMIND) IMPORTANTE !!! (Tab figlio, Invio fratello, Maiusc+Invio fratello prima, testo modificato nel blocco con F2/Spazio/doppio clic/digitando, frecce, Canc)
+- [x] Eliminare la conferma per l'eliminazione di un blocco (ovunque; il toast ricorda Ctrl+Z)
+- [x] Integrare un Ctrl+Z efficace (nei campi di testo vale l'undo del campo; la selezione resta; i campi del pannello si riallineano; creare e rinominare un blocco si annulla in un colpo)
+- [x] Evitare ridimensionamenti indesiderati dopo aver fatto delle aggiunte di blocchi alla mappa (lo zoom si adatta solo all'apertura o al cambio di foglio; dopo una modifica la vista resta ferma e mostra il blocco nuovo con un pan minimo)
+

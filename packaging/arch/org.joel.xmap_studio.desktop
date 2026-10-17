@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=XMap Studio
+Comment=Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato
+Exec=xmap-studio %F
+Icon=org.joel.xmap_studio
+Terminal=false
+Categories=Office;
+MimeType=application/xmind;
+StartupWMClass=org.joel.xmap_studio

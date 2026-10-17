@@ -1,3 +1,5 @@
+import type { Point, RelationshipStyle, TextStyle, TitleRun } from '../state/types.js';
+
 export const DEFAULT_NODE_W = 180.0;
 export const DEFAULT_NODE_H = 36.0;
 
@@ -42,6 +44,8 @@ export interface MapNode {
   position?: { x: number; y: number };
   customWidth?: number;
   structureClass?: string;
+  textStyle?: TextStyle;
+  titleRuns?: TitleRun[];
   /** Figli disposti in colonna (`attached`, `callout`). */
   children: MapNode[];
   /** Sommari: topic del gruppo `summary` agganciati a una graffa, fuori dalla colonna. */
@@ -83,11 +87,20 @@ export interface LayoutNode {
   sheetIndex: number;
   position?: { x: number; y: number };
   customWidth?: number;
+  /** Vero per un topic libero (gruppo `detached`): si può trascinare ovunque. */
+  floating?: boolean;
+  /**
+   * Solo per i topic liberi: centro della radice del foglio nelle coordinate del
+   * layout. `position` = centro del blocco - `floatOrigin`.
+   */
+  floatOrigin?: { x: number; y: number };
   /**
    * Vero per la radice di una Tree Chart: i figli scendono lungo un tronco
    * verticale in `trunkX(node)` e l'indicatore di collasso sta sotto il blocco.
    */
   childrenBelow: boolean;
+  textStyle?: TextStyle;
+  titleRuns?: TitleRun[];
 }
 
 /** Forma del connettore: gomito dal lato destro (Logic Chart) o dal tronco (Tree Chart). */
@@ -120,6 +133,27 @@ export interface LayoutRelationship {
   from: number;
   to: number;
   accent?: string;
+  style: RelationshipStyle;
+  controlPoints?: [Point | undefined, Point | undefined];
+  /** Geometria già calcolata (`relationshipGeometry`), in coordinate mondo. */
+  geometry: RelationshipGeometry;
+}
+
+/**
+ * Geometria di una relazione: tracciato SVG, punti di estremità, punti di
+ * controllo assoluti (maniglie trascinabili) e posizione dell'etichetta.
+ */
+export interface RelationshipGeometry {
+  /** Attributo `d` del path SVG. */
+  d: string;
+  start: Point;
+  end: Point;
+  /** Maniglie in coordinate mondo: [lato end1, lato end2]. */
+  handles: [Point, Point];
+  /** Direzione (radianti) della tangente uscente alle estremità, per le frecce. */
+  startAngle: number;
+  endAngle: number;
+  label: Point;
 }
 
 export interface Layout {

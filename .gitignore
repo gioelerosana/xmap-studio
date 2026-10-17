@@ -7,6 +7,7 @@ node_modules/
 dist/
 **/dist/
 *.AppImage
+apps/desktop/release/
 
 # Backup e file temporanei generati dall'app durante il salvataggio
 .xmap-studio/
@@ -23,3 +24,13 @@ dist/
 
 # worktree dei sotto-agenti (lavoro parallelo)
 .claude/worktrees/
+
+# Build di makepkg
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/xmap-studio/
+packaging/arch/*.pkg.tar.*
+packaging/arch/release/src/
+packaging/arch/release/pkg/
+packaging/arch/release/xmap-studio/
+packaging/arch/release/*.pkg.tar.*

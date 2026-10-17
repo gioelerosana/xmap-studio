@@ -2,18 +2,19 @@
 
 La vista mappa mostra la mappa come **Logic Chart orizzontale** in stile XMind
 (topic centrale a sinistra, rami di primo livello in colonna, sottoalberi verso
-destra), con rami colorati e immagini/equazioni renderizzate. **L'editing resta
-nell'albero laterale e nell'ispettore**: la mappa serve a orientarsi,
-selezionare, collassare/espandere e zoomare. Nessuna webview esterna: la vista è
+destra), con rami colorati e immagini/equazioni renderizzate. Sulla mappa si
+seleziona, si collassa, si zooma, si **spostano i blocchi con drag & drop** e si
+**piegano le relazioni** trascinandone le maniglie; il resto dell'editing passa
+dall'albero laterale e dall'ispettore. Nessuna webview esterna: la vista è
 un SVG dentro l'app React.
 
 ## 1. Scelte di progetto
 
 | Tema | Scelta |
 |---|---|
-| Collocazione | `MapView` (`apps/web/src/components/MapView.tsx`) è la vista primaria; l'outliner testuale è `OutlineView`. |
+| Collocazione | `MapView` (`apps/web/src/components/MapView.tsx`) è l'unica vista dell'app (la vista outliner è stata rimossa dalla UI; l'export outline resta nel core). |
 | Equazioni nei nodi | SVG MathJax (`renderLatexToSvg`) con cache per stringa LaTeX; immagini XMind da `resources/`. |
-| Interazione | Selezione, collapse/expand, pan e zoom. Niente menu contestuale. |
+| Interazione | Selezione, collapse/expand, pan, zoom, drag & drop dei blocchi, maniglie delle relazioni. Niente menu contestuale. |
 | Dati | Il layout è alimentato dai **DTO** (`SheetDto`/`TopicView`), non dal modello. |
 
 ## 2. Architettura
@@ -85,6 +86,25 @@ Principi:
   click sull'indicatore → collapse/expand.
 - Cache degli SVG delle formule per stringa LaTeX; fallback al testo LaTeX se il
   render fallisce.
+- **Drag & drop dei blocchi** (`map/dragTarget.ts`, funzioni pure): col mouse
+  parte oltre `TAP_SLOP_PX` su un blocco non radice, al tocco con pressione
+  prolungata (~400 ms); lo sfondo continua a fare pan. Sopra un blocco: fascia
+  alta/bassa della metà sinistra → `before`/`after`, il resto → `into`; nello
+  spazio vuoto vince il fratello vicino o il blocco più vicino a sinistra
+  (così un blocco portato accanto alla radice diventa un nuovo ramo). Esc
+  annulla; il rilascio chiama `moveTopic` come l'albero laterale.
+- **Stile del testo**: `textStyle` (`style.properties`) e `titleRuns`
+  (`attributedTitle`) resi con `map/RichTitle.tsx`; i sotto-blocchi hanno peso
+  normale così il grassetto del file si distingue. Un colore del file illeggibile
+  sul tema corrente (verde scuro su blocco scuro) cede al colore del blocco.
+- **Relazioni** (`map/RelationshipLayer.tsx`, geometria in
+  `packages/core/src/layout/relationship.ts`): forma, tratteggio, spessore,
+  colore e frecce dal tema del foglio (`theme.relationship`) o dalla relazione;
+  forme curved/straight/angled/zigzag ricostruite dal codice di XMind 26.03.
+  `controlPoints` sono offset dal centro del blocco di estremità. Clic =
+  selezione; le maniglie si trascinano (nello zig-zag spostano il tratto
+  centrale, quindi cambiano entrambi i punti in un solo passo di undo); doppio
+  clic su una maniglia ripristina il default.
 
 ## 5. Rischi e limiti
 
@@ -97,5 +117,6 @@ Principi:
 
 ## 6. Fuori scope
 
-Menu contestuale sulla mappa, drag & drop dei nodi nel canvas (resta
-nell'albero), editing inline, export SVG/PNG della mappa, temi personalizzati.
+Menu contestuale sulla mappa, editing inline, export SVG/PNG della mappa, temi
+personalizzati: sono voci della matrice di parità
+([`PRODUCT.md`](PRODUCT.md) §4 Fase 8).

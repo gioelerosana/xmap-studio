@@ -1,0 +1,1 @@
+../xmap-studio.sh

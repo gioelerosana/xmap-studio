@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   HeaderBar,
-  ViewSwitcher,
   Button,
   IconButton,
   Menu,
@@ -15,6 +14,7 @@ import {
 import {
   AppController,
   Layout,
+  Point,
   TopicView,
   WorkbookDto,
   buildArchiveBytes,
@@ -29,8 +29,6 @@ import {
   Redo2,
   Moon,
   Sun,
-  ListTree,
-  Network,
   MoreVertical,
   FileDown,
   FileUp,
@@ -42,6 +40,7 @@ import {
   Info,
   PanelRight,
   PanelLeft,
+  Settings,
 } from 'lucide-react';
 import {
   openLocalXmindFile,
@@ -52,14 +51,22 @@ import {
   downloadBlob,
 } from './adapters/fileSystem.js';
 import { Sidebar } from './components/Sidebar.js';
-import { MapView } from './components/MapView.js';
-import { OutlineView } from './components/OutlineView.js';
+import { MapView, type MapEditing } from './components/MapView.js';
+import type { EditExit } from './components/map/NodeEditor.js';
+import { neighborId, selectionAfterDelete } from './components/map/navigation.js';
 import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
+import { INSPECTOR_PANEL, SIDEBAR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
 import { ExportModal } from './components/ExportModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import { DropPlacement, TopicFilter } from './components/TopicTree.js';
+import { SettingsPage } from './components/SettingsPage.js';
+import { useSettings } from './settings.js';
+import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
+
+const TEXT_FIELD = 'input,textarea,select,[contenteditable=""],[contenteditable="true"]';
+const INTERACTIVE = `${TEXT_FIELD},button,a,[role="button"],[role="menuitem"],[role="dialog"]`;
 
 declare global {
   interface Window {
@@ -111,12 +118,10 @@ function sanitizeName(name: string): string {
   );
 }
 
-const MAP_STRUCTURE_KEY = 'xmap-studio.map-structure';
 const COMPACT_QUERY = '(max-width: 639px)';
 const WIDE_QUERY = '(min-width: 1024px)';
-const SIDEBAR_KEY = 'xmap-studio.sidebar';
 /** Livelli di compattazione dell'header: da questo livello in poi l'elemento va nel menu. */
-const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, views: 6, max: 6 } as const;
+const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, max: 5 } as const;
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches);
@@ -135,32 +140,43 @@ export const App: React.FC = () => {
   const [controller] = useState(() => new AppController());
   const [workbook, setWorkbook] = useState<WorkbookDto | null>(null);
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
-  const [viewMode, setViewMode] = useState<'map' | 'outline'>('map');
+  // Cresce a ogni documento aperto: la mappa si riadatta solo allora (o al cambio di foglio).
+  const [documentKey, setDocumentKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<TopicFilter>('all');
-  const [darkMode, setDarkMode] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
-  );
+  const { settings, darkMode, update: updateSettings, reset: resetSettings } = useSettings();
+  const toggleDarkMode = useCallback(() => updateSettings({ theme: darkMode ? 'light' : 'dark' }), [darkMode, updateSettings]);
   const [selectedTopicId, setSelectedTopicId] = useState<string | undefined>();
   // Sotto lg la sidebar è un drawer, chiuso di default.
-  // Nascosta di default per lasciare spazio alla mappa; su desktop si ricorda la scelta.
+  // Su desktop parte come da impostazioni; il pulsante nella barra la ricorda.
   const [sidebarOpen, setSidebarOpen] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia?.(WIDE_QUERY).matches &&
-      window.localStorage?.getItem(SIDEBAR_KEY) === 'open'
+    () => typeof window !== 'undefined' && window.matchMedia?.(WIDE_QUERY).matches && settings.sidebarOnStartup
+  );
+  const [sidebarWidth, setSidebarWidth] = usePanelWidth(
+    SIDEBAR_PANEL.storageKey,
+    SIDEBAR_PANEL.defaultWidth,
+    SIDEBAR_PANEL.min,
+    SIDEBAR_PANEL.max,
+  );
+  const [inspectorWidth, setInspectorWidth] = usePanelWidth(
+    INSPECTOR_PANEL.storageKey,
+    INSPECTOR_PANEL.defaultWidth,
+    INSPECTOR_PANEL.min,
+    INSPECTOR_PANEL.max,
+    sidebarOpen ? sidebarWidth : 0,
   );
   const toggleSidebar = useCallback(() => {
-    setSidebarOpen((open) => {
-      if (window.matchMedia(WIDE_QUERY).matches) window.localStorage?.setItem(SIDEBAR_KEY, open ? 'closed' : 'open');
-      return !open;
-    });
-  }, []);
+    const next = !sidebarOpen;
+    setSidebarOpen(next);
+    if (window.matchMedia(WIDE_QUERY).matches) updateSettings({ sidebarOnStartup: next });
+  }, [sidebarOpen, updateSettings]);
   // Smartphone: il tap seleziona soltanto, il pannello dettagli (bottom sheet)
   // si apre su richiesta per non coprire la mappa a ogni tocco.
+  // Su desktop la selezione apre i dettagli solo se l'impostazione lo chiede.
   const compact = useMediaQuery(COMPACT_QUERY);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const inspectorVisible = Boolean(selectedTopicId) && (!compact || detailsOpen);
+  const [detailsClosed, setDetailsClosed] = useState(false);
+  const inspectorVisible = Boolean(selectedTopicId) && (compact ? detailsOpen : !detailsClosed && (detailsOpen || settings.detailsOnSelect));
 
   // Header adattivo: se i pulsanti non ci stanno si sale di livello e le azioni
   // meno usate passano nel menu ⋮ (vedi HEADER_LEVEL). Si misura lo spazio reale,
@@ -196,18 +212,34 @@ export const App: React.FC = () => {
     return () => ro.disconnect();
   }, []);
   const showLabels = headerLevel < HEADER_LEVEL.iconsOnly;
+  const inlineDetails = headerLevel < HEADER_LEVEL.redoTheme;
   const inlineRedo = headerLevel < HEADER_LEVEL.redoTheme;
   const inlineUndo = headerLevel < HEADER_LEVEL.undo;
   const inlineOpen = headerLevel < HEADER_LEVEL.open;
-  const inlineViews = headerLevel < HEADER_LEVEL.views;
   const showTitle = headerLevel < HEADER_LEVEL.title;
+
   useEffect(() => {
+    setDetailsClosed(false);
     if (!selectedTopicId) setDetailsOpen(false);
   }, [selectedTopicId]);
+
   const openDetails = useCallback((id: string) => {
     setSelectedTopicId(id);
+    setDetailsClosed(false);
     setDetailsOpen(true);
   }, []);
+
+  const toggleDetails = useCallback(() => {
+    if (!selectedTopicId) return;
+    if (inspectorVisible) {
+      setDetailsClosed(true);
+      setDetailsOpen(false);
+    } else {
+      setDetailsClosed(false);
+      setDetailsOpen(true);
+    }
+  }, [selectedTopicId, inspectorVisible]);
+
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
@@ -219,7 +251,9 @@ export const App: React.FC = () => {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [closePrompt, setClosePrompt] = useState<CloseAction>(null);
+  const [editing, setEditing] = useState<(MapEditing & { isNew?: boolean }) | null>(null);
 
   const addToast = useCallback((type: ToastMessage['type'], message: string) => {
     const id = Math.random().toString(36).slice(2);
@@ -259,22 +293,13 @@ export const App: React.FC = () => {
   );
 
   // Solo visualizzazione: la struttura salvata nel file non cambia.
-  const [mapStructure, setMapStructure] = useState<MapStructure>(() =>
-    typeof window !== 'undefined' && window.localStorage?.getItem(MAP_STRUCTURE_KEY) === 'logic' ? 'logic' : 'tree'
-  );
-  useEffect(() => {
-    window.localStorage?.setItem(MAP_STRUCTURE_KEY, mapStructure);
-  }, [mapStructure]);
+  const mapStructure: MapStructure = settings.mapStructure;
+  const setMapStructure = useCallback((structure: MapStructure) => updateSettings({ mapStructure: structure }), [updateSettings]);
 
   const currentLayout = useMemo<Layout | null>(() => {
-    if (!workbook || viewMode !== 'map') return null;
+    if (!workbook) return null;
     return controller.mapLayout(activeSheetIndex, collapsedIds, mapStructure);
-  }, [controller, workbook, activeSheetIndex, viewMode, collapsedIds, mapStructure]);
-
-  const outlineText = useMemo(() => {
-    if (!workbook || viewMode !== 'outline') return '';
-    return controller.export('outline');
-  }, [controller, workbook, viewMode, activeSheetIndex]);
+  }, [controller, workbook, activeSheetIndex, collapsedIds, mapStructure]);
 
   // Tema
   useEffect(() => {
@@ -299,6 +324,7 @@ export const App: React.FC = () => {
           setWorkbook(dto);
           setFileHandle(undefined);
           setActiveSheetIndex(0);
+          setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
           addToast('success', `Aperto: ${res.name}`);
@@ -328,6 +354,7 @@ export const App: React.FC = () => {
           setWorkbook(dto);
           setFileHandle(undefined);
           setActiveSheetIndex(0);
+          setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
           addToast('success', `Mappa aperta: ${res.name}`);
@@ -342,6 +369,7 @@ export const App: React.FC = () => {
         setWorkbook(dto);
         setFileHandle(res.handle);
         setActiveSheetIndex(0);
+        setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
         addToast('success', `Mappa aperta: ${res.name}`);
@@ -353,7 +381,7 @@ export const App: React.FC = () => {
 
   const handleLoadDemo = async () => {
     try {
-      const response = await fetch('/demo.xmind');
+      const response = await fetch('demo.xmind');
       if (!response.ok) throw new Error('File demo non reperibile');
       const buffer = await response.arrayBuffer();
       await requestWorkbookReplacement(async () => {
@@ -361,6 +389,7 @@ export const App: React.FC = () => {
         setWorkbook(dto);
         setFileHandle(undefined);
         setActiveSheetIndex(0);
+        setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
         addToast('info', 'Mappa demo caricata');
@@ -403,6 +432,7 @@ export const App: React.FC = () => {
       setWorkbook(dto);
       setFileHandle(undefined);
       setActiveSheetIndex(0);
+      setDocumentKey((k) => k + 1);
       setCollapsedIds(new Set());
       setSelectedTopicId(undefined);
       addToast('success', 'Nuova mappa creata');
@@ -503,38 +533,70 @@ export const App: React.FC = () => {
     }
   };
 
+  // Undo/redo: la selezione resta se il blocco esiste ancora, altrimenti risale al genitore.
+  const doUndoRedo = useCallback(
+    (kind: 'undo' | 'redo') => {
+      const parentOf = new Map(allTopics.map((t) => [t.id, t.parentId]));
+      kind === 'undo' ? controller.undo() : controller.redo();
+      const dto = controller.workbook();
+      const alive = new Set(dto?.sheets[activeSheetIndex]?.topics.map((t) => t.id));
+      let cur = selectedTopicId;
+      while (cur && !alive.has(cur)) cur = parentOf.get(cur);
+      setSelectedTopicId(cur);
+      setEditing(null);
+      refreshState();
+    },
+    [controller, allTopics, activeSheetIndex, selectedTopicId, refreshState]
+  );
+
   // Scorciatoie da tastiera
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       const key = e.key.toLowerCase();
-      if (key === 'z') {
+      const inField = (e.target as Element | null)?.closest?.(TEXT_FIELD);
+      if (key === 'z' || key === 'y') {
+        // In un campo di testo vale l'undo nativo del campo.
+        if (inField) return;
         e.preventDefault();
-        e.shiftKey ? controller.redo() : controller.undo();
-        refreshState();
-      } else if (key === 'y') {
-        e.preventDefault();
-        controller.redo();
-        refreshState();
+        doUndoRedo(key === 'y' || e.shiftKey ? 'redo' : 'undo');
       } else if (key === 's') {
         e.preventDefault();
         e.shiftKey ? handleSaveAs() : handleSave();
       } else if (key === 'o') {
         e.preventDefault();
         handleOpenLocalFile();
-      } else if (key === 'm') {
-        e.preventDefault();
-        setViewMode('map');
       } else if (e.shiftKey && key === 'n') {
         e.preventDefault();
         if (selectedTopic) handleAddChild(selectedTopic.id);
         else if (allTopics[0]) handleAddChild(allTopics[0].id);
+      } else if (key === ',') {
+        e.preventDefault();
+        setSettingsOpen(true);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [controller, refreshState, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
+  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
+
+  // Esc chiude l'Inspector se aperto e non si sta editando testo
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (editing) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+      if (inspectorVisible) {
+        e.preventDefault();
+        setDetailsClosed(true);
+        setDetailsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editing, inspectorVisible]);
 
   // Chiusura con modifiche non salvate
   useEffect(() => {
@@ -588,6 +650,30 @@ export const App: React.FC = () => {
         addToast('success', 'Blocco spostato');
       } catch (err: any) {
         addToast('error', `Spostamento non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleMoveFloating = useCallback(
+    (id: string, position: Point) => {
+      try {
+        controller.setTopicPosition(id, position);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Spostamento non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleRelationshipControlPoint = useCallback(
+    (relationshipId: string, points: [Point | null | undefined, Point | null | undefined]) => {
+      try {
+        controller.setRelationshipControlPoints(relationshipId, points);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Relazione non modificata: ${err.message}`);
       }
     },
     [controller, refreshState, addToast]
@@ -655,16 +741,124 @@ export const App: React.FC = () => {
 
   const handleDeleteSelected = () => {
     if (!selectedTopic || selectedTopic.depth === 0) return;
-    if (!confirm(`Eliminare «${selectedTopic.displayTitle}» e i suoi sotto-blocchi?`)) return;
     try {
+      const next = currentLayout ? selectionAfterDelete(currentLayout, selectedTopic.id) : undefined;
       controller.removeTopic(selectedTopic.id);
-      setSelectedTopicId(undefined);
+      setSelectedTopicId(next);
+      setEditing(null);
       refreshState();
-      addToast('info', 'Blocco eliminato');
+      addToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
     } catch (err: any) {
       addToast('error', err.message);
     }
   };
+
+  // Nuovo blocco da tastiera o dalla mappa: si seleziona ed entra subito in editing in place.
+  const createTopic = useCallback(
+    (anchorId: string, kind: 'child' | 'after' | 'before') => {
+      try {
+        const { newId } =
+          kind === 'child'
+            ? controller.addTopic(anchorId, 'Nuovo blocco')
+            : controller.addSiblingTopic(anchorId, 'Nuovo blocco', kind);
+        // Il genitore collassato va espanso (per i fratelli il genitore non cambia, ma è innocuo).
+        setCollapsedIds((prev) => {
+          if (!prev.has(anchorId)) return prev;
+          const next = new Set(prev);
+          next.delete(anchorId);
+          return next;
+        });
+        setSelectedTopicId(newId);
+        setEditing({ id: newId, mode: 'all', isNew: true });
+        refreshState();
+      } catch (err: any) {
+        addToast('error', err.message);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleCommitEdit = (id: string, text: string, exit: EditExit) => {
+    const isNew = editing?.id === id && editing.isNew;
+    setEditing(null);
+    const topic = allTopics.find((t) => t.id === id);
+    try {
+      if (topic && text.trim().length > 0 && text !== topic.title) {
+        controller.setTopicTitle(id, text, { mergeWithPrevious: isNew });
+        refreshState();
+      }
+    } catch (err: any) {
+      addToast('error', err.message);
+      return;
+    }
+    if (exit === 'tab') createTopic(id, 'child');
+  };
+
+  const startEdit = (id: string) => {
+    const t = allTopics.find((x) => x.id === id);
+    if (!t) return;
+    if (t.kind !== 'text') openDetails(id);
+    else setEditing({ id, mode: 'all' });
+  };
+
+  // Scorciatoie sulla mappa (stile XMind): solo con il focus fuori da campi e controlli, senza modali.
+  const keyCtx = useRef({ startEdit, createTopic, handleDeleteSelected });
+  keyCtx.current = { startEdit, createTopic, handleDeleteSelected };
+  const mapKeysEnabled =
+    Boolean(workbook) &&
+    !editing &&
+    !exportModalOpen &&
+    !importModalOpen &&
+    !aboutOpen &&
+    !replacePrompt &&
+    !closePrompt &&
+    !busy;
+  useEffect(() => {
+    if (!mapKeysEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+      const sel = selectedTopic;
+      if (!sel) return;
+      const c = keyCtx.current;
+      const go = (dir: 'up' | 'down' | 'left' | 'right') => {
+        const id = currentLayout ? neighborId(currentLayout, sel.id, dir) : undefined;
+        if (id) setSelectedTopicId(id);
+      };
+      switch (e.key) {
+        case 'Tab':
+          if (e.shiftKey) return;
+          c.createTopic(sel.id, 'child');
+          break;
+        case 'Enter':
+          c.createTopic(sel.id, e.shiftKey ? 'before' : 'after');
+          break;
+        case 'F2':
+        case ' ':
+          c.startEdit(sel.id);
+          break;
+        case 'Delete':
+        case 'Backspace':
+          if (sel.depth === 0) return;
+          c.handleDeleteSelected();
+          break;
+        case 'ArrowUp': go('up'); break;
+        case 'ArrowDown': go('down'); break;
+        case 'ArrowLeft': go('left'); break;
+        case 'ArrowRight': go('right'); break;
+        case 'Escape':
+          setSelectedTopicId(undefined);
+          break;
+        default:
+          if (e.key.length !== 1 || sel.kind !== 'text') return;
+          setEditing({ id: sel.id, mode: 'text', text: e.key });
+      }
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mapKeysEnabled, selectedTopic, currentLayout]);
 
   const handleConfirmClose = async (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') {
@@ -682,17 +876,13 @@ export const App: React.FC = () => {
   const overflowItems: MenuItem[] = [
     ...(!inlineOpen ? [{ id: 'open', label: 'Apri…', icon: <FolderOpen className="size-4" />, onSelect: handleOpenLocalFile }] : []),
     ...(workbook && !inlineUndo
-      ? [{ id: 'undo', label: 'Annulla', icon: <Undo2 className="size-4" />, disabled: !workbook.canUndo, onSelect: () => { controller.undo(); refreshState(); } }]
+      ? [{ id: 'undo', label: 'Annulla', icon: <Undo2 className="size-4" />, disabled: !workbook.canUndo, onSelect: () => doUndoRedo('undo') }]
       : []),
     ...(workbook && !inlineRedo
-      ? [{ id: 'redo', label: 'Ripeti', icon: <Redo2 className="size-4" />, disabled: !workbook.canRedo, onSelect: () => { controller.redo(); refreshState(); } }]
+      ? [{ id: 'redo', label: 'Ripeti', icon: <Redo2 className="size-4" />, disabled: !workbook.canRedo, onSelect: () => doUndoRedo('redo') }]
       : []),
-    ...(workbook && !inlineViews
-      ? [
-          viewMode === 'map'
-            ? { id: 'view-outline', label: 'Vista outliner', icon: <ListTree className="size-4" />, onSelect: () => setViewMode('outline') }
-            : { id: 'view-map', label: 'Vista mappa', icon: <Network className="size-4" />, onSelect: () => setViewMode('map') },
-        ]
+    ...(workbook && !inlineDetails
+      ? [{ id: 'details', label: 'Dettagli blocco', icon: <PanelRight className="size-4" />, disabled: !selectedTopicId, onSelect: toggleDetails }]
       : []),
   ];
 
@@ -729,12 +919,14 @@ export const App: React.FC = () => {
           disabled: !selectedTopic || selectedTopic.depth === 0,
           onSelect: handleDeleteSelected,
         },
-        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: true, onSelect: () => setDarkMode((v) => !v) },
+        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: true, onSelect: toggleDarkMode },
+        { id: 'settings', label: 'Impostazioni…', icon: <Settings className="size-4" />, shortcut: 'Ctrl+,', onSelect: () => setSettingsOpen(true) },
         { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ]
     : [
         ...overflowItems,
-        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: overflowItems.length > 0, onSelect: () => setDarkMode((v) => !v) },
+        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: overflowItems.length > 0, onSelect: toggleDarkMode },
+        { id: 'settings', label: 'Impostazioni…', icon: <Settings className="size-4" />, shortcut: 'Ctrl+,', onSelect: () => setSettingsOpen(true) },
         { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ];
 
@@ -773,55 +965,34 @@ export const App: React.FC = () => {
             </Button>
             {workbook && (inlineUndo || inlineRedo) && <Separator orientation="vertical" className="mx-1 h-4" />}
             {workbook && inlineUndo && (
-              <IconButton size="sm" disabled={!workbook.canUndo} onClick={() => { controller.undo(); refreshState(); }} label="Annulla (Ctrl+Z)">
+              <IconButton size="sm" disabled={!workbook.canUndo} onClick={() => doUndoRedo('undo')} label="Annulla (Ctrl+Z)">
                 <Undo2 className="size-4" />
               </IconButton>
             )}
             {workbook && inlineRedo && (
-              <IconButton size="sm" disabled={!workbook.canRedo} onClick={() => { controller.redo(); refreshState(); }} label="Ripeti (Ctrl+Shift+Z)">
+              <IconButton size="sm" disabled={!workbook.canRedo} onClick={() => doUndoRedo('redo')} label="Ripeti (Ctrl+Shift+Z)">
                 <Redo2 className="size-4" />
               </IconButton>
             )}
           </>
         }
-        centerContent={
-          workbook &&
-          inlineViews && (
-            <ViewSwitcher
-              items={[
-                { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
-                { id: 'outline', label: 'Outliner', icon: <ListTree className="size-4" /> },
-              ]}
-              activeId={viewMode}
-              onChange={(id) => setViewMode(id as 'map' | 'outline')}
-              size="sm"
-              className={cn(!showLabels && '[&_span]:sr-only')}
-            />
-          )
-        }
         rightContent={
           <>
-            {workbook && (
+            {inlineRedo && (
+              <IconButton size="sm" onClick={toggleDarkMode} label="Cambia tema">
+                {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </IconButton>
+            )}
+            {workbook && inlineDetails && (
               <IconButton
                 size="sm"
                 active={inspectorVisible}
-                onClick={() => {
-                  if (inspectorVisible) {
-                    if (compact) setDetailsOpen(false);
-                    else setSelectedTopicId(undefined);
-                  } else {
-                    const id = selectedTopicId ?? allTopics[0]?.id;
-                    if (id) openDetails(id);
-                  }
-                }}
-                label={inspectorVisible ? 'Chiudi pannello dettagli' : 'Apri pannello dettagli'}
+                disabled={!selectedTopicId}
+                onClick={toggleDetails}
+                title="Dettagli blocco"
+                label="Dettagli blocco"
               >
                 <PanelRight className="size-4" />
-              </IconButton>
-            )}
-            {inlineRedo && (
-              <IconButton size="sm" onClick={() => setDarkMode((v) => !v)} label="Cambia tema">
-                {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </IconButton>
             )}
             <Menu items={menuItems} widthClass="w-72" trigger={
@@ -855,6 +1026,7 @@ export const App: React.FC = () => {
               const dto = await controller.open(new Uint8Array(buffer), undefined, file.name);
               setWorkbook(dto);
               setActiveSheetIndex(0);
+              setDocumentKey((k) => k + 1);
               setCollapsedIds(new Set());
               setSelectedTopicId(undefined);
               addToast('success', `Aperto ${file.name}`);
@@ -877,6 +1049,8 @@ export const App: React.FC = () => {
               }}
               open={sidebarOpen}
               onClose={() => setSidebarOpen(false)}
+              width={sidebarWidth}
+              onWidthChange={setSidebarWidth}
               onToggleCollapse={handleToggleCollapse}
               onAddChild={handleAddChild}
               onAddRootChild={() => allTopics[0] && handleAddChild(allTopics[0].id)}
@@ -884,25 +1058,30 @@ export const App: React.FC = () => {
             />
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-              {viewMode === 'map' ? (
-                <MapView
-                  layout={currentLayout}
-                  selectedTopicId={selectedTopicId}
-                  onSelectTopic={setSelectedTopicId}
-                  onOpenDetails={openDetails}
-                  onOpenLatex={openDetails}
-                  detailsOpen={inspectorVisible}
-                  onAddChild={handleAddChild}
-                  onDeleteTopic={handleDeleteSelected}
-                  onToggleCollapse={handleToggleCollapse}
-                  resourceResolver={resolveResource}
-                  darkMode={darkMode}
-                  structure={mapStructure}
-                  onStructureChange={setMapStructure}
-                />
-              ) : (
-                <OutlineView text={outlineText} />
-              )}
+              <MapView
+                layout={currentLayout}
+                viewKey={`${documentKey}:${activeSheetIndex}`}
+                selectedTopicId={selectedTopicId}
+                onSelectTopic={setSelectedTopicId}
+                onOpenDetails={openDetails}
+                onOpenLatex={openDetails}
+                detailsOpen={inspectorVisible}
+                onAddChild={(id) => createTopic(id, 'child')}
+                onAddSibling={(id) => createTopic(id, 'after')}
+                onDeleteTopic={handleDeleteSelected}
+                editing={editing}
+                onStartEdit={startEdit}
+                onCommitEdit={handleCommitEdit}
+                onCancelEdit={() => setEditing(null)}
+                onToggleCollapse={handleToggleCollapse}
+                resourceResolver={resolveResource}
+                darkMode={darkMode}
+                structure={mapStructure}
+                onStructureChange={setMapStructure}
+                onMoveTopic={handleMove}
+                onMoveFloatingTopic={handleMoveFloating}
+                onRelationshipControlPointsChange={handleRelationshipControlPoint}
+              />
 
               {workbook.sheets.length > 1 && (
                 <div className="flex h-[calc(2.25rem+env(safe-area-inset-bottom))] shrink-0 items-center gap-1 overflow-x-auto border-t bg-sidebar px-2 pb-[env(safe-area-inset-bottom)]">
@@ -931,9 +1110,14 @@ export const App: React.FC = () => {
                 relationships={currentSheet?.relationships || []}
                 controller={controller}
                 onChanged={refreshState}
-                onClose={() => (compact ? setDetailsOpen(false) : setSelectedTopicId(undefined))}
+                onClose={() => {
+                  setDetailsClosed(true);
+                  setDetailsOpen(false);
+                }}
                 darkMode={darkMode}
                 onToast={addToast}
+                width={inspectorWidth}
+                onWidthChange={setInspectorWidth}
               />
             )}
           </>
@@ -960,13 +1144,19 @@ export const App: React.FC = () => {
         }}
       />
 
-      <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title="XMap Studio" size="sm">
+      <SettingsPage
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onUpdate={updateSettings}
+        onReset={resetSettings}
+      />
+
+      <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title={APP_NAME} size="sm">
         <div className="flex flex-col gap-3">
           <AppMark size={40} />
-          <p className="text-sm text-muted-foreground">
-            Editor per mappe XMind con equazioni LaTeX native. Lossless, offline, scrittura atomica e validata.
-          </p>
-          <p className="text-2xs text-muted-foreground font-mono">Versione 2.0 — TypeScript / React</p>
+          <p className="text-sm text-muted-foreground">{APP_DESCRIPTION}</p>
+          <p className="text-2xs text-muted-foreground font-mono">{APP_VERSION_LABEL}</p>
         </div>
       </Modal>
 

@@ -18,6 +18,18 @@ import {
 export function setTitle(topic: Topic, title: string): void {
   topic.title = title;
   delete topic.titleUnedited;
+  // XMind mostra `attributedTitle` al posto di `title`: se il testo cambia i
+  // frammenti diventano incoerenti, quindi vanno scartati.
+  const runs = topic.attributedTitle;
+  if (Array.isArray(runs)) {
+    const joined = runs
+      .map((r) => {
+        const text = typeof r === 'object' && r !== null ? (r as { text?: unknown }).text : undefined;
+        return typeof text === 'string' ? text : '';
+      })
+      .join('');
+    if (joined !== title) delete topic.attributedTitle;
+  }
 }
 
 export function addChild(parent: Topic, title: string): string {
@@ -34,6 +46,63 @@ export function addChild(parent: Topic, title: string): string {
   }
   parent.children.attached.push(child);
   return id;
+}
+
+/** Aggiorna i range numerici di bordi e sommari dopo l'inserimento di un figlio `attached` in `index`. */
+function shiftRangesOnInsert(parent: Topic, index: number): void {
+  const shift = (range: string | undefined): string | undefined => {
+    if (range === undefined) return undefined;
+    const parsed = parseRange(range);
+    if (!parsed) return range;
+    const [start, end] = parsed;
+    if (end < index) return range;
+    if (start >= index) return formatRange(start + 1, end + 1);
+    return formatRange(start, end + 1);
+  };
+  for (const b of parent.boundaries ?? []) {
+    const next = shift(b.range);
+    if (next !== undefined) b.range = next;
+  }
+  for (const s of parent.summaries ?? []) {
+    const next = shift(s.range);
+    if (next !== undefined) s.range = next;
+  }
+}
+
+/**
+ * Inserisce un nuovo fratello di `topicId` nello stesso gruppo `children.attached`
+ * del genitore, subito dopo o prima. Restituisce l'id del nuovo blocco.
+ * Errore per la radice (non ha fratelli) e per blocchi `detached`/`summary`:
+ * il chiamante decide il ripiego (di norma un figlio).
+ */
+export function insertSibling(
+  sheets: Sheet[],
+  topicId: string,
+  title: string,
+  where: 'after' | 'before' = 'after'
+): string {
+  for (const sheet of sheets) {
+    const root = sheet.rootTopic;
+    if (!root) continue;
+    if (root.id === topicId) {
+      throw new XmapError(CODE_MOVE, 'La radice non ha fratelli.');
+    }
+    const path: PathItem[] = [];
+    if (!findPath(root, topicId, path)) continue;
+    const last = path[path.length - 1];
+    if (last.group !== 'attached') {
+      throw new XmapError(CODE_MOVE, 'Questo blocco non può avere fratelli (è staccato o è un sommario).');
+    }
+    const parent = descend(root, path.slice(0, -1));
+    const list = parent.children?.attached;
+    if (!list) break;
+    const id = newTopicId();
+    const index = where === 'after' ? last.index + 1 : last.index;
+    list.splice(index, 0, { id, title });
+    shiftRangesOnInsert(parent, index);
+    return id;
+  }
+  throw new XmapError(CODE_MOVE, 'Blocco non trovato.');
 }
 
 export function escapeHtml(s: string): string {
@@ -523,4 +592,28 @@ export function removeSummary(parent: Topic, summaryTopicId: string): boolean {
     if (parent.children.summary.length === 0) delete parent.children.summary;
   }
   return removed;
+}
+
+/** Vero se il topic sta nel gruppo `detached` di un altro topic (topic libero). */
+export function isDetachedTopic(sheets: Sheet[], id: string): boolean {
+  let found = false;
+  for (const sheet of sheets) {
+    if (!sheet.rootTopic) continue;
+    walkTopic(sheet.rootTopic, (t) => {
+      if (t.children?.detached?.some((d) => d.id === id)) found = true;
+    });
+    if (found) return true;
+  }
+  return false;
+}
+
+/**
+ * Imposta `position` (centro del topic libero rispetto al centro della radice,
+ * come in XMind). Tocca solo quel campo e lo arrotonda a interi.
+ */
+export function setTopicPosition(topic: Topic, pos: { x: number; y: number }): void {
+  if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
+    throw new XmapError(CODE_MOVE, 'Posizione non valida.');
+  }
+  topic['position'] = { x: Math.round(pos.x), y: Math.round(pos.y) };
 }

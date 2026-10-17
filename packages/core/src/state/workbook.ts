@@ -1,3 +1,5 @@
+import { readControlPoints, resolveRelationshipStyle } from '../model/relationship.js';
+import { readTextStyle, readTitleRuns } from '../model/style.js';
 import { CODE_INVALID_INPUT, XmapError } from '../errors.js';
 import { RawArchive } from '../archive/types.js';
 import { CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
@@ -90,6 +92,15 @@ export class OpenWorkbook {
     this.pos = this.history.length - 1;
   }
 
+  /** Sostituisce l'ultimo snapshot con lo stato corrente (fonde due modifiche in un solo passo di undo). */
+  public replaceHistoryTop(): void {
+    if (this.pos !== this.history.length - 1) {
+      this.pushHistory();
+      return;
+    }
+    this.history[this.pos] = cloneSheets(this.content);
+  }
+
   public undo(): void {
     if (this.canUndo()) {
       this.pos--;
@@ -126,6 +137,8 @@ export class OpenWorkbook {
         end1Id: rel.end1Id || '',
         end2Id: rel.end2Id || '',
         title: rel.title || '',
+        style: resolveRelationshipStyle(sheet, rel),
+        controlPoints: readControlPoints(rel),
       }));
 
       return {
@@ -242,6 +255,8 @@ function collectTopicViews(
     customWidth: topicCustomWidth(topic),
     fillColor: topicFillColor(topic),
     structureClass: topic.structureClass,
+    textStyle: readTextStyle(topic),
+    titleRuns: readTitleRuns(topic),
   };
 
   out.push(view);

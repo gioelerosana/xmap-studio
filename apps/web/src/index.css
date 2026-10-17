@@ -12,3 +12,20 @@ body {
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
 }
+
+/* Durante il trascinamento di una maniglia di ridimensionamento: cursore e nessuna selezione su tutto il documento. */
+.is-resizing-panel,
+.is-resizing-panel * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* Impostazioni > Riduci animazioni: la classe vince sulla preferenza di sistema. */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}

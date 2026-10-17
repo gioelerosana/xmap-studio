@@ -21,6 +21,21 @@ formato. Posizionamento, inventario delle feature e roadmap in
 
 Niente account, niente telemetria. Apre, mostra, modifica, salva.
 
+### Macro-obiettivo: feature parity con XMind
+
+La direzione del progetto è **pareggiare XMind, e superarlo dove Free è
+bloccato**. Un file aperto qui deve apparire come in XMind (grassetti, forme
+delle relazioni, sommari, colori del tema) e deve potersi modificare **sulla
+mappa** con i gesti di XMind (drag & drop, editing in place, scorciatoie). La
+matrice di parità con lo stato di ogni voce è in
+[`docs/PRODUCT.md`](docs/PRODUCT.md) §4 "Fase 8"; ogni feature nuova:
+
+1. parte dal riscontro su XMind reale (ricetta §"Verificare un campo di formato
+   su XMind reale": il codice di rendering di XMind è nell'`app.asar`);
+2. passa per *render* → *edit* → *round-trip* (XMind riapre il file salvato e lo
+   mostra uguale);
+3. aggiorna la riga corrispondente della matrice.
+
 - Stack: monorepo **TypeScript** gestito con **pnpm**:
   - `packages/core` — motore (modello, archivio, sicurezza, LaTeX/MathJax,
     export, layout). Non dipende dalla UI.
@@ -31,6 +46,67 @@ Niente account, niente telemetria. Apre, mostra, modifica, salva.
 - Documentazione: [`README.md`](README.md) (utente), [`docs/`](docs/README.md)
   (tecnica).
 - Repository: privato su GitLab (`gitlab.com`).
+
+## `TODO.md`: la direzione del lavoro
+
+[`TODO.md`](TODO.md), nella root, è il **backlog scritto dall'utente**: le
+feature, le correzioni e le idee che vuole nell'app, aggiunte man mano. È la
+fonte primaria di direzione per ogni sessione, più di `docs/PRODUCT.md` (che
+descrive lo stato e la roadmap di prodotto, non le priorità correnti).
+
+**Leggilo sempre a inizio sessione**, prima di pianificare, qualunque sia la
+richiesta.
+
+### Sessione senza indicazioni precise
+
+Se la sessione parte senza un compito specifico ("vai", "continua", "lavora
+sull'app", "cosa facciamo?", un prompt generico o vuoto), **il compito è
+`TODO.md`**:
+
+1. prendi le voci aperte (`- [ ]`) **dall'alto verso il basso**: l'ordine è la
+   priorità dell'utente. Salta una voce solo se dipende da un'altra ancora
+   aperta o se è bloccata (vedi sotto), e dillo;
+2. lavora su quante voci riesci a portare a "fatto" per davvero; meglio una
+   voce chiusa e verificata che tre a metà;
+3. non inventare lavoro fuori dalla lista: refactoring, pulizie o feature non
+   richieste non sostituiscono una voce aperta. Se lo noti, segnalalo nel
+   riepilogo;
+4. se non ci sono voci aperte, dillo e proponi i prossimi passi (da
+   `docs/PRODUCT.md` o da quanto osservato), ma **non** iniziarli senza un sì.
+
+### Sessione con un compito specifico
+
+Fai quello che chiede l'utente. Se corrisponde (anche in parte) a una voce di
+`TODO.md`, trattalo come quella voce e aggiornala alla chiusura. Se il compito
+contraddice una voce, segnalalo invece di scegliere da solo.
+
+### Interpretare una voce
+
+Le voci sono scritte di getto: leggile come intenzione, non come specifica.
+Scegli l'interpretazione più ragionevole e coerente con il resto dell'app e
+dichiarala nel riepilogo. **Chiedi prima** solo se la voce è davvero ambigua
+(interpretazioni che portano a lavoro molto diverso) o se realizzarla
+richiederebbe di violare una regola non negoziabile: le voci di `TODO.md` non
+prevalgono mai su quelle regole.
+
+### Come si aggiorna il file
+
+`TODO.md` è dell'utente. L'agente:
+
+- **spunta** una voce (`- [x]`) solo quando soddisfa la §"Definizione di
+  "fatto"", nello stesso commit della modifica che la chiude;
+- aggiunge in coda alla voce, tra parentesi, una nota breve su cosa è stato
+  fatto, come nelle voci già chiuse;
+- per una voce fatta solo in parte la lascia aperta, con una nota
+  `(parziale: …)` su cosa manca;
+- **non** riscrive, riordina né cancella le voci dell'utente e non ne aggiunge
+  di nuove senza che l'utente lo chieda: i seguiti emersi vanno nel riepilogo.
+
+È un file condiviso "caldo": lo tocca solo l'orchestratore, mai un
+sotto-agente.
+
+Nel riepilogo finale indica quali voci hai chiuso, quali restano aperte e
+perché.
 
 ## Regole non negoziabili
 
@@ -91,6 +167,25 @@ Parti da Haiku; sali a Sonnet solo se il compito lo richiede davvero o se Haiku
 ha fallito. Non delegare compiti banali (una modifica di poche righe): falli
 direttamente, uno spawn costa più del lavoro.
 
+#### Override temporaneo: Antigravity Sec (periodo di prova)
+
+Finché l'utente ha attiva la prova di Google Antigravity, i sotto-agenti si
+lanciano **su Antigravity Sec** invece che su Haiku/Sonnet: provider
+`antigravity_sec`, modello **`gemini-3.8-flash-high`** (Gemini 3.8 Flash, High).
+Dà buona qualità se ben orchestrato, quindi:
+
+- si delega con `delegate_task` (T3 Code) con
+  `target: {"providerInstanceId": "antigravity_sec", "model": "gemini-3.8-flash-high"}`;
+  gli ID vivi si leggono da `orchestrator_capabilities`. Se `antigravity_sec`
+  non compare o non è utilizzabile, si torna alla tabella sopra (Haiku/Sonnet);
+- i prompt devono essere ancora più autosufficienti e precisi del solito: file
+  ammessi, comportamento atteso, cosa NON toccare, comando di verifica
+  (`pnpm build` e `pnpm test`) e richiesta di un riepilogo breve;
+- niente commit/push da parte del sotto-agente; la verifica a freddo e il
+  commit restano all'orchestratore (vedi sotto);
+- l'override vale finché l'utente non dice che la prova è finita: a quel punto
+  si rimuove questa sezione.
+
 ### Responsabilità dell'orchestratore
 
 1. **Contratto prima del fan-out.** Scrivi tu le parti condivise da cui
@@ -99,7 +194,8 @@ direttamente, uno spawn costa più del lavoro.
 2. **Compiti a file disgiunti.** Ogni sotto-agente riceve un insieme esplicito
    di file/cartelle che può toccare; due agenti in parallelo non modificano lo
    stesso file. File condivisi "caldi" (`package.json`, `pnpm-lock.yaml`,
-   `packages/core/src/index.ts`, `docs/`) li tocca solo l'orchestratore.
+   `packages/core/src/index.ts`, `docs/`, `TODO.md`) li tocca solo
+   l'orchestratore.
 3. **Prompt autosufficienti.** Il sotto-agente parte senza contesto: indica
    obiettivo, file ammessi, contratto da rispettare, regole non negoziabili
    rilevanti e il comando di verifica da eseguire prima di chiudere.
@@ -154,7 +250,9 @@ Prima di considerare concluso un cambiamento:
    `pnpm dev:desktop`)
 4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale in
    XMind con un file salvato dall'app (vedi [`docs/TESTING.md`](docs/TESTING.md))
-5. commit e push del branch, come in §"Chiusura di ogni task"
+5. voce corrispondente di `TODO.md` spuntata, con nota (vedi §"`TODO.md`: la
+   direzione del lavoro")
+6. commit e push del branch, come in §"Chiusura di ogni task"
 
 ### Chiusura di ogni task
 
@@ -164,7 +262,8 @@ Ogni task si chiude **sempre** così, senza aspettare che l'utente lo chieda:
 2. committa **tutte** le modifiche del working tree (Conventional Commits, vedi
    §"Git e GitLab"), divise in più commit se toccano argomenti distinti;
 3. `git push -u origin <branch>`;
-4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato.
+4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato e lo
+   stato di `TODO.md` (voci chiuse, voci ancora aperte).
 
 Non si fa push su `main` né force-push; la Merge Request la apre l'utente o la
 si apre solo su sua richiesta.
@@ -197,16 +296,20 @@ Per provarla su un dispositivo: `pnpm build`, poi `cd apps/web && npx vite previ
 xmap-studio/
 ├── package.json / pnpm-workspace.yaml / pnpm-lock.yaml
 ├── AGENTS.md                     # questo file
+├── .gitlab-ci.yml                # pipeline di release (solo sui tag vX.Y.Z)
+├── TODO.md                       # backlog dell'utente: la direzione del lavoro
 ├── README.md                     # documentazione utente
 ├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata
 ├── docs/                         # documentazione tecnica
+├── packaging/arch/               # PKGBUILD (sviluppo `-git` e `release/`), bump-pkgver.sh
+├── scripts/                      # strumenti di repo (check-release-version.mjs)
 ├── packages/
 │   ├── core/                     # motore: src/{model,archive,safety,latex,…}, tests/
 │   └── ui-kit/                   # design system
 └── apps/
     ├── web/                      # UI React
-    └── desktop/                  # Electron (main, preload, scripts/dev.mjs)
+    └── desktop/                  # Electron (main, preload, scripts/{dev,dist}.mjs, electron-builder.yml)
 ```
 
 Mappa dei moduli e flusso dati: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -303,9 +406,12 @@ punto da verificare in UI.
 ## Limiti noti (non introdurre regressioni)
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 non è supportato.
-- Editing: testo, note, marker e task dei blocchi, aggiunta di sotto-blocchi,
-  eliminazione (con i figli) e spostamento (riordino/riannidamento) via drag &
-  drop nell'albero. Restano fuori scope i temi. Inventario aggiornato in
+- Editing: testo (anche in place sulla mappa), stile del testo, note, marker e
+  task dei blocchi, aggiunta di sotto-blocchi e fratelli (Tab/Invio), eliminazione
+  (con i figli, senza conferma: si annulla), spostamento (riordino/riannidamento)
+  via drag & drop nell'albero e sulla mappa, posizione dei blocchi liberi, punti
+  di controllo delle relazioni.
+  I temi non si modificano ancora (vedi matrice di parità). Inventario aggiornato in
   [`docs/PRODUCT.md`](docs/PRODUCT.md).
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della
   sicurezza dei dati e dell'undo).

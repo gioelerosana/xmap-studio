@@ -3,6 +3,7 @@ import {
   CODE_INVALID_INPUT,
   CODE_IO,
   CODE_LATEX,
+  CODE_MOVE,
   CODE_NO_PATH,
   CODE_NO_WORKBOOK,
   CODE_TOPIC_NOT_FOUND,
@@ -15,6 +16,7 @@ import { RawArchive } from './archive/types.js';
 import type { Platform } from './platform.js';
 import {
   addChild,
+  insertSibling,
   addRelationship,
   addSummary,
   addBoundary,
@@ -27,11 +29,15 @@ import {
   setHref,
   setLabels,
   setNotes,
+  setTopicPosition,
+  isDetachedTopic,
   setNotesDisplay,
   setTitle,
   toggleMarker,
 } from './model/edit.js';
 import { Sheet, Topic } from './model/types.js';
+import { setTextStyle, TextStylePatch } from './model/style.js';
+import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
 import {
   countTopics,
   collectAttachmentRefs,
@@ -64,6 +70,8 @@ import {
   BatchResultDto,
   BatchSpec,
   MergeResultDto,
+  Point,
+  RelationshipShape,
   SaveResultDto,
   WorkbookDto,
 } from './state/types.js';
@@ -71,6 +79,8 @@ import { cloneSheets, OpenWorkbook } from './state/workbook.js';
 
 export class AppController {
   private currentWorkbook: OpenWorkbook | null = null;
+  /** Ultimo blocco creato e posizione di cronologia in cui è nato (per fondere creazione e rinomina). */
+  private lastCreated: { id: string; wb: OpenWorkbook; pos: number } | null = null;
 
   /**
    * `platform` abilita lettura/scrittura su disco e il rilevamento di XMind;
@@ -266,12 +276,39 @@ export class AppController {
     return wb.toDto();
   }
 
-  public setTopicTitle(topicId: string, title: string): WorkbookDto {
+  /**
+   * Imposta il titolo; senza cambiamenti non registra un passo di cronologia.
+   * Con `mergeWithPrevious` e solo se l'ultimo passo è la creazione di quel topic
+   * (`addTopic`/`addSiblingTopic`), sostituisce l'ultimo snapshot: creazione e
+   * rinomina si annullano con un solo undo.
+   */
+  public setTopicTitle(
+    topicId: string,
+    title: string,
+    opts?: { mergeWithPrevious?: boolean }
+  ): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
+    if (topic.title === title && topic.titleUnedited === undefined) return wb.toDto();
     setTitle(topic, title);
+    const lc = this.lastCreated;
+    if (opts?.mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
+      wb.replaceHistoryTop();
+    } else {
+      wb.pushHistory();
+    }
+    return wb.toDto();
+  }
+
+  /** Grassetto, corsivo, sottolineato, barrato, colore e dimensione del blocco intero. */
+  public setTopicTextStyle(topicId: string, patch: TextStylePatch): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    setTextStyle(topic, patch);
     wb.pushHistory();
     return wb.toDto();
   }
@@ -282,6 +319,20 @@ export class AppController {
     if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
 
     setNotes(topic, text);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /** Sposta un topic libero (gruppo `detached`); `pos` è relativa al centro della radice. */
+  public setTopicPosition(topicId: string, pos: { x: number; y: number }): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    if (!isDetachedTopic(wb.content, topicId)) {
+      throw new XmapError(CODE_MOVE, 'Solo i topic liberi possono essere posizionati.');
+    }
+
+    setTopicPosition(topic, pos);
     wb.pushHistory();
     return wb.toDto();
   }
@@ -342,6 +393,28 @@ export class AppController {
 
     const newId = addChild(parent, title);
     wb.pushHistory();
+    this.lastCreated = { id: newId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), newId };
+  }
+
+  /**
+   * Nuovo fratello di `topicId` (dopo o prima). Sulla radice, che non ha fratelli,
+   * ripiega su un nuovo figlio. Un solo passo di cronologia.
+   */
+  public addSiblingTopic(
+    topicId: string,
+    title: string,
+    where: 'after' | 'before' = 'after'
+  ): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    if (wb.content.some((s) => s.rootTopic?.id === topicId)) {
+      return this.addTopic(topicId, title);
+    }
+    const newId = insertSibling(wb.content, topicId, title, where);
+    wb.pushHistory();
+    this.lastCreated = { id: newId, wb, pos: wb.pos };
     return { dto: wb.toDto(), newId };
   }
 
@@ -388,6 +461,37 @@ export class AppController {
     addRelationship(sheet, end1Id, end2Id, title);
     wb.pushHistory();
     return wb.toDto();
+  }
+
+  /**
+   * Imposta i punti di controllo di una relazione in un solo passo di undo:
+   * `undefined` = invariato, `null` = ripristina il default di XMind.
+   */
+  public setRelationshipControlPoints(
+    relationshipId: string,
+    points: [Point | null | undefined, Point | null | undefined]
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    for (const sheet of wb.content) {
+      if (!sheet.relationships?.some((r) => r.id === relationshipId)) continue;
+      points.forEach((point, i) => {
+        if (point !== undefined) setRelationshipControlPoint(sheet, relationshipId, i as 0 | 1, point);
+      });
+      wb.pushHistory();
+      return wb.toDto();
+    }
+    throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
+  }
+
+  public setRelationshipShape(relationshipId: string, shape: RelationshipShape): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    for (const sheet of wb.content) {
+      if (setRelationshipShape(sheet, relationshipId, shape)) {
+        wb.pushHistory();
+        return wb.toDto();
+      }
+    }
+    throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
   }
 
   public removeTopicRelationship(relationshipId: string): WorkbookDto {

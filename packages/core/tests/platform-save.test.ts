@@ -22,13 +22,16 @@ function backupsOf(dir: string): string[] {
   return existsSync(backupDir) ? readdirSync(backupDir) : [];
 }
 
+// Disco reale ma nessun XMind: il test non deve dipendere da un XMind aperto sulla macchina.
+const diskOnly: Platform = { ...nodePlatform, xmindProcesses: async () => [] };
+
 describe('save() con nodePlatform', () => {
   it('scrive in modo atomico e crea un backup dal secondo salvataggio', async () => {
     const dir = tempDir();
     const target = path.join(dir, 'mappa.xmind');
     writeFileSync(target, await minimalXmind());
 
-    const c = new AppController(nodePlatform);
+    const c = new AppController(diskOnly);
     await c.openPath(target);
     expect(c.workbook()!.path).toBe(target);
 
@@ -46,14 +49,14 @@ describe('save() con nodePlatform', () => {
 
     // Nessun temporaneo residuo e il file riletto contiene l'ultima modifica.
     expect(readdirSync(dir).filter((n) => n.endsWith('.tmp'))).toEqual([]);
-    const reopened = new AppController(nodePlatform);
+    const reopened = new AppController(diskOnly);
     await reopened.openPath(target);
     expect(reopened.workbook()!.sheets[0].topics.find((t) => t.id === 'a')!.title).toBe('Secondo');
   });
 
   it('saveAs scrive su un nuovo file senza controllo di conflitto', async () => {
     const dir = tempDir();
-    const c = new AppController(nodePlatform);
+    const c = new AppController(diskOnly);
     await c.open(await minimalXmind(), undefined, 'nuova.xmind');
     c.setTopicTitle('a', 'X');
     const target = path.join(dir, 'nuova.xmind');
@@ -67,7 +70,7 @@ describe('save() con nodePlatform', () => {
     const dir = tempDir();
     const target = path.join(dir, 'mappa.xmind');
     writeFileSync(target, await minimalXmind());
-    const c = new AppController(nodePlatform);
+    const c = new AppController(diskOnly);
     await c.openPath(target);
     writeFileSync(target, new Uint8Array([1, 2, 3]));
     c.setTopicTitle('a', 'X');

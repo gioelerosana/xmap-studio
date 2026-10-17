@@ -5,3 +5,11 @@ packages:
 allowBuilds:
   electron: true
   esbuild: true
+  electron-winstaller: false
+
+# I binari nativi opzionali (es. @resvg/resvg-js) vengono scaricati anche per
+# Windows, così la build di release può impacchettare l'app Windows da Linux.
+supportedArchitectures:
+  os: [current, win32]
+  cpu: [x64]
+  libc: [glibc]

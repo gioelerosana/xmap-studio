@@ -1,18 +1,29 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Layout, LayoutNode, MapStructure, renderLatexToSvg, SUMMARY_BRACE_W, trunkX } from '@xmap/core';
+import { Layout, LayoutNode, MapStructure, Point, renderLatexToSvg, SUMMARY_BRACE_W, trunkX } from '@xmap/core';
 import {
   Plus,
   Minus,
   Maximize2,
   FileText,
-  Sigma,
   Network,
   Edit3,
   Trash2,
   ListTree,
   GitFork,
+  CornerDownLeft,
 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+import { NodeEditor, type EditExit } from './map/NodeEditor.js';
+import { hexLuminance, RichTitle, textStyleCss } from './map/RichTitle.js';
+import { RelationshipLayer, type ControlPointsPatch } from './map/RelationshipLayer.js';
+import {
+  DropPlacement,
+  DropTarget,
+  buildDragIndex,
+  computeDropTarget,
+  isDraggable,
+  subtreeOf,
+} from './map/dragTarget.js';
 
 // MathJax produce SVG con colore letterale, non una variabile CSS: i valori
 // replicano il token foreground nei due temi e i testi su riempimento pieno.
@@ -40,6 +51,10 @@ const TREE_CORNER_R = 8;
 const TAP_SLOP_PX = { mouse: 3, touch: 8 }; // oltre questa distanza il gesto è un pan, non un tap
 const DOUBLE_TAP_MS = 320;
 const DOUBLE_TAP_ZOOM = 1.6;
+const LONG_PRESS_MS = 400; // touch: pressione prolungata su un blocco = inizia il trascinamento
+const DRAG_EDGE_ZONE = 48; // px dal bordo del canvas in cui il trascinamento fa scorrere la vista
+const DRAG_EDGE_SPEED = 16; // px per frame al bordo estremo
+const DRAG_DIM_OPACITY = '0.25';
 // Smartphone: sotto questa larghezza l'adattamento non scende sotto uno zoom
 // leggibile e il pannello dettagli è un bottom sheet che copre la parte bassa.
 const COMPACT_WIDTH = 640;
@@ -51,19 +66,6 @@ interface SafariGestureEvent extends UIEvent {
   scale: number;
   clientX: number;
   clientY: number;
-}
-
-/** Luminanza relativa di un colore `#rgb`/`#rrggbb[aa]`; `null` se non è esadecimale. */
-function hexLuminance(color: string): number | null {
-  const m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color.trim());
-  if (!m) return null;
-  let hex = m[1];
-  if (hex.length === 3) hex = [...hex].map((c) => c + c).join('');
-  const [r, g, b] = [0, 2, 4].map((i) => {
-    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 interface NodeLook {
@@ -116,30 +118,77 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Stato visivo del trascinamento di un blocco: fantasma (angolo in alto a sinistra, mondo) e bersaglio. */
+interface DragOverlay {
+  sourceId: string;
+  ghost: Point;
+  drop: DropTarget | null;
+}
+
+/** Editing in place del titolo di un blocco, governato dal genitore. */
+export interface MapEditing {
+  id: string;
+  /** `all` = seleziona il testo esistente; `text` = parte da `text` (digitazione su blocco selezionato). */
+  mode: 'all' | 'text';
+  text?: string;
+}
+
+const INTERACTIVE = 'input, textarea, select, button, [contenteditable="true"]';
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.(query).matches),
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
+
 export interface MapViewProps {
+  /** Identità del documento/foglio mostrato: quando cambia la vista si riadatta. */
+  viewKey?: string;
+  editing?: MapEditing | null;
+  onStartEdit?: (topicId: string) => void;
+  onCommitEdit?: (topicId: string, text: string, exit: EditExit) => void;
+  onCancelEdit?: () => void;
   layout: Layout | null;
   selectedTopicId?: string;
   onSelectTopic: (topicId: string) => void;
   onOpenDetails: (topicId: string) => void;
   onOpenLatex?: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
+  /** Crea un fratello dopo il blocco, come Invio. */
+  onAddSibling?: (topicId: string) => void;
   onDeleteTopic?: (topicId: string) => void;
   onToggleCollapse: (topicId: string) => void;
   resourceResolver: (src: string) => Uint8Array | null;
   darkMode?: boolean;
   structure: MapStructure;
   onStructureChange: (structure: MapStructure) => void;
+  /** Rilascio di un blocco trascinato sulla mappa; stessa firma di `onMove` dell'albero. */
+  onMoveTopic?: (topicId: string, targetId: string, placement: DropPlacement) => void;
+  /** Rilascio di un topic libero (detached): `position` è il suo centro relativo al centro della radice. */
+  onMoveFloatingTopic?: (topicId: string, position: Point) => void;
+  /** Punti di controllo di una relazione trascinati (`null` = ripristina, `undefined` = invariato). */
+  onRelationshipControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
   /** Pannello dettagli aperto: su smartphone il blocco viene portato sopra il bottom sheet. */
   detailsOpen?: boolean;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
   layout,
+  viewKey,
   selectedTopicId,
   onSelectTopic,
   onOpenDetails,
   onOpenLatex,
   onAddChild,
+  onAddSibling,
   onDeleteTopic,
   onToggleCollapse,
   resourceResolver,
@@ -147,10 +196,21 @@ export const MapView: React.FC<MapViewProps> = ({
   structure,
   onStructureChange,
   detailsOpen = false,
+  onMoveTopic,
+  onMoveFloatingTopic,
+  onRelationshipControlPointsChange,
+  editing = null,
+  onStartEdit,
+  onCommitEdit,
+  onCancelEdit,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const editorLayerRef = useRef<HTMLDivElement>(null);
+  const isCoarse = useMediaQuery('(pointer: coarse)');
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   // Trasformazione "viva": durante i gesti si aggiorna solo questo ref e lo style
   // dell'SVG; `view` (stato React) viene allineato a gesto concluso.
   const viewRef = useRef<View>({ x: 60, y: 60, k: 1 });
@@ -158,14 +218,48 @@ export const MapView: React.FC<MapViewProps> = ({
   const selectedNodeRef = useRef<LayoutNode | null>(null);
   const hasAutoFitted = useRef(false);
   const lastLayoutRef = useRef<Layout | null>(null);
+  const lastViewKeyRef = useRef<string | undefined>(undefined);
+  const anchorIdRef = useRef<string | undefined>(selectedTopicId); // selezione prima dell'ultima modifica
   const frameRef = useRef(0);
   const syncTimerRef = useRef<number | undefined>(undefined);
   const motionRef = useRef(0); // rAF di animazione o inerzia
   const zoomTargetRef = useRef<number | null>(null); // zoom di arrivo dei click +/- in corso
   const gestureCleanupRef = useRef<(() => void) | null>(null);
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
-  const handlers = useRef({ onSelectTopic, onOpenDetails, onToggleCollapse });
-  handlers.current = { onSelectTopic, onOpenDetails, onToggleCollapse };
+  const handlers = useRef({
+    onSelectTopic,
+    onOpenDetails,
+    onOpenLatex,
+    onToggleCollapse,
+    onMoveTopic,
+    onMoveFloatingTopic,
+    onRelationshipControlPointsChange,
+    onStartEdit,
+  });
+  handlers.current = {
+    onSelectTopic,
+    onOpenDetails,
+    onOpenLatex,
+    onToggleCollapse,
+    onMoveTopic,
+    onMoveFloatingTopic,
+    onRelationshipControlPointsChange,
+    onStartEdit,
+  };
+  const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
+  const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
+  const layoutRef = useRef<Layout | null>(layout);
+  layoutRef.current = layout;
+  const dragIndex = useMemo(() => (layout ? buildDragIndex(layout) : null), [layout]);
+  const dragIndexRef = useRef(dragIndex);
+  dragIndexRef.current = dragIndex;
+
+  // Coordinate client -> coordinate mondo con pan/zoom correnti (anche a gesto in corso).
+  const toWorld = useCallback((clientX: number, clientY: number): Point => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const v = viewRef.current;
+    return { x: (clientX - (rect?.left ?? 0) - v.x) / v.k, y: (clientY - (rect?.top ?? 0) - v.y) / v.k };
+  }, []);
   // Cache delle risorse immagine / PNG come data URL
   const resourceUrls = useMemo(() => {
     const map = new Map<string, string>();
@@ -207,10 +301,13 @@ export const MapView: React.FC<MapViewProps> = ({
     if (svgRef.current) {
       svgRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
     }
+    if (editorLayerRef.current) {
+      editorLayerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
+    }
     const n = selectedNodeRef.current;
     if (toolbarRef.current && n) {
       // Su schermi stretti la barra resta dentro il canvas invece di uscire a destra.
-      const maxLeft = (containerRef.current?.clientWidth ?? Infinity) - toolbarRef.current.offsetWidth - 8;
+      const maxLeft = Math.max(8, (containerRef.current?.clientWidth ?? Infinity) - toolbarRef.current.offsetWidth - 8);
       toolbarRef.current.style.left = `${Math.max(8, Math.min(v.x + n.x * v.k, maxLeft))}px`;
       toolbarRef.current.style.top = `${v.y + (n.y - 42) * v.k}px`;
     }
@@ -341,14 +438,54 @@ export const MapView: React.FC<MapViewProps> = ({
     [animateTo]
   );
 
-  // ResizeObserver e auto-fit al caricamento o ridimensionamento finestra
+  // ResizeObserver e auto-fit solo quando cambia il documento (file o foglio).
+  // Le modifiche (aggiunte, rinomine, spostamenti) non toccano lo zoom: la vista
+  // trasla soltanto perché il blocco di riferimento resti fermo sullo schermo.
   useEffect(() => {
     if (!layout) return;
 
-    // Se il layout o i nodi sono cambiati, permetti nuovo auto-fit
-    if (lastLayoutRef.current !== layout) {
+    const prev = lastLayoutRef.current;
+    if (prev !== layout) {
       lastLayoutRef.current = layout;
-      hasAutoFitted.current = false;
+      const rootOf = (l: Layout) => l.nodes.find((n) => n.depth === 0)?.id;
+      const keyChanged = lastViewKeyRef.current !== viewKey;
+      lastViewKeyRef.current = viewKey;
+      if (!prev || keyChanged || rootOf(prev) !== rootOf(layout)) {
+        hasAutoFitted.current = false;
+      } else if (hasAutoFitted.current) {
+        // Riferimento: il blocco selezionato prima della modifica, se esiste ancora, altrimenti la radice.
+        const pick = (id?: string) => {
+          const b = id ? prev.nodes.find((n) => n.id === id) : undefined;
+          const a = b && layout.nodes.find((n) => n.id === b.id);
+          return b && a ? { b, a } : null;
+        };
+        const pair = pick(anchorIdRef.current) ?? pick(rootOf(prev));
+        const v = viewRef.current;
+        let { x, y } = v;
+        if (pair) {
+          x -= (pair.a.x - pair.b.x) * v.k;
+          y -= (pair.a.y - pair.b.y) * v.k;
+        }
+        // Il blocco selezionato (es. appena creato) deve restare visibile: pan minimo, zoom invariato.
+        const sel = selectedTopicId ? layout.nodes.find((n) => n.id === selectedTopicId) : undefined;
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (sel && rect) {
+          const pad = 32;
+          const left = x + sel.x * v.k;
+          const right = x + (sel.x + sel.w) * v.k;
+          const top = y + sel.y * v.k;
+          const bottom = y + (sel.y + sel.h) * v.k;
+          if (right > rect.width - pad) x -= right - (rect.width - pad);
+          if (left < pad) x += pad - left;
+          if (bottom > rect.height - pad) y -= bottom - (rect.height - pad);
+          if (top < pad) y += pad - top;
+        }
+        if (x !== v.x || y !== v.y) {
+          viewRef.current = { ...v, x, y };
+          applyView();
+          setView({ ...viewRef.current });
+        }
+      }
     }
 
     const container = containerRef.current;
@@ -380,6 +517,11 @@ export const MapView: React.FC<MapViewProps> = ({
       clearTimeout(timer);
     };
   }, [layout, fitToView]);
+
+  // Dichiarato dopo l'effetto di auto-fit: lì serve ancora la selezione precedente.
+  useEffect(() => {
+    anchorIdRef.current = selectedTopicId;
+  }, [selectedTopicId]);
 
   const hasContent = Boolean(layout && layout.nodes.length > 0);
 
@@ -436,7 +578,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!container) return;
 
     const pointers = new Map<number, { x: number; y: number }>();
-    let mode: 'none' | 'pan' | 'pinch' = 'none';
+    let mode: 'none' | 'pan' | 'pinch' | 'nodepress' | 'drag' = 'none';
     let pointerType = 'mouse';
     let start = { x: 0, y: 0 };
     let last = { x: 0, y: 0 };
@@ -444,7 +586,25 @@ export const MapView: React.FC<MapViewProps> = ({
     let samples: { t: number; x: number; y: number }[] = [];
     let pinch = { dist: 1, mx: 0, my: 0, view: viewRef.current };
     let suppressClickUntil = 0;
+    // Finestra più lunga dopo un doppio tap: il browser emette mousedown/click/dblclick sintetici.
+    let suppressSyntheticUntil = 0;
     let lastTap = { t: 0, x: 0, y: 0, nodeId: null as string | null };
+    // Trascinamento di un blocco: `pressedNode` è il blocco premuto in attesa di capire
+    // se il gesto è un click, un pan (touch che si muove subito) o un drag.
+    let pressedNode = -1;
+    let longPressTimer = 0;
+    interface ActiveDrag {
+      src: number;
+      excluded: Set<number>;
+      ids: string[];
+      grab: Point;
+      ptr: { x: number; y: number };
+      raf: number;
+      lastSig: string;
+      /** Topic libero: si muove senza bersaglio di rilascio; `delta` è lo spostamento in coordinate mondo. */
+      floating?: { delta: Point };
+    }
+    let drag: ActiveDrag | null = null;
 
     const local = (x: number, y: number) => {
       const rect = container.getBoundingClientRect();
@@ -474,7 +634,144 @@ export const MapView: React.FC<MapViewProps> = ({
       motionRef.current = requestAnimationFrame(step);
     };
 
+    const setDim = (ids: string[], on: boolean) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      for (const id of ids) {
+        const sel = CSS.escape(id);
+        svg.querySelectorAll<SVGElement>(`[data-node-id="${sel}"],[data-edge-child="${sel}"]`).forEach((el) => {
+          el.style.opacity = on ? DRAG_DIM_OPACITY : '';
+        });
+      }
+    };
+
+    const dropAt = (d: ActiveDrag): DropTarget | null => {
+      const l = layoutRef.current;
+      const idx = dragIndexRef.current;
+      if (!l || !idx) return null;
+      return computeDropTarget(l, idx, d.src, toWorld(d.ptr.x, d.ptr.y), d.excluded);
+    };
+
+    // Anteprima di un topic libero: sposta i blocchi del sotto-albero e i loro connettori.
+    const previewFloating = (d: ActiveDrag) => {
+      const l = layoutRef.current;
+      const svg = svgRef.current;
+      if (!l || !svg || !d.floating) return;
+      const n = l.nodes[d.src];
+      const wp = toWorld(d.ptr.x, d.ptr.y);
+      const delta = { x: wp.x - d.grab.x - n.x, y: wp.y - d.grab.y - n.y };
+      d.floating.delta = delta;
+      for (const i of d.excluded) {
+        const m = l.nodes[i];
+        const sel = CSS.escape(m.id);
+        svg.querySelector(`[data-node-id="${sel}"]`)?.setAttribute('transform', `translate(${m.x + delta.x}, ${m.y + delta.y})`);
+        const edge = svg.querySelector<SVGElement>(`[data-edge-child="${sel}"]`);
+        if (edge) edge.style.transform = `translate(${delta.x}px, ${delta.y}px)`;
+      }
+    };
+
+    const restoreFloating = (d: ActiveDrag) => {
+      const l = layoutRef.current;
+      const svg = svgRef.current;
+      if (!l || !svg) return;
+      for (const i of d.excluded) {
+        const m = l.nodes[i];
+        if (!m) continue;
+        const sel = CSS.escape(m.id);
+        svg.querySelector(`[data-node-id="${sel}"]`)?.setAttribute('transform', `translate(${m.x}, ${m.y})`);
+        const edge = svg.querySelector<SVGElement>(`[data-edge-child="${sel}"]`);
+        if (edge) edge.style.transform = '';
+      }
+    };
+
+    const updateOverlay = (d: ActiveDrag) => {
+      const l = layoutRef.current;
+      if (!l) return;
+      const wp = toWorld(d.ptr.x, d.ptr.y);
+      const drop = dropAt(d);
+      const ghost = { x: wp.x - d.grab.x, y: wp.y - d.grab.y };
+      const sig = `${ghost.x.toFixed(1)},${ghost.y.toFixed(1)}|${drop?.targetId}:${drop?.placement}`;
+      if (sig === d.lastSig) return;
+      d.lastSig = sig;
+      setDragOverlay({ sourceId: l.nodes[d.src].id, ghost, drop });
+    };
+
+    // Ad ogni frame: scorrimento automatico vicino ai bordi e aggiornamento di fantasma/bersaglio.
+    const dragTick = () => {
+      const d = drag;
+      if (!d) return;
+      const rect = container.getBoundingClientRect();
+      const edge = (dist: number) => DRAG_EDGE_SPEED * Math.min(Math.max((DRAG_EDGE_ZONE - dist) / DRAG_EDGE_ZONE, 0), 1);
+      const dx = edge(d.ptr.x - rect.left) - edge(rect.right - d.ptr.x);
+      const dy = edge(d.ptr.y - rect.top) - edge(rect.bottom - d.ptr.y);
+      if (dx !== 0 || dy !== 0) {
+        const v = viewRef.current;
+        viewRef.current = { ...v, x: v.x + dx, y: v.y + dy };
+        applyView();
+        scheduleSync();
+      }
+      if (d.floating) previewFloating(d);
+      else updateOverlay(d);
+      d.raf = requestAnimationFrame(dragTick);
+    };
+
+    const onDragKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') finishDrag(false);
+    };
+
+    const finishDrag = (commit: boolean) => {
+      const d = drag;
+      if (!d) return;
+      drag = null;
+      cancelAnimationFrame(d.raf);
+      window.removeEventListener('keydown', onDragKey);
+      const l = layoutRef.current;
+      if (d.floating) {
+        previewFloating(d);
+        const { delta } = d.floating;
+        restoreFloating(d);
+        const n = l?.nodes[d.src];
+        if (commit && n?.floatOrigin && (Math.abs(delta.x) >= 1 || Math.abs(delta.y) >= 1)) {
+          handlers.current.onMoveFloatingTopic?.(n.id, {
+            x: n.x + delta.x + n.w / 2 - n.floatOrigin.x,
+            y: n.y + delta.y + n.h / 2 - n.floatOrigin.y,
+          });
+        }
+        return;
+      }
+      setDim(d.ids, false);
+      setDragOverlay(null);
+      const drop = commit ? dropAt(d) : null;
+      if (drop && l) handlers.current.onMoveTopic?.(l.nodes[d.src].id, drop.targetId, drop.placement);
+    };
+
+    const beginDrag = () => {
+      window.clearTimeout(longPressTimer);
+      const l = layoutRef.current;
+      const [p] = [...pointers.values()];
+      if (!l || !p || pressedNode < 0 || !l.nodes[pressedNode]) return;
+      cancelMotion();
+      const src = pressedNode;
+      const n = l.nodes[src];
+      const wp = toWorld(p.x, p.y);
+      const excluded = subtreeOf(l, src);
+      const ids = [...excluded].map((i) => l.nodes[i].id);
+      mode = 'drag';
+      moved = true;
+      drag = { src, excluded, ids, grab: { x: wp.x - n.x, y: wp.y - n.y }, ptr: { ...p }, raf: 0, lastSig: '' };
+      if (n.floating && n.floatOrigin && handlers.current.onMoveFloatingTopic) {
+        drag.floating = { delta: { x: 0, y: 0 } };
+      } else {
+        setDim(ids, true);
+      }
+      window.addEventListener('keydown', onDragKey);
+      if (pointerType !== 'mouse') navigator.vibrate?.(12);
+      dragTick();
+    };
+
     const beginPinch = () => {
+      window.clearTimeout(longPressTimer);
+      pressedNode = -1;
       const [a, b] = [...pointers.values()];
       const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
       pinch = { dist: Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1), mx: mid.x, my: mid.y, view: { ...viewRef.current } };
@@ -489,7 +786,8 @@ export const MapView: React.FC<MapViewProps> = ({
       samples = [];
     };
 
-    // Tap senza movimento: il doppio tap su un blocco apre i dettagli, sullo sfondo zooma.
+    // Tap senza movimento: il doppio tap su un blocco di testo avvia l'editing in place,
+    // su altri blocchi apre i dettagli, sullo sfondo zooma.
     const handleTap = (e: PointerEvent) => {
       const nodeId = (e.target as Element | null)?.closest('[data-node-id]')?.getAttribute('data-node-id') ?? null;
       const now = performance.now();
@@ -500,17 +798,44 @@ export const MapView: React.FC<MapViewProps> = ({
       lastTap = isDouble ? { t: 0, x: 0, y: 0, nodeId: null } : { t: now, x: e.clientX, y: e.clientY, nodeId };
       if (!isDouble) return;
       if (nodeId) {
-        handlers.current.onOpenDetails(nodeId);
+        setSelectedRelationshipId(undefined);
+        handlers.current.onSelectTopic(nodeId);
+        const node = layoutRef.current?.nodes.find((n) => n.id === nodeId);
+        if (node?.kind === 'text' && handlers.current.onStartEdit) {
+          if (editingRef.current?.id !== nodeId) {
+            handlers.current.onStartEdit(nodeId);
+          }
+        } else {
+          handlers.current.onOpenDetails(nodeId);
+        }
+        suppressSyntheticUntil = performance.now() + 400;
       } else {
         const p = local(e.clientX, e.clientY);
         const k = clampZoom(viewRef.current.k * DOUBLE_TAP_ZOOM);
         animateTo({ ...viewRef.current, k }, 220, { cx: p.x, cy: p.y });
+        suppressSyntheticUntil = performance.now() + 400;
       }
     };
 
     const onMove = (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (mode === 'drag') {
+        if (drag) drag.ptr = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      if (mode === 'nodepress') {
+        const slopPress = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < slopPress) return;
+        if (pointerType === 'mouse') {
+          beginDrag();
+          return;
+        }
+        // Touch: un dito che si muove prima della pressione prolungata fa pan.
+        window.clearTimeout(longPressTimer);
+        pressedNode = -1;
+        beginPan({ x: start.x, y: start.y });
+      }
       if (mode === 'pinch' && pointers.size >= 2) {
         const [a, b] = [...pointers.values()];
         const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -538,6 +863,18 @@ export const MapView: React.FC<MapViewProps> = ({
 
     const onUp = (e: PointerEvent) => {
       if (!pointers.delete(e.pointerId)) return;
+      if (mode === 'drag') {
+        // Anche un drag annullato con Esc resta in questa modalità fino al rilascio.
+        if (drag) drag.ptr = { x: e.clientX, y: e.clientY };
+        finishDrag(e.type === 'pointerup');
+        mode = 'none';
+        pressedNode = -1;
+        cleanup();
+        suppressClickUntil = performance.now() + 400;
+        return;
+      }
+      window.clearTimeout(longPressTimer);
+      pressedNode = -1;
       if (pointers.size >= 2) {
         beginPinch();
         return;
@@ -561,6 +898,7 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const cleanup = () => {
+      window.clearTimeout(longPressTimer);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -570,10 +908,23 @@ export const MapView: React.FC<MapViewProps> = ({
     const onDown = (e: PointerEvent) => {
       const target = e.target as Element;
       if (target.closest('[data-map-ui]')) return;
+      if (mode === 'drag') return;
+      // Blocco trascinabile sotto il puntatore (non la radice, né l'indicatore di collasso).
+      let nodeIdx = -1;
+      const nodeEl = target.closest('[data-node-id]');
+      const l = layoutRef.current;
+      const di = dragIndexRef.current;
+      if (nodeEl && l && di && !target.closest('[data-collapse-toggle]')) {
+        const i = di.byId.get(nodeEl.getAttribute('data-node-id') ?? '');
+        if (i !== undefined && (isDraggable(l, di, i) || (l.nodes[i]?.floating && handlers.current.onMoveFloatingTopic))) {
+          nodeIdx = i;
+        }
+      }
       if (e.pointerType === 'mouse') {
-        // Col mouse si trascina solo dallo sfondo: sui blocchi restano click e doppio click.
+        // Col mouse il pan parte dallo sfondo; su un blocco trascinabile parte il drag
+        // oltre la soglia, altrimenti restano click e doppio click.
         const onBackground = target === container || target.tagName === 'svg' || target.id === 'map-bg';
-        if (e.button !== 0 || !onBackground || pointers.size > 0) return;
+        if (e.button !== 0 || (!onBackground && nodeIdx < 0) || pointers.size > 0) return;
       }
       if (pointers.size >= 2) return;
       cancelMotion();
@@ -588,13 +939,38 @@ export const MapView: React.FC<MapViewProps> = ({
         gestureCleanupRef.current = cleanup;
       }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 2) beginPinch();
-      else beginPan({ x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        beginPinch();
+      } else if (nodeIdx >= 0) {
+        mode = 'nodepress';
+        pressedNode = nodeIdx;
+        last = { x: e.clientX, y: e.clientY };
+        samples = [];
+        // Touch: il drag parte con pressione prolungata, così il pan col dito resta possibile.
+        if (e.pointerType !== 'mouse') {
+          longPressTimer = window.setTimeout(() => {
+            if (mode === 'nodepress') beginDrag();
+          }, LONG_PRESS_MS);
+        }
+      } else {
+        beginPan({ x: e.clientX, y: e.clientY });
+      }
     };
 
-    const onClickCapture = (e: MouseEvent) => {
-      if (performance.now() < suppressClickUntil) {
+    // Il menu contestuale della pressione prolungata (touch) coprirebbe il drag.
+    const onContextMenu = (e: Event) => {
+      if (mode === 'nodepress' || mode === 'drag') e.preventDefault();
+    };
+
+    const onMouseCapture = (e: MouseEvent) => {
+      const synthetic = performance.now() < suppressSyntheticUntil;
+      if (e.type === 'click' && !synthetic && performance.now() < suppressClickUntil) {
         suppressClickUntil = 0;
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
+      if (synthetic) {
         e.stopPropagation();
         e.preventDefault();
       }
@@ -626,19 +1002,26 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     container.addEventListener('pointerdown', onDown);
-    container.addEventListener('click', onClickCapture, true);
+    container.addEventListener('contextmenu', onContextMenu);
+    container.addEventListener('click', onMouseCapture, true);
+    container.addEventListener('dblclick', onMouseCapture, true);
+    container.addEventListener('mousedown', onMouseCapture, true);
     container.addEventListener('gesturestart', onGestureStart);
     container.addEventListener('gesturechange', onGestureChange);
     container.addEventListener('gestureend', onGestureEnd);
     return () => {
       cleanup();
+      finishDrag(false);
+      container.removeEventListener('contextmenu', onContextMenu);
       container.removeEventListener('pointerdown', onDown);
-      container.removeEventListener('click', onClickCapture, true);
+      container.removeEventListener('click', onMouseCapture, true);
+      container.removeEventListener('dblclick', onMouseCapture, true);
+      container.removeEventListener('mousedown', onMouseCapture, true);
       container.removeEventListener('gesturestart', onGestureStart);
       container.removeEventListener('gesturechange', onGestureChange);
       container.removeEventListener('gestureend', onGestureEnd);
     };
-  }, [hasContent, animateTo, applyView, cancelMotion, scheduleApply, scheduleSync]);
+  }, [hasContent, animateTo, applyView, cancelMotion, scheduleApply, scheduleSync, toWorld]);
 
   const selectedNode = useMemo(() => {
     if (!layout || !selectedTopicId) return null;
@@ -646,6 +1029,31 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [layout, selectedTopicId]);
 
   selectedNodeRef.current = selectedNode;
+
+  const editingNode = useMemo(() => {
+    if (!layout || !editing) return null;
+    return layout.nodes.find((n) => n.id === editing.id) || null;
+  }, [layout, editing]);
+
+  // Un blocco appena creato può cadere fuori schermo: lo si porta in vista.
+  useEffect(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!editingNode || !rect) return;
+    const v = viewRef.current;
+    const left = v.x + editingNode.x * v.k;
+    const right = left + Math.max(editingNode.w, 120) * v.k;
+    const top = v.y + editingNode.y * v.k;
+    const bottom = top + editingNode.h * v.k;
+    let dx = 0;
+    let dy = 0;
+    if (left < 16) dx = 16 - left;
+    else if (right > rect.width - 16) dx = rect.width - 16 - right;
+    if (top < 56) dy = 56 - top;
+    else if (bottom > rect.height - 16) dy = rect.height - 16 - bottom;
+    if (dx !== 0 || dy !== 0) animateTo({ k: v.k, x: v.x + dx, y: v.y + dy }, 200);
+    // Solo quando si apre l'editor su un blocco.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id, Boolean(editingNode)]);
 
   useEffect(() => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -666,6 +1074,35 @@ export const MapView: React.FC<MapViewProps> = ({
       240
     );
   }, [detailsOpen, selectedNode, animateTo]);
+  // Scorciatoie da tastiera della mappa su desktop:
+  // - Ctrl+I / Cmd+I: apre il pannello dettagli sul blocco selezionato.
+  // - Ctrl+Maiusc+L / Cmd+Maiusc+L: apre l'editor della formula LaTeX.
+  // Usiamo Ctrl/Cmd anziché lettere semplici (D, L) perché la digitazione
+  // di lettere su un blocco di testo selezionato avvia l'editing in place del titolo.
+  useEffect(() => {
+    if (!selectedTopicId || editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return;
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrMeta || e.altKey) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+
+      const key = e.key.toLowerCase();
+      if (!e.shiftKey && key === 'i') {
+        e.preventDefault();
+        handlers.current.onOpenDetails(selectedTopicId);
+      } else if (e.shiftKey && key === 'l') {
+        if (handlers.current.onOpenLatex) {
+          e.preventDefault();
+          handlers.current.onOpenLatex(selectedTopicId);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedTopicId, editing]);
+
   // Dopo ogni render riapplica la vista viva (SVG appena montato, barra del nodo).
   useLayoutEffect(() => {
     applyView();
@@ -708,9 +1145,6 @@ export const MapView: React.FC<MapViewProps> = ({
             <circle cx="2" cy="2" r="1" fill="var(--map-grid-dot)" />
           </pattern>
 
-          <marker id="rel-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--muted-foreground)" />
-          </marker>
         </defs>
 
         <rect
@@ -757,65 +1191,13 @@ export const MapView: React.FC<MapViewProps> = ({
           return (
             <path
               key={`edge-${idx}`}
+              data-edge-child={c.id}
               d={pathD}
               fill="none"
               stroke={c.accent || 'var(--map-link)'}
               strokeWidth={c.depth <= 1 ? 3 : 2}
               strokeLinecap="round"
             />
-          );
-        })}
-
-        {/* Relazioni tra nodi */}
-        {layout.relationships.map((rel) => {
-          const from = layout.nodes[rel.from];
-          const to = layout.nodes[rel.to];
-          if (!from || !to) return null;
-          const sx = from.x + from.w / 2;
-          const sy = from.y + from.h / 2;
-          const ex = to.x + to.w / 2;
-          const ey = to.y + to.h / 2;
-          const cx = (sx + ex) / 2 - (ey - sy) * 0.2;
-          const cy = (sy + ey) / 2 + (ex - sx) * 0.2;
-          // Larghezza stimata della pillola: ~6px per carattere a 11px.
-          const labelW = rel.title ? rel.title.length * 6 + 14 : 0;
-
-          return (
-            <g key={`rel-${rel.id}`}>
-              <path
-                d={`M ${sx} ${sy} Q ${cx} ${cy}, ${ex} ${ey}`}
-                fill="none"
-                stroke="var(--muted-foreground)"
-                strokeWidth={1.5}
-                strokeDasharray="5 4"
-                markerEnd="url(#rel-arrow)"
-                opacity={0.8}
-              />
-              {rel.title && (
-                <>
-                  <rect
-                    x={cx - labelW / 2}
-                    y={cy - 18}
-                    width={labelW}
-                    height={16}
-                    rx={6}
-                    fill="var(--background)"
-                    stroke="var(--border)"
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={cx}
-                    y={cy - 10}
-                    fill="var(--muted-foreground)"
-                    className="text-2xs font-medium"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    {rel.title}
-                  </text>
-                </>
-              )}
-            </g>
           );
         })}
 
@@ -867,11 +1249,18 @@ export const MapView: React.FC<MapViewProps> = ({
               className="cursor-pointer group"
               onClick={(e) => {
                 e.stopPropagation();
+                setSelectedRelationshipId(undefined);
                 handlers.current.onSelectTopic(node.id);
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                handlers.current.onOpenDetails(node.id);
+                // I blocchi di testo si modificano in place (anche su touch); formule e immagini aprono i dettagli.
+                if (editingRef.current?.id === node.id) return;
+                if (node.kind === 'text' && handlers.current.onStartEdit) {
+                  handlers.current.onStartEdit(node.id);
+                } else {
+                  handlers.current.onOpenDetails(node.id);
+                }
               }}
             >
               {/* Alone di selezione: anello esterno adiacente al bordo (3px, 24%) */}
@@ -939,9 +1328,10 @@ export const MapView: React.FC<MapViewProps> = ({
                               ? 'text-sm font-semibold tracking-tight'
                               : isBranch
                               ? 'text-xs font-semibold'
-                              : 'text-xs font-medium'
+                              : 'text-xs font-normal'
                           )}
                           style={{
+                            ...textStyleCss(node.textStyle, look.textLight),
                             display: '-webkit-box',
                             WebkitLineClamp: Math.max(Math.floor((node.h - 8) / 16), 1),
                             WebkitBoxOrient: 'vertical',
@@ -949,7 +1339,7 @@ export const MapView: React.FC<MapViewProps> = ({
                           }}
                           title={node.displayTitle || node.title}
                         >
-                          {node.displayTitle || node.title || '(senza titolo)'}
+                          <RichTitle text={node.displayTitle || node.title || '(senza titolo)'} runs={node.titleRuns} textLight={look.textLight} />
                         </span>
                       )}
 
@@ -1004,6 +1394,7 @@ export const MapView: React.FC<MapViewProps> = ({
               {/* Indicatore comprimi / espandi: bordo destro, o sotto il blocco per la Tree Chart */}
               {hasChildren && (
                 <g
+                  data-collapse-toggle
                   transform={
                     node.childrenBelow
                       ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
@@ -1033,9 +1424,100 @@ export const MapView: React.FC<MapViewProps> = ({
             </g>
           );
         })}
+
+        {/* Relazioni dopo i blocchi: le maniglie di piegatura devono restare cliccabili anche
+            sopra i blocchi. `data-map-ui` esclude il layer da pan e drag del contenitore. */}
+        <g data-map-ui>
+          <RelationshipLayer
+            relationships={layout.relationships}
+            nodes={layout.nodes}
+            selectedRelationshipId={selectedRelationshipId}
+            onSelectRelationship={setSelectedRelationshipId}
+            onControlPointsChange={(relId, points) =>
+              handlers.current.onRelationshipControlPointsChange?.(relId, points)
+            }
+            toWorld={toWorld}
+            darkMode={darkMode}
+          />
+        </g>
       </>
     );
-  }, [layout, selectedTopicId, darkMode, resourceUrls, formulaSvgCache]);
+  }, [layout, selectedTopicId, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld]);
+
+  // Fantasma del blocco trascinato e indicatore del bersaglio, sopra tutto il resto.
+  const dragLayer = useMemo(() => {
+    if (!dragOverlay || !layout) return null;
+    const src = layout.nodes.find((n) => n.id === dragOverlay.sourceId);
+    if (!src) return null;
+    const look = nodeLook(src, darkMode);
+    const { ghost, drop } = dragOverlay;
+    const target = drop ? layout.nodes[drop.targetIndex] : undefined;
+    const ind = drop?.indicator;
+    return (
+      <g pointerEvents="none">
+        {target && drop && (
+          <rect
+            x={target.x - 3}
+            y={target.y - 3}
+            width={target.w + 6}
+            height={target.h + 6}
+            rx={13}
+            fill={drop.placement === 'into' ? 'color-mix(in oklab, var(--primary) 14%, transparent)' : 'none'}
+            stroke="var(--primary)"
+            strokeWidth={drop.placement === 'into' ? 2 : 1}
+            strokeOpacity={drop.placement === 'into' ? 1 : 0.45}
+          />
+        )}
+        {ind?.kind === 'line' && (
+          <g stroke="var(--primary)" fill="var(--primary)">
+            <line x1={ind.x1} x2={ind.x2} y1={ind.y} y2={ind.y} strokeWidth={3} strokeLinecap="round" />
+            <circle cx={ind.x1} cy={ind.y} r={4} stroke="none" />
+          </g>
+        )}
+        {ind?.kind === 'child' && (
+          <g stroke="var(--primary)" fill="none">
+            <path
+              d={`M ${ind.from.x} ${ind.from.y} C ${ind.from.x + 28} ${ind.from.y}, ${ind.to.x - 28} ${ind.to.y}, ${ind.to.x} ${ind.to.y}`}
+              strokeWidth={2.5}
+              strokeDasharray="6 4"
+              strokeLinecap="round"
+            />
+            <rect
+              x={ind.to.x}
+              y={ind.to.y - ind.h / 2}
+              width={ind.w}
+              height={ind.h}
+              rx={10}
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              fill="color-mix(in oklab, var(--primary) 10%, transparent)"
+            />
+          </g>
+        )}
+        <g transform={`translate(${ghost.x}, ${ghost.y})`} opacity={0.75}>
+          <rect
+            width={src.w}
+            height={src.h}
+            rx={10}
+            fill={look.fill}
+            stroke={look.stroke}
+            strokeWidth={1}
+            style={{ filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.3))' }}
+          />
+          <foreignObject x={10} y={4} width={Math.max(src.w - 18, 10)} height={Math.max(src.h - 8, 10)}>
+            <div
+              className="flex h-full w-full items-center overflow-hidden text-xs leading-snug"
+              style={{ color: look.text }}
+            >
+              <span className="line-clamp-3 break-words" style={textStyleCss(src.textStyle)}>
+                {src.latex ? src.latex : src.displayTitle || src.title || '(senza titolo)'}
+              </span>
+            </div>
+          </foreignObject>
+        </g>
+      </g>
+    );
+  }, [dragOverlay, layout, darkMode]);
 
   if (!layout || layout.nodes.length === 0) {
     return (
@@ -1054,7 +1536,15 @@ export const MapView: React.FC<MapViewProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 h-full w-full overflow-clip bg-[var(--map-canvas)] select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150"
+      className={cn(
+        'relative flex-1 h-full w-full overflow-clip bg-[var(--map-canvas)] select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150',
+        dragOverlay && '!cursor-grabbing'
+      )}
+      onClick={(e) => {
+        // Click sullo sfondo: deseleziona la relazione.
+        const t = e.target as Element;
+        if (t === e.currentTarget || t.tagName === 'svg' || t.id === 'map-bg') setSelectedRelationshipId(undefined);
+      }}
     >
       {/* Controlli zoom flottanti in basso a destra */}
       <div
@@ -1106,44 +1596,50 @@ export const MapView: React.FC<MapViewProps> = ({
         </IconButton>
       </div>
 
-      {/* Barra contestuale flottante sul nodo selezionato */}
-      {selectedNode && (
+      {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse) */}
+      {isCoarse && selectedNode && (
         <div
           ref={toolbarRef}
           data-map-ui
-          className="absolute z-20 pointer-events-auto flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer"
+          // Niente focus sui pulsanti: le scorciatoie da tastiera sulla mappa restano attive.
+          onMouseDown={(e) => e.preventDefault()}
+          className="absolute z-20 pointer-events-auto flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer max-w-[calc(100%-16px)]"
           style={{ transform: 'translateY(-100%)' }}
         >
           {onAddChild && (
             <Button
               variant="ghost"
               size="sm"
+              className="px-2 sm:px-[9px] text-xs sm:text-sm"
               icon={<Plus className="size-4" />}
               onClick={() => onAddChild(selectedNode.id)}
               title="Aggiungi sotto-blocco"
             >
-              Sotto-blocco
+              <span className="hidden min-[380px]:inline">Sotto-blocco</span>
+              <span className="min-[380px]:hidden">Sotto</span>
             </Button>
           )}
-          {onOpenLatex && (
+          {onAddSibling && selectedNode.depth > 0 && (
             <Button
               variant="ghost"
               size="sm"
-              icon={<Sigma className="size-4" />}
-              onClick={() => onOpenLatex(selectedNode.id)}
-              title="Modifica formula LaTeX"
+              className="px-2 sm:px-[9px] text-xs sm:text-sm"
+              icon={<CornerDownLeft className="size-4" />}
+              onClick={() => onAddSibling(selectedNode.id)}
+              title="Aggiungi blocco fratello"
             >
-              Formula
+              Fratello
             </Button>
           )}
           <Button
             variant="ghost"
             size="sm"
+            className="px-2 sm:px-[9px] text-xs sm:text-sm"
             icon={<Edit3 className="size-4" />}
             onClick={() => onOpenDetails(selectedNode.id)}
-            title="Apri pannello dettagli"
+            title="Modifica il blocco (testo, formula, stile)"
           >
-            Dettagli
+            Modifica
           </Button>
           {selectedNode.depth > 0 && onDeleteTopic && (
             <>
@@ -1152,16 +1648,35 @@ export const MapView: React.FC<MapViewProps> = ({
                 size="sm"
                 variant="ghost-destructive"
                 label="Elimina blocco"
-                onClick={() => {
-                  if (confirm('Eliminare questo blocco?')) {
-                    onDeleteTopic(selectedNode.id);
-                  }
-                }}
+                onClick={() => onDeleteTopic(selectedNode.id)}
               >
                 <Trash2 className="size-4" />
               </IconButton>
             </>
           )}
+        </div>
+      )}
+
+      {/* Editor in place del titolo: stesso sistema di coordinate dell'SVG, quindi segue pan e zoom. */}
+      {editingNode && editing && onCommitEdit && (
+        <div
+          ref={editorLayerRef}
+          data-map-ui
+          className="absolute left-0 top-0 z-10 size-0"
+          style={{ transformOrigin: '0 0' }}
+        >
+          <NodeEditor
+            key={editing.id}
+            x={editingNode.x}
+            y={editingNode.y}
+            w={editingNode.w}
+            h={editingNode.h}
+            isRoot={editingNode.depth === 0}
+            initialText={editing.mode === 'text' ? editing.text ?? '' : editingNode.title}
+            selectAll={editing.mode === 'all'}
+            onCommit={(text, exit) => onCommitEdit(editing.id, text, exit)}
+            onCancel={() => onCancelEdit?.()}
+          />
         </div>
       )}
 
@@ -1175,6 +1690,7 @@ export const MapView: React.FC<MapViewProps> = ({
         style={{ transformOrigin: '0 0', willChange: 'transform', textRendering: 'geometricPrecision' }}
       >
         {content}
+        {dragLayer}
       </svg>
     </div>
   );
