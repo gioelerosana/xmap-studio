@@ -136,6 +136,7 @@ const stagePackageJson = {
   productName: desktopPkg.productName || 'XMap Studio',
   version: version,
   description: 'Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato',
+  desktopName: desktopPkg.desktopName,
   main: 'apps/desktop/dist/main.js',
   dependencies: {
     '@xmap/core': '*',

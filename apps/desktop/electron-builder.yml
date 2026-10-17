@@ -41,6 +41,8 @@ fileAssociations:
 
 linux:
   category: Office
+  # Allinea WM_CLASS/app_id al nome del .desktop (desktopName del package.json).
+  syncDesktopName: true
   mimeTypes:
     - application/xmind
   target:
