@@ -1,5 +1,10 @@
-- [x] Spostamento dei blocchi nell'albero di fianco con drag & drop (rientro aggiornato)
-- [x] Save on close (prompt Salva/Non salvare/Annulla)
-- [x] Tasto elimina blocco più evidente (cestino rosso nella testata)
-- [x] Quando premo il tasto applica la colonna di sinistra deve mantenere la posizione e non tornare ogni volta all'inizio del file
-- [x] Evita di creare tutti questi file di backup o per lo meno non farmeli vedere tutti. Mettili dentro una cartella nascosta e tienili sotto controllo 
+- Spostamento libero delle immagini legate da frecce
+- Possibilità di ridimensionamento delle due barre laterali (quando visibili)
+- Aggiornamento del logo
+- Pagina impostazioni
+- Snellimento generale della barra destra
+- Possibilità di modifica mappa direttamente tramite Invii (per creare nodi fratelli) e Tab per creare nodi figli (come XMIND) IMPORTANTE !!!
+- Eliminare la conferma per l'eliminazione di un blocco
+- Integrare un Ctrl+Z efficace
+- Evitare ridimensionamenti indesiderati dopo aver fatto delle aggiunte di blocchi alla mappa
+

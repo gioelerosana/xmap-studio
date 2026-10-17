@@ -6,7 +6,7 @@
 # entrano nel pacchetto) e usa l'Electron di sistema invece di quello di npm.
 
 pkgname=xmap-studio
-pkgver=0.1.0.r48.gf3984a7
+pkgver=0.1.0.r74.g8dae65c
 pkgrel=1
 pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato'
 arch=('x86_64')
