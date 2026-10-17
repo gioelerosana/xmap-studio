@@ -5,12 +5,12 @@ import {
   Minus,
   Maximize2,
   FileText,
-  Sigma,
   Network,
   Edit3,
   Trash2,
   ListTree,
   GitFork,
+  CornerDownLeft,
 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
 import { NodeEditor, type EditExit } from './map/NodeEditor.js';
@@ -162,6 +162,8 @@ export interface MapViewProps {
   onOpenDetails: (topicId: string) => void;
   onOpenLatex?: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
+  /** Crea un fratello dopo il blocco, come Invio. */
+  onAddSibling?: (topicId: string) => void;
   onDeleteTopic?: (topicId: string) => void;
   onToggleCollapse: (topicId: string) => void;
   resourceResolver: (src: string) => Uint8Array | null;
@@ -186,6 +188,7 @@ export const MapView: React.FC<MapViewProps> = ({
   onOpenDetails,
   onOpenLatex,
   onAddChild,
+  onAddSibling,
   onDeleteTopic,
   onToggleCollapse,
   resourceResolver,
@@ -300,7 +303,7 @@ export const MapView: React.FC<MapViewProps> = ({
     const n = selectedNodeRef.current;
     if (toolbarRef.current && n) {
       // Su schermi stretti la barra resta dentro il canvas invece di uscire a destra.
-      const maxLeft = (containerRef.current?.clientWidth ?? Infinity) - toolbarRef.current.offsetWidth - 8;
+      const maxLeft = Math.max(8, (containerRef.current?.clientWidth ?? Infinity) - toolbarRef.current.offsetWidth - 8);
       toolbarRef.current.style.left = `${Math.max(8, Math.min(v.x + n.x * v.k, maxLeft))}px`;
       toolbarRef.current.style.top = `${v.y + (n.y - 42) * v.k}px`;
     }
@@ -1571,39 +1574,43 @@ export const MapView: React.FC<MapViewProps> = ({
           data-map-ui
           // Niente focus sui pulsanti: le scorciatoie da tastiera sulla mappa restano attive.
           onMouseDown={(e) => e.preventDefault()}
-          className="absolute z-20 pointer-events-auto flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer"
+          className="absolute z-20 pointer-events-auto flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer max-w-[calc(100%-16px)]"
           style={{ transform: 'translateY(-100%)' }}
         >
           {onAddChild && (
             <Button
               variant="ghost"
               size="sm"
+              className="px-2 sm:px-[9px] text-xs sm:text-sm"
               icon={<Plus className="size-4" />}
               onClick={() => onAddChild(selectedNode.id)}
               title="Aggiungi sotto-blocco"
             >
-              Sotto-blocco
+              <span className="hidden min-[380px]:inline">Sotto-blocco</span>
+              <span className="min-[380px]:hidden">Sotto</span>
             </Button>
           )}
-          {onOpenLatex && (
+          {onAddSibling && selectedNode.depth > 0 && (
             <Button
               variant="ghost"
               size="sm"
-              icon={<Sigma className="size-4" />}
-              onClick={() => onOpenLatex(selectedNode.id)}
-              title="Modifica formula LaTeX"
+              className="px-2 sm:px-[9px] text-xs sm:text-sm"
+              icon={<CornerDownLeft className="size-4" />}
+              onClick={() => onAddSibling(selectedNode.id)}
+              title="Aggiungi blocco fratello"
             >
-              Formula
+              Fratello
             </Button>
           )}
           <Button
             variant="ghost"
             size="sm"
+            className="px-2 sm:px-[9px] text-xs sm:text-sm"
             icon={<Edit3 className="size-4" />}
             onClick={() => onOpenDetails(selectedNode.id)}
-            title="Apri pannello dettagli"
+            title="Modifica il blocco (testo, formula, stile)"
           >
-            Dettagli
+            Modifica
           </Button>
           {selectedNode.depth > 0 && onDeleteTopic && (
             <>

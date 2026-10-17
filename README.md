@@ -17,8 +17,8 @@ Oggi sa:
 - **allegare file** e gestire **task** (priorità, avanzamento, date) e il
   **colore del ramo**;
 - **esportare** la mappa in **Markdown/OPML**, esportare l'**equazione in
-  SVG/PNG**, **importarla** e **unire o dividere** file `.xmind`, oltre a una
-  vista **outliner** e a un'**anteprima grafica**;
+  SVG/PNG**, **importarla** e **unire o dividere** file `.xmind`, oltre a un'
+  **anteprima grafica**;
 - salvare in modo sicuro (scrittura atomica, backup nascosti, validazione) e
   non perdere nulla alla chiusura (prompt Salva/Non salvare/Annulla);
 - **aprire i `.xmind` dal file manager** (doppio clic / "Apri con…").
@@ -26,8 +26,8 @@ Oggi sa:
 Niente account, niente telemetria. Apre, mostra, modifica, salva.
 
 Interfaccia minimale a tre pannelli: **albero** a sinistra (ricerca, filtri per
-tipo, drag & drop), **mappa o outliner** al centro, **ispettore** del blocco a
-destra (titolo, equazione, note, etichette, marker, link, colore, task,
+tipo, drag & drop), **mappa** al centro, **ispettore** del blocco a
+destra (chiuso di base) (titolo, equazione, note, etichette, marker, link, colore, task,
 struttura).
 
 XMind gratuito blocca il pulsante "Equation", ma **il formato su disco accetta le
@@ -80,7 +80,7 @@ packages/core/src/
   state/         # workbook aperto, undo/redo, DTO verso la UI
   controller.ts  # API unica verso la UI
 apps/web/src/
-  components/    # Sidebar (albero), MapView, OutlineView, Inspector, modali
+  components/    # Sidebar (albero), MapView, Inspector, modali
   adapters/      # dialogo file web / Electron
 apps/desktop/src # main (finestra, IPC, scrittura atomica) + preload
 ```
@@ -210,7 +210,7 @@ Per aprire i `.xmind` dal file manager con la versione desktop, associa il MIME
 ### Scorciatoie
 
 `Ctrl+O` apri · `Ctrl+S` salva · `Ctrl+Shift+S` salva con nome · `Ctrl+Z` annulla ·
-`Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+M` vista mappa · `Ctrl+Shift+N` aggiungi
+`Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+Shift+N` aggiungi
 sotto-blocco · `Ctrl+,` impostazioni.
 
 Sulla mappa, come in XMind: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello

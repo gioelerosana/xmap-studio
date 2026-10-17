@@ -135,7 +135,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 
 | Feature | Lock Free | Note | Priorità |
 |---|---|---|---|
-| Outliner (vista testo) | sì | **Fatto** (Fase 5): `export::to_outline`, finestra in sola lettura | Media |
+| Outliner (vista testo) | sì | **Rimosso dalla UI** (resta `export::to_outline`) | Media |
 | Ricerca / filtro nell'albero | sì | **Fatto**: barra di ricerca + filtri per tipo nella colonna sinistra | Media |
 | Apertura dal file manager | sì | **Fatto**: MIME `application/xmind` + `.desktop` con `Exec=… %f`, `HANDLES_OPEN`; una finestra per file | Media |
 | Temi / custom theme | sì | Parziale (Fase 5): colore di ramo (`svg:fill`); l'editor di temi resta da fare | Bassa |
@@ -255,10 +255,10 @@ confermato, ma servono codec/registrazione.
 Outliner, ricerca/filtro, temi/stili e colored branch.
 **Perché ultima:** sono molto UI-heavy (temi, editor task, rich text) con valore
 inferiore rispetto alle fasi precedenti; il formato è ormai confermato.
-**Dove:** `OutlineView`, `TopicTree` (ricerca), `task/task.ts` (task),
+**Dove:** `TopicTree` (ricerca), `task/task.ts` (task),
 `model/utils.ts` (colore).
 **Stato:** **fatto** per task (`task/task.ts`: priorità, avanzamento, date; estensione
-scritta con `dependencies` preservate), outliner in sola lettura, ricerca/filtro
+scritta con `dependencies` preservate), outliner (export; la vista in app è stata tolta), ricerca/filtro
 (già presenti) e colore del ramo (`svg:fill`). L'editor dei temi e il rich text
 restano da fare.
 

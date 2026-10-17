@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   HeaderBar,
-  ViewSwitcher,
   Button,
   IconButton,
   Menu,
@@ -30,8 +29,6 @@ import {
   Redo2,
   Moon,
   Sun,
-  ListTree,
-  Network,
   MoreVertical,
   FileDown,
   FileUp,
@@ -57,7 +54,6 @@ import { Sidebar } from './components/Sidebar.js';
 import { MapView, type MapEditing } from './components/MapView.js';
 import type { EditExit } from './components/map/NodeEditor.js';
 import { neighborId, selectionAfterDelete } from './components/map/navigation.js';
-import { OutlineView } from './components/OutlineView.js';
 import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
 import { INSPECTOR_PANEL, SIDEBAR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
@@ -125,7 +121,7 @@ function sanitizeName(name: string): string {
 const COMPACT_QUERY = '(max-width: 639px)';
 const WIDE_QUERY = '(min-width: 1024px)';
 /** Livelli di compattazione dell'header: da questo livello in poi l'elemento va nel menu. */
-const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, views: 6, max: 6 } as const;
+const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, max: 5 } as const;
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches);
@@ -146,7 +142,6 @@ export const App: React.FC = () => {
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   // Cresce a ogni documento aperto: la mappa si riadatta solo allora (o al cambio di foglio).
   const [documentKey, setDocumentKey] = useState(0);
-  const [viewMode, setViewMode] = useState<'map' | 'outline'>('map');
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<TopicFilter>('all');
   const { settings, darkMode, update: updateSettings, reset: resetSettings } = useSettings();
@@ -221,7 +216,6 @@ export const App: React.FC = () => {
   const inlineRedo = headerLevel < HEADER_LEVEL.redoTheme;
   const inlineUndo = headerLevel < HEADER_LEVEL.undo;
   const inlineOpen = headerLevel < HEADER_LEVEL.open;
-  const inlineViews = headerLevel < HEADER_LEVEL.views;
   const showTitle = headerLevel < HEADER_LEVEL.title;
 
   useEffect(() => {
@@ -303,14 +297,9 @@ export const App: React.FC = () => {
   const setMapStructure = useCallback((structure: MapStructure) => updateSettings({ mapStructure: structure }), [updateSettings]);
 
   const currentLayout = useMemo<Layout | null>(() => {
-    if (!workbook || viewMode !== 'map') return null;
+    if (!workbook) return null;
     return controller.mapLayout(activeSheetIndex, collapsedIds, mapStructure);
-  }, [controller, workbook, activeSheetIndex, viewMode, collapsedIds, mapStructure]);
-
-  const outlineText = useMemo(() => {
-    if (!workbook || viewMode !== 'outline') return '';
-    return controller.export('outline');
-  }, [controller, workbook, viewMode, activeSheetIndex]);
+  }, [controller, workbook, activeSheetIndex, collapsedIds, mapStructure]);
 
   // Tema
   useEffect(() => {
@@ -578,9 +567,6 @@ export const App: React.FC = () => {
       } else if (key === 'o') {
         e.preventDefault();
         handleOpenLocalFile();
-      } else if (key === 'm') {
-        e.preventDefault();
-        setViewMode('map');
       } else if (e.shiftKey && key === 'n') {
         e.preventDefault();
         if (selectedTopic) handleAddChild(selectedTopic.id);
@@ -819,7 +805,6 @@ export const App: React.FC = () => {
   const keyCtx = useRef({ startEdit, createTopic, handleDeleteSelected });
   keyCtx.current = { startEdit, createTopic, handleDeleteSelected };
   const mapKeysEnabled =
-    viewMode === 'map' &&
     Boolean(workbook) &&
     !editing &&
     !exportModalOpen &&
@@ -899,13 +884,6 @@ export const App: React.FC = () => {
     ...(workbook && !inlineDetails
       ? [{ id: 'details', label: 'Dettagli blocco', icon: <PanelRight className="size-4" />, disabled: !selectedTopicId, onSelect: toggleDetails }]
       : []),
-    ...(workbook && !inlineViews
-      ? [
-          viewMode === 'map'
-            ? { id: 'view-outline', label: 'Vista outliner', icon: <ListTree className="size-4" />, onSelect: () => setViewMode('outline') }
-            : { id: 'view-map', label: 'Vista mappa', icon: <Network className="size-4" />, onSelect: () => setViewMode('map') },
-        ]
-      : []),
   ];
 
   const menuItems: MenuItem[] = workbook
@@ -970,18 +948,6 @@ export const App: React.FC = () => {
                 <PanelLeft className="size-4" />
               </IconButton>
             )}
-            {workbook && inlineDetails && (
-              <IconButton
-                size="sm"
-                active={inspectorVisible}
-                disabled={!selectedTopicId}
-                onClick={toggleDetails}
-                title="Dettagli blocco"
-                label="Dettagli blocco"
-              >
-                <PanelRight className="size-4" />
-              </IconButton>
-            )}
             {inlineOpen && (
               <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
                 <span className={cn(!showLabels && 'sr-only')}>Apri</span>
@@ -1010,26 +976,23 @@ export const App: React.FC = () => {
             )}
           </>
         }
-        centerContent={
-          workbook &&
-          inlineViews && (
-            <ViewSwitcher
-              items={[
-                { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
-                { id: 'outline', label: 'Outliner', icon: <ListTree className="size-4" /> },
-              ]}
-              activeId={viewMode}
-              onChange={(id) => setViewMode(id as 'map' | 'outline')}
-              size="sm"
-              className={cn(!showLabels && '[&_span]:sr-only')}
-            />
-          )
-        }
         rightContent={
           <>
             {inlineRedo && (
               <IconButton size="sm" onClick={toggleDarkMode} label="Cambia tema">
                 {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </IconButton>
+            )}
+            {workbook && inlineDetails && (
+              <IconButton
+                size="sm"
+                active={inspectorVisible}
+                disabled={!selectedTopicId}
+                onClick={toggleDetails}
+                title="Dettagli blocco"
+                label="Dettagli blocco"
+              >
+                <PanelRight className="size-4" />
               </IconButton>
             )}
             <Menu items={menuItems} widthClass="w-72" trigger={
@@ -1095,33 +1058,30 @@ export const App: React.FC = () => {
             />
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-              {viewMode === 'map' ? (
-                <MapView
-                  layout={currentLayout}
-                  viewKey={`${documentKey}:${activeSheetIndex}`}
-                  selectedTopicId={selectedTopicId}
-                  onSelectTopic={setSelectedTopicId}
-                  onOpenDetails={openDetails}
-                  onOpenLatex={openDetails}
-                  detailsOpen={inspectorVisible}
-                  onAddChild={(id) => createTopic(id, 'child')}
-                  onDeleteTopic={handleDeleteSelected}
-                  editing={editing}
-                  onStartEdit={startEdit}
-                  onCommitEdit={handleCommitEdit}
-                  onCancelEdit={() => setEditing(null)}
-                  onToggleCollapse={handleToggleCollapse}
-                  resourceResolver={resolveResource}
-                  darkMode={darkMode}
-                  structure={mapStructure}
-                  onStructureChange={setMapStructure}
-                  onMoveTopic={handleMove}
-                  onMoveFloatingTopic={handleMoveFloating}
-                  onRelationshipControlPointsChange={handleRelationshipControlPoint}
-                />
-              ) : (
-                <OutlineView text={outlineText} />
-              )}
+              <MapView
+                layout={currentLayout}
+                viewKey={`${documentKey}:${activeSheetIndex}`}
+                selectedTopicId={selectedTopicId}
+                onSelectTopic={setSelectedTopicId}
+                onOpenDetails={openDetails}
+                onOpenLatex={openDetails}
+                detailsOpen={inspectorVisible}
+                onAddChild={(id) => createTopic(id, 'child')}
+                onAddSibling={(id) => createTopic(id, 'after')}
+                onDeleteTopic={handleDeleteSelected}
+                editing={editing}
+                onStartEdit={startEdit}
+                onCommitEdit={handleCommitEdit}
+                onCancelEdit={() => setEditing(null)}
+                onToggleCollapse={handleToggleCollapse}
+                resourceResolver={resolveResource}
+                darkMode={darkMode}
+                structure={mapStructure}
+                onStructureChange={setMapStructure}
+                onMoveTopic={handleMove}
+                onMoveFloatingTopic={handleMoveFloating}
+                onRelationshipControlPointsChange={handleRelationshipControlPoint}
+              />
 
               {workbook.sheets.length > 1 && (
                 <div className="flex h-[calc(2.25rem+env(safe-area-inset-bottom))] shrink-0 items-center gap-1 overflow-x-auto border-t bg-sidebar px-2 pb-[env(safe-area-inset-bottom)]">

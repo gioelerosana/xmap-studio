@@ -12,7 +12,7 @@ un SVG dentro l'app React.
 
 | Tema | Scelta |
 |---|---|
-| Collocazione | `MapView` (`apps/web/src/components/MapView.tsx`) è la vista primaria; l'outliner testuale è `OutlineView`. |
+| Collocazione | `MapView` (`apps/web/src/components/MapView.tsx`) è l'unica vista dell'app (la vista outliner è stata rimossa dalla UI; l'export outline resta nel core). |
 | Equazioni nei nodi | SVG MathJax (`renderLatexToSvg`) con cache per stringa LaTeX; immagini XMind da `resources/`. |
 | Interazione | Selezione, collapse/expand, pan, zoom, drag & drop dei blocchi, maniglie delle relazioni. Niente menu contestuale. |
 | Dati | Il layout è alimentato dai **DTO** (`SheetDto`/`TopicView`), non dal modello. |
