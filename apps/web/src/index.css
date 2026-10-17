@@ -12,3 +12,10 @@ body {
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
 }
+
+/* Durante il trascinamento di una maniglia di ridimensionamento: cursore e nessuna selezione su tutto il documento. */
+.is-resizing-panel,
+.is-resizing-panel * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
