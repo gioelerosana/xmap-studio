@@ -1,7 +1,11 @@
-# Pipeline di release: gira SOLO quando si pusha un tag di versione (vX.Y.Z).
-# Nessuna pipeline per branch o merge request.
+# Pipeline di release: gira quando si pusha un tag di versione (vX.Y.Z) e
+# quando la si lancia a mano da GitLab (Build › Pipelines › Run pipeline, su
+# qualunque branch o tag). Nessuna pipeline per push su branch o merge request.
 #
 #   git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
+#
+# Nei lanci manuali su un branch non c'è un tag da confrontare: il controllo
+# tag/versione si salta, build e test girano comunque.
 #
 # Produce due artefatti standalone (scaricabili dalla pipeline del tag):
 #   - XMap-Studio-<versione>-portable-x64.exe   Windows, eseguibile portable
@@ -11,6 +15,7 @@
 workflow:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
 
 stages:
   - verify
@@ -45,7 +50,12 @@ verify:
   extends: .release-base
   stage: verify
   script:
-    - node scripts/check-release-version.mjs "$CI_COMMIT_TAG"
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        node scripts/check-release-version.mjs "$CI_COMMIT_TAG"
+      else
+        echo "Lancio manuale senza tag: controllo tag/versione saltato."
+      fi
     - pnpm build
     - pnpm test
 
@@ -57,7 +67,7 @@ build:windows:
     - pnpm dist:win
     - cd apps/desktop/release && sha256sum XMap-Studio-*-portable-x64.exe > SHA256SUMS-windows.txt
   artifacts:
-    name: xmap-studio-windows-$CI_COMMIT_TAG
+    name: xmap-studio-windows-$CI_COMMIT_REF_SLUG
     paths:
       - apps/desktop/release/XMap-Studio-*-portable-x64.exe
       - apps/desktop/release/SHA256SUMS-windows.txt
@@ -71,7 +81,7 @@ build:linux-appimage:
     - pnpm dist:linux
     - cd apps/desktop/release && sha256sum XMap-Studio-*-x86_64.AppImage > SHA256SUMS-linux.txt
   artifacts:
-    name: xmap-studio-linux-$CI_COMMIT_TAG
+    name: xmap-studio-linux-$CI_COMMIT_REF_SLUG
     paths:
       - apps/desktop/release/XMap-Studio-*-x86_64.AppImage
       - apps/desktop/release/SHA256SUMS-linux.txt

@@ -33,8 +33,9 @@ allineati a ogni release.
 
 ## Pipeline di release (GitLab CI)
 
-[`.gitlab-ci.yml`](../.gitlab-ci.yml) gira **solo** sui tag `vX.Y.Z` (SemVer
-puro: niente pipeline per branch o merge request). Tre job:
+[`.gitlab-ci.yml`](../.gitlab-ci.yml) gira sui tag `vX.Y.Z` (SemVer puro) e
+**a mano** da GitLab (Build › Pipelines › Run pipeline, scegliendo branch o
+tag); niente pipeline per i push su branch o per le merge request. Tre job:
 
 | Job | Stage | Cosa fa |
 |---|---|---|
@@ -42,7 +43,9 @@ puro: niente pipeline per branch o merge request). Tre job:
 | `build:windows` | build | `pnpm dist:win` → `XMap-Studio-<versione>-portable-x64.exe` (+ `SHA256SUMS-windows.txt`) |
 | `build:linux-appimage` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage` (+ `SHA256SUMS-linux.txt`) |
 
-I due build partono solo se `verify` è verde. Tutti usano l'immagine
+In un lancio manuale su un branch non c'è un tag: il controllo tag/versione si
+salta, build e test girano comunque (su un tag viene eseguito normalmente). I
+due build partono solo se `verify` è verde. Tutti usano l'immagine
 `electronuserland/builder:wine` (Node, Wine per icona e metadati dell'exe,
 cross-build da Linux) e la versione di pnpm fissata nella variabile `PNPM_VERSION`
 del `.gitlab-ci.yml` (da tenere allineata a quella che genera `pnpm-lock.yaml`). Gli artefatti (`expire_in: never`) si scaricano dalla
