@@ -1,4 +1,10 @@
 import {
+  AddImageTopicOptions,
+  addImageChild,
+  computeImageResourceName,
+  setTopicImage,
+} from './model/image.js';
+import {
   CODE_FORMAT,
   CODE_INVALID_INPUT,
   CODE_IO,
@@ -608,6 +614,57 @@ export class AppController {
     wb.archive.entries.set(attachmentPath, fileBytes);
     setHref(topic, `xap:${attachmentPath}`);
     if (!topicTitle(topic).trim()) setTitle(topic, fileName.trim() || 'allegato');
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /**
+   * Crea un nuovo sotto-blocco (titolo vuoto, come fanno le immagini in XMind) con l'immagine,
+   * aggiunge la risorsa all'archivio (deduplicata per hash SHA-256), la registra nel manifest,
+   * genera un solo passo di undo e restituisce { dto, newId }.
+   */
+  public addImageTopic(
+    parentId: string,
+    bytes: Uint8Array,
+    mimeType: string,
+    size: { width: number; height: number },
+    opts?: AddImageTopicOptions
+  ): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const parent = findTopic(wb.content, parentId);
+    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
+    if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
+
+    const resourceName = computeImageResourceName(bytes, mimeType);
+    wb.archive.resources.set(resourceName, bytes);
+    refreshManifest(wb.manifest, [resourceName], false);
+
+    const { newId } = addImageChild(parent, resourceName, size, opts);
+    wb.pushHistory();
+    this.lastCreated = { id: newId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), newId };
+  }
+
+  /**
+   * Imposta o sostituisce l'immagine su un blocco esistente preservando le altre chiavi di `image`.
+   * Aggiunge la risorsa all'archivio e al manifest con un solo passo di undo.
+   */
+  public setTopicImage(
+    topicId: string,
+    bytes: Uint8Array,
+    mimeType: string,
+    size: { width: number; height: number }
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
+
+    const resourceName = computeImageResourceName(bytes, mimeType);
+    wb.archive.resources.set(resourceName, bytes);
+    refreshManifest(wb.manifest, [resourceName], false);
+
+    setTopicImage(topic, resourceName, size);
     wb.pushHistory();
     return wb.toDto();
   }

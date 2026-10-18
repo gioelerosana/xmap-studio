@@ -3,3 +3,4 @@ export * from './utils.js';
 export * from './edit.js';
 export * from './style.js';
 export * from './relationship.js';
+export * from './image.js';

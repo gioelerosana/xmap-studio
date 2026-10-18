@@ -136,6 +136,54 @@ function useMediaQuery(query: string): boolean {
   return Boolean(matches);
 }
 
+async function readImageBlob(blob: Blob): Promise<{
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+  mimeType: string;
+}> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  const mimeType = blob.type || 'image/png';
+
+  let width = 0;
+  let height = 0;
+
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      width = bitmap.width;
+      height = bitmap.height;
+      bitmap.close();
+    } catch {
+      // Fallback a Image se createImageBitmap fallisce
+    }
+  }
+
+  if (width === 0 || height === 0) {
+    await new Promise<void>((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        width = img.naturalWidth || img.width;
+        height = img.naturalHeight || img.height;
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      img.onerror = (err) => {
+        URL.revokeObjectURL(url);
+        reject(new Error(`Impossibile decodificare l'immagine: ${err}`));
+      };
+      img.src = url;
+    });
+  }
+
+  if (width <= 0) width = 400;
+  if (height <= 0) height = 400;
+
+  return { bytes, width, height, mimeType };
+}
+
 export const App: React.FC = () => {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI);
   const [controller] = useState(() => new AppController());
@@ -600,6 +648,94 @@ export const App: React.FC = () => {
       else window.electronAPI?.forceClose();
     });
   }, [isElectron, controller]);
+
+  const handleAddImage = useCallback(
+    async (file: Blob, source: 'paste' | 'drop' = 'paste') => {
+      try {
+        const targetParentId =
+          selectedTopic?.id ?? allTopics.find((t) => t.depth === 0)?.id ?? allTopics[0]?.id;
+        if (!targetParentId) return;
+
+        const { bytes, width, height, mimeType } = await readImageBlob(file);
+        const { newId } = controller.addImageTopic(targetParentId, bytes, mimeType, { width, height });
+
+        setCollapsedIds((prev) => {
+          if (!prev.has(targetParentId)) return prev;
+          const next = new Set(prev);
+          next.delete(targetParentId);
+          return next;
+        });
+
+        setSelectedTopicId(newId);
+        refreshState();
+        addToast(
+          'success',
+          source === 'paste' ? 'Immagine incollata sulla mappa' : 'Immagine aggiunta alla mappa'
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile aggiungere l'immagine: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, allTopics, refreshState, addToast]
+  );
+
+  // Incolla (Ctrl+V) e Drag & Drop di immagini sulla mappa
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (editing) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void handleAddImage(file, 'paste');
+            return;
+          }
+        }
+      }
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      const types = e.dataTransfer?.types;
+      if (types && Array.from(types).includes('Files')) {
+        e.preventDefault();
+      }
+    };
+
+    const onDrop = (e: DragEvent) => {
+      if (e.defaultPrevented) return;
+      if (editing) return;
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/')) {
+          e.preventDefault();
+          void handleAddImage(file, 'drop');
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [editing, handleAddImage]);
+
 
   const handleToggleCollapse = useCallback((topicId: string) => {
     setCollapsedIds((prev) => {
