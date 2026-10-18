@@ -195,6 +195,14 @@ export const App: React.FC = () => {
   const { settings, darkMode, update: updateSettings, reset: resetSettings } = useSettings();
   const toggleDarkMode = useCallback(() => updateSettings({ theme: darkMode ? 'light' : 'dark' }), [darkMode, updateSettings]);
   const [selectedTopicId, setSelectedTopicId] = useState<string | undefined>();
+  const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
+  // La selezione multipla contiene sempre la primaria: ogni altro cambio di
+  // `selectedTopicId` (nuovo blocco, undo, immagine incollata…) la riporta a singola.
+  useEffect(() => {
+    setSelectedTopicIds((prev) =>
+      selectedTopicId && prev.includes(selectedTopicId) ? prev : selectedTopicId ? [selectedTopicId] : []
+    );
+  }, [selectedTopicId]);
   const [inspectorWidth, setInspectorWidth] = usePanelWidth(
     INSPECTOR_PANEL.storageKey,
     INSPECTOR_PANEL.defaultWidth,
@@ -256,6 +264,7 @@ export const App: React.FC = () => {
 
   const openDetails = useCallback((id: string) => {
     setSelectedTopicId(id);
+    setSelectedTopicIds([id]);
     setDetailsClosed(false);
     setDetailsOpen(true);
   }, []);
@@ -298,6 +307,42 @@ export const App: React.FC = () => {
   const refreshState = useCallback(() => {
     setWorkbook(controller.workbook());
   }, [controller]);
+
+  const handleSelectTopic = useCallback(
+    (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => {
+      const isMulti = Boolean(modifiers?.shiftKey || modifiers?.ctrlKey);
+      if (!isMulti) {
+        // Clic semplice: torna alla selezione singola
+        setSelectedTopicId(topicId);
+        setSelectedTopicIds([topicId]);
+        return;
+      }
+
+      // Maiusc+clic o Ctrl/Cmd+clic: aggiunge o toglie dalla selezione
+      setSelectedTopicIds((prev) => {
+        const base = prev.length > 0 ? prev : (selectedTopicId ? [selectedTopicId] : []);
+        const alreadySelected = base.includes(topicId);
+        let next: string[];
+
+        if (alreadySelected) {
+          next = base.filter((id) => id !== topicId);
+        } else {
+          next = [...base, topicId];
+        }
+
+        // Mantiene la selezione primaria se ancora valida, altrimenti aggiorna
+        if (next.length === 0) {
+          setSelectedTopicId(undefined);
+        } else if (alreadySelected && selectedTopicId === topicId) {
+          setSelectedTopicId(next[next.length - 1]);
+        } else if (!alreadySelected && !selectedTopicId) {
+          setSelectedTopicId(topicId);
+        }
+        return next;
+      });
+    },
+    [selectedTopicId]
+  );
 
   const resolveResource = useCallback(
     (src: string) => controller.resourceBytes(src),
@@ -358,6 +403,7 @@ export const App: React.FC = () => {
           setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
+          setSelectedTopicIds([]);
           addToast('success', `Aperto: ${res.name}`);
         });
       } catch (err: any) {
@@ -388,6 +434,7 @@ export const App: React.FC = () => {
           setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
+          setSelectedTopicIds([]);
           addToast('success', `Mappa aperta: ${res.name}`);
         });
         return;
@@ -403,6 +450,7 @@ export const App: React.FC = () => {
         setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
+        setSelectedTopicIds([]);
         addToast('success', `Mappa aperta: ${res.name}`);
       });
     } catch (err: any) {
@@ -423,6 +471,7 @@ export const App: React.FC = () => {
         setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
+        setSelectedTopicIds([]);
         addToast('info', 'Mappa demo caricata');
       });
     } catch (err: any) {
@@ -466,6 +515,7 @@ export const App: React.FC = () => {
       setDocumentKey((k) => k + 1);
       setCollapsedIds(new Set());
       setSelectedTopicId(undefined);
+      setSelectedTopicIds([]);
       addToast('success', 'Nuova mappa creata');
     });
   };
@@ -568,6 +618,39 @@ export const App: React.FC = () => {
     }
   };
 
+  const siblingRangeInfo = useMemo(() => {
+    const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);
+    if (ids.length === 0) return null;
+    return controller.siblingRange(ids);
+  }, [selectedTopicIds, selectedTopicId, controller, workbook]);
+
+  const canAddSummary = Boolean(siblingRangeInfo);
+
+  const handleCreateSummary = useCallback(() => {
+    const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);
+    if (ids.length === 0) {
+      addToast('warning', 'Seleziona almeno un blocco per creare un sommario.');
+      return;
+    }
+
+    const range = controller.siblingRange(ids);
+    if (!range) {
+      addToast('warning', 'I blocchi selezionati devono essere fratelli (stesso genitore) per creare un sommario.');
+      return;
+    }
+
+    try {
+      const { summaryTopicId } = controller.addTopicSummary(range.parentId, range.start, range.end, 'Sommario');
+      setSelectedTopicId(summaryTopicId);
+      setSelectedTopicIds([summaryTopicId]);
+      setEditing({ id: summaryTopicId, mode: 'all', isNew: true });
+      refreshState();
+      addToast('success', 'Sommario aggiunto');
+    } catch (err: any) {
+      addToast('error', err.message || 'Impossibile creare il sommario.');
+    }
+  }, [selectedTopicIds, selectedTopicId, controller, refreshState, addToast]);
+
   // Undo/redo: la selezione resta se il blocco esiste ancora, altrimenti risale al genitore.
   const doUndoRedo = useCallback(
     (kind: 'undo' | 'redo') => {
@@ -578,6 +661,7 @@ export const App: React.FC = () => {
       let cur = selectedTopicId;
       while (cur && !alive.has(cur)) cur = parentOf.get(cur);
       setSelectedTopicId(cur);
+      setSelectedTopicIds(cur ? [cur] : []);
       setEditing(null);
       refreshState();
     },
@@ -609,13 +693,17 @@ export const App: React.FC = () => {
       } else if (key === ',') {
         e.preventDefault();
         setSettingsOpen(true);
+      } else if (key === ']' || e.code === 'BracketRight') {
+        if (inField) return;
+        e.preventDefault();
+        handleCreateSummary();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
+  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleCreateSummary]);
 
-  // Esc chiude l'Inspector se aperto e non si sta editando testo
+  // Esc chiude l'Inspector se aperto e non si sta editando testo; con selezione multipla torna a singola
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -623,6 +711,11 @@ export const App: React.FC = () => {
       if (editing) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
+      if (selectedTopicIds.length > 1) {
+        e.preventDefault();
+        setSelectedTopicIds(selectedTopicId ? [selectedTopicId] : []);
+        return;
+      }
       if (inspectorVisible) {
         e.preventDefault();
         setDetailsClosed(true);
@@ -631,7 +724,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editing, inspectorVisible]);
+  }, [editing, inspectorVisible, selectedTopicIds, selectedTopicId]);
 
   // Chiusura con modifiche non salvate
   useEffect(() => {
@@ -756,6 +849,7 @@ export const App: React.FC = () => {
           return next;
         });
         setSelectedTopicId(newId);
+        setSelectedTopicIds([newId]);
         setDetailsOpen(true);
         refreshState();
       } catch (err: any) {
@@ -868,6 +962,7 @@ export const App: React.FC = () => {
       const next = currentLayout ? selectionAfterDelete(currentLayout, selectedTopic.id) : undefined;
       controller.removeTopic(selectedTopic.id);
       setSelectedTopicId(next);
+      setSelectedTopicIds(next ? [next] : []);
       setEditing(null);
       refreshState();
       addToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
@@ -892,6 +987,7 @@ export const App: React.FC = () => {
           return next;
         });
         setSelectedTopicId(newId);
+        setSelectedTopicIds([newId]);
         setEditing({ id: newId, mode: 'all', isNew: true });
         refreshState();
       } catch (err: any) {
@@ -957,7 +1053,10 @@ export const App: React.FC = () => {
       const c = keyCtx.current;
       const go = (dir: 'up' | 'down' | 'left' | 'right') => {
         const id = currentLayout ? neighborId(currentLayout, sel.id, dir) : undefined;
-        if (id) setSelectedTopicId(id);
+        if (id) {
+          setSelectedTopicId(id);
+          setSelectedTopicIds([id]);
+        }
       };
       switch (e.key) {
         case 'Tab':
@@ -981,7 +1080,12 @@ export const App: React.FC = () => {
         case 'ArrowLeft': go('left'); break;
         case 'ArrowRight': go('right'); break;
         case 'Escape':
-          setSelectedTopicId(undefined);
+          if (selectedTopicIds.length > 1) {
+            setSelectedTopicIds(selectedTopicId ? [selectedTopicId] : []);
+          } else {
+            setSelectedTopicId(undefined);
+            setSelectedTopicIds([]);
+          }
           break;
         default:
           if (e.key.length !== 1 || sel.kind !== 'text') return;
@@ -991,7 +1095,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mapKeysEnabled, selectedTopic, currentLayout]);
+  }, [mapKeysEnabled, selectedTopic, currentLayout, selectedTopicIds, selectedTopicId]);
 
   const handleConfirmClose = async (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') {
@@ -1152,6 +1256,7 @@ export const App: React.FC = () => {
               setDocumentKey((k) => k + 1);
               setCollapsedIds(new Set());
               setSelectedTopicId(undefined);
+              setSelectedTopicIds([]);
               addToast('success', `Aperto ${file.name}`);
             }}
           />
@@ -1162,7 +1267,10 @@ export const App: React.FC = () => {
                 layout={currentLayout}
                 viewKey={`${documentKey}:${activeSheetIndex}`}
                 selectedTopicId={selectedTopicId}
-                onSelectTopic={setSelectedTopicId}
+                selectedTopicIds={selectedTopicIds}
+                onSelectTopic={handleSelectTopic}
+                onAddSummary={handleCreateSummary}
+                canAddSummary={canAddSummary}
                 onOpenDetails={openDetails}
                 onOpenLatex={openDetails}
                 detailsOpen={inspectorVisible}
@@ -1194,6 +1302,7 @@ export const App: React.FC = () => {
                       onClick={() => {
                         setActiveSheetIndex(idx);
                         setSelectedTopicId(undefined);
+                        setSelectedTopicIds([]);
                       }}
                     >
                       {sheet.title}
@@ -1218,6 +1327,9 @@ export const App: React.FC = () => {
                 onToast={addToast}
                 width={inspectorWidth}
                 onWidthChange={setInspectorWidth}
+                selectedTopicIds={selectedTopicIds}
+                onAddSummaryForSiblings={handleCreateSummary}
+                canAddSummary={canAddSummary}
               />
             )}
           </>

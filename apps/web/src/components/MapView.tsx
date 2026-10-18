@@ -11,6 +11,7 @@ import {
   ListTree,
   GitFork,
   CornerDownLeft,
+  Braces,
 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
 import { NodeEditor, type EditExit } from './map/NodeEditor.js';
@@ -157,8 +158,18 @@ export interface MapViewProps {
   onCommitEdit?: (topicId: string, text: string, exit: EditExit, runs?: TitleRun[]) => void;
   onCancelEdit?: () => void;
   layout: Layout | null;
+  /** Blocco con selezione primaria (determina l'Inspector e i dettagli). */
   selectedTopicId?: string;
-  onSelectTopic: (topicId: string) => void;
+  /**
+   * Elenco degli ID dei blocchi selezionati nella mappa (selezione multipla).
+   * Include la selezione primaria ed è evidenziato con lo stesso stile di selezione.
+   */
+  selectedTopicIds?: string[];
+  /**
+   * Clic su un blocco: con clic semplice deseleziona gli altri, con modificatore (Maiusc o Ctrl/Cmd)
+   * aggiunge o toglie il blocco alla selezione multipla.
+   */
+  onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
   onOpenDetails: (topicId: string) => void;
   onOpenLatex?: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
@@ -178,12 +189,17 @@ export interface MapViewProps {
   onRelationshipControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
   /** Pannello dettagli aperto: su smartphone il blocco viene portato sopra il bottom sheet. */
   detailsOpen?: boolean;
+  /** Callback per creare un sommario sui blocchi selezionati (es. Ctrl+] o pulsante barra). */
+  onAddSummary?: () => void;
+  /** Indica se i blocchi correntemente selezionati sono fratelli validi per creare un sommario. */
+  canAddSummary?: boolean;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
   layout,
   viewKey,
   selectedTopicId,
+  selectedTopicIds,
   onSelectTopic,
   onOpenDetails,
   onOpenLatex,
@@ -203,6 +219,8 @@ export const MapView: React.FC<MapViewProps> = ({
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onAddSummary,
+  canAddSummary = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -235,6 +253,7 @@ export const MapView: React.FC<MapViewProps> = ({
     onMoveFloatingTopic,
     onRelationshipControlPointsChange,
     onStartEdit,
+    onAddSummary,
   });
   handlers.current = {
     onSelectTopic,
@@ -245,6 +264,7 @@ export const MapView: React.FC<MapViewProps> = ({
     onMoveFloatingTopic,
     onRelationshipControlPointsChange,
     onStartEdit,
+    onAddSummary,
   };
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
@@ -1097,6 +1117,11 @@ export const MapView: React.FC<MapViewProps> = ({
           e.preventDefault();
           handlers.current.onOpenLatex(selectedTopicId);
         }
+      } else if (key === ']' || e.code === 'BracketRight') {
+        if (handlers.current.onAddSummary) {
+          e.preventDefault();
+          handlers.current.onAddSummary();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1112,6 +1137,8 @@ export const MapView: React.FC<MapViewProps> = ({
   // e pan, così durante i gesti React non lo ricostruisce.
   const content = useMemo(() => {
     if (!layout) return null;
+    const selectedSet = new Set(selectedTopicIds && selectedTopicIds.length > 0 ? selectedTopicIds : []);
+    if (selectedTopicId) selectedSet.add(selectedTopicId);
     // Un tronco per genitore Tree Chart, fino al centro del figlio più basso.
     const trunkMap = new Map<number, { parent: number; x: number; y1: number; y2: number }>();
     for (const edge of layout.edges) {
@@ -1229,7 +1256,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
         {/* Nodi della mappa */}
         {layout.nodes.map((node) => {
-          const isSelected = node.id === selectedTopicId;
+          const isSelected = selectedSet.has(node.id);
           const isRoot = node.depth === 0;
           const isBranch = node.depth === 1;
           const look = nodeLook(node, darkMode);
@@ -1250,7 +1277,11 @@ export const MapView: React.FC<MapViewProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedRelationshipId(undefined);
-                handlers.current.onSelectTopic(node.id);
+                const isMulti = e.shiftKey || e.ctrlKey || e.metaKey;
+                handlers.current.onSelectTopic(
+                  node.id,
+                  isMulti ? { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey } : undefined
+                );
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -1442,7 +1473,7 @@ export const MapView: React.FC<MapViewProps> = ({
         </g>
       </>
     );
-  }, [layout, selectedTopicId, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld]);
+  }, [layout, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld]);
 
   // Fantasma del blocco trascinato e indicatore del bersaglio, sopra tutto il resto.
   const dragLayer = useMemo(() => {
@@ -1546,6 +1577,34 @@ export const MapView: React.FC<MapViewProps> = ({
         if (t === e.currentTarget || t.tagName === 'svg' || t.id === 'map-bg') setSelectedRelationshipId(undefined);
       }}
     >
+      {/* Barra contestuale di selezione multipla */}
+      {selectedTopicIds && selectedTopicIds.length > 1 && (
+        <div
+          data-map-ui
+          onMouseDown={(e) => e.preventDefault()}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-1.5 p-1.5 surface-glass border rounded-xl shadow-composer max-w-[calc(100%-32px)]"
+        >
+          <span className="px-2 text-xs font-medium text-foreground whitespace-nowrap">
+            {selectedTopicIds.length} blocchi selezionati
+          </span>
+          {onAddSummary && (
+            <>
+              <Separator orientation="vertical" className="h-4 mx-0.5" />
+              <Button
+                variant={canAddSummary ? 'default' : 'ghost'}
+                size="sm"
+                className="px-2.5 text-xs"
+                icon={<Braces className="size-4" />}
+                onClick={onAddSummary}
+                title="Crea sommario sui blocchi selezionati (Ctrl+])"
+              >
+                Sommario
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Controlli zoom flottanti in basso a destra */}
       <div
         data-map-ui
@@ -1629,6 +1688,18 @@ export const MapView: React.FC<MapViewProps> = ({
               title="Aggiungi blocco fratello"
             >
               Fratello
+            </Button>
+          )}
+          {onAddSummary && canAddSummary && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2 sm:px-[9px] text-xs sm:text-sm"
+              icon={<Braces className="size-4" />}
+              onClick={onAddSummary}
+              title="Crea sommario (Ctrl+])"
+            >
+              Sommario
             </Button>
           )}
           <Button

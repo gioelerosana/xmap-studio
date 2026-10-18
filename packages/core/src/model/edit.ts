@@ -12,6 +12,7 @@ import {
   formatRange,
   newTopicId,
   parseRange,
+  sheetIndexOf,
   walkTopic,
 } from './utils.js';
 
@@ -618,4 +619,68 @@ export function setTopicPosition(topic: Topic, pos: { x: number; y: number }): v
     throw new XmapError(CODE_MOVE, 'Posizione non valida.');
   }
   topic['position'] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+}
+
+export interface SiblingRange {
+  parentId: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Individua l'intervallo contiguo (da min a max indice) per un insieme di blocchi
+ * fratelli (stesso genitore, gruppo 'attached', non radice e non detached/liberi).
+ * Restituisce `null` se la selezione è vuota, se i blocchi non esistono, non
+ * appartengono allo stesso genitore/foglio, o contengono la radice o blocchi liberi/sommari.
+ */
+export function siblingRange(sheets: Sheet[], ids: string[]): SiblingRange | null {
+  const uniqueIds = Array.from(new Set(ids.map((id) => id?.trim()).filter(Boolean)));
+  if (uniqueIds.length === 0) return null;
+
+  let sheetIdx: number | undefined;
+  for (const id of uniqueIds) {
+    const idx = sheetIndexOf(sheets, id);
+    if (idx === -1) return null;
+    if (sheetIdx === undefined) sheetIdx = idx;
+    else if (sheetIdx !== idx) return null;
+  }
+
+  const sheet = sheets[sheetIdx!];
+  if (!sheet?.rootTopic) return null;
+
+  let parentId: string | undefined;
+  let parentTopic: Topic | undefined;
+  const indices: number[] = [];
+
+  for (const id of uniqueIds) {
+    if (sheet.rootTopic.id === id) return null;
+
+    const path: PathItem[] = [];
+    if (!findPath(sheet.rootTopic, id, path) || path.length === 0) return null;
+
+    const last = path[path.length - 1];
+    if (last.group !== 'attached') return null;
+
+    const parent = descend(sheet.rootTopic, path.slice(0, -1));
+    if (!parent.id) return null;
+
+    if (parentId === undefined) {
+      parentId = parent.id;
+      parentTopic = parent;
+    } else if (parentId !== parent.id) {
+      return null;
+    }
+
+    indices.push(last.index);
+  }
+
+  if (!parentId || !parentTopic) return null;
+
+  const start = Math.min(...indices);
+  const end = Math.max(...indices);
+  const childCount = parentTopic.children?.attached?.length ?? 0;
+
+  if (start < 0 || end >= childCount) return null;
+
+  return { parentId, start, end };
 }

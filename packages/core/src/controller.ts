@@ -40,6 +40,8 @@ import {
   setNotesDisplay,
   setTitle,
   toggleMarker,
+  siblingRange,
+  SiblingRange,
 } from './model/edit.js';
 import { Sheet, Topic } from './model/types.js';
 import { setTitleRuns, setTextStyle, TextStylePatch } from './model/style.js';
@@ -580,12 +582,21 @@ export class AppController {
     return wb.toDto();
   }
 
+  /**
+   * Calcola l'intervallo di blocchi fratelli contigui per un elenco di ID.
+   * Restituisce `null` se i blocchi non sono fratelli validi.
+   */
+  public siblingRange(ids: string[]): SiblingRange | null {
+    if (!this.currentWorkbook) return null;
+    return siblingRange(this.currentWorkbook.content, ids);
+  }
+
   public addTopicSummary(
     topicId: string,
     start?: number,
     end?: number,
     title: string = 'Sommario'
-  ): WorkbookDto {
+  ): { dto: WorkbookDto; summaryTopicId: string } {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
@@ -594,9 +605,26 @@ export class AppController {
     const rangeStart = start ?? 0;
     const rangeEnd = end ?? Math.max(0, childCount - 1);
     validateChildRange(rangeStart, rangeEnd, childCount);
-    addSummary(topic, rangeStart, rangeEnd, title);
+    const summaryTopicId = addSummary(topic, rangeStart, rangeEnd, title);
     wb.pushHistory();
-    return wb.toDto();
+    this.lastCreated = { id: summaryTopicId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), summaryTopicId };
+  }
+
+  /**
+   * Crea un sommario su un intervallo di blocchi fratelli contigui (min..max indice).
+   * Lancia un errore se i blocchi non sono fratelli validi.
+   */
+  public addSummaryForSiblings(
+    topicIds: string[],
+    title: string = 'Sommario'
+  ): { dto: WorkbookDto; summaryTopicId: string } {
+    const wb = this.ensureWorkbook();
+    const range = siblingRange(wb.content, topicIds);
+    if (!range) {
+      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati devono essere fratelli per creare un sommario.');
+    }
+    return this.addTopicSummary(range.parentId, range.start, range.end, title);
   }
 
   public removeTopicSummary(topicId: string, summaryTopicId: string): WorkbookDto {
