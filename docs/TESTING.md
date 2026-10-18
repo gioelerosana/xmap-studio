@@ -31,6 +31,26 @@ a modificare l'equazione e verificare note/allegati quando coinvolti. In
 particolare, resta da verificare a mano un file con allegato e un ramo
 ottenuto da split.
 
+### Mappa di collaudo per la v1
+
+`demo/Verifica-v1.xmap-studio.xmind` raccoglie i campi scritti dall'app che
+restano da collaudare in XMind. Si rigenera con
+`node scripts/make-verify-map.mjs [percorso.xmind]` (dopo `pnpm build`).
+Aprendola in XMind controllare che:
+
+1. l'**immagine libera** stia in alto a destra della radice, collegata con una
+   freccia all'"Immagine ridimensionata" (`position` relativa al centro della
+   radice); trascinarla in XMap Studio, salvare e riaprire in XMind: deve
+   comparire nello stesso punto;
+2. il blocco con **larghezza manuale** sia stretto (160 px) e vada a capo su
+   più righe (`customWidth`);
+3. "Testo **grassetto**, *corsivo* e normale" mostri la formattazione solo
+   sulle parole interessate (`attributedTitle`);
+4. l'immagine sotto "Immagine ridimensionata" sia 240 × 180, il doppio del PNG
+   originale (`image.width/height`).
+
+Se tutto torna, le voci corrispondenti di `TODO.md` si possono spuntare.
+
 ## Limiti noti della verifica
 
 - Il browser non può rilevare i processi XMind del sistema: il blocco del
