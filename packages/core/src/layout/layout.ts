@@ -1,6 +1,7 @@
 import { relationshipGeometry } from './relationship.js';
 import { SheetDto, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
+import { splitInlineMath } from '../latex/inline.js';
 import { parseRange } from '../model/utils.js';
 import {
   BRANCH_COLORS,
@@ -47,20 +48,67 @@ export class EstimatedMetrics implements NodeMetrics {
     }
 
     const text = node.displayTitle || node.title || '';
-    // Il grassetto è ~8% più largo; la dimensione scala rispetto a 13px.
     const blockSize = node.textStyle?.fontSizePx ? node.textStyle.fontSizePx / 13.0 : 1.0;
     const blockBold = node.textStyle?.bold ?? false;
-    let chars = text.length * (blockBold ? 1.08 : 1.0) * blockSize;
+    const baseFontSizePx = node.textStyle?.fontSizePx ?? 13.0;
+
+    let totalContentWidth = 0;
+    let maxMathHeight = 0;
+    let hasDisplayMath = false;
+
     if (node.titleRuns && node.titleRuns.map((r) => r.text).join('') === text) {
-      chars = 0;
       for (const r of node.titleRuns) {
         const bold = r.bold ?? blockBold;
         const size = r.fontSizePx ? r.fontSizePx / 13.0 : blockSize;
-        chars += r.text.length * (bold ? 1.08 : 1.0) * size;
+        const runFontSizePx = r.fontSizePx ?? baseFontSizePx;
+        const segments = splitInlineMath(r.text);
+        for (const seg of segments) {
+          if (seg.kind === 'text') {
+            totalContentWidth += seg.value.length * (bold ? 1.08 : 1.0) * size * 8.5;
+          } else {
+            if (seg.display) hasDisplayMath = true;
+            try {
+              const rendered = renderLatexToSvg(seg.value, runFontSizePx, seg.display ?? false);
+              if (!rendered.error) {
+                totalContentWidth += rendered.width + 4.0;
+                maxMathHeight = Math.max(maxMathHeight, rendered.height);
+              } else {
+                const rawLen = seg.value.length + (seg.display ? 4 : 2);
+                totalContentWidth += rawLen * (bold ? 1.08 : 1.0) * size * 8.5;
+              }
+            } catch {
+              const rawLen = seg.value.length + (seg.display ? 4 : 2);
+              totalContentWidth += rawLen * (bold ? 1.08 : 1.0) * size * 8.5;
+            }
+          }
+        }
+      }
+    } else {
+      const segments = splitInlineMath(text);
+      for (const seg of segments) {
+        if (seg.kind === 'text') {
+          totalContentWidth += seg.value.length * (blockBold ? 1.08 : 1.0) * blockSize * 8.5;
+        } else {
+          if (seg.display) hasDisplayMath = true;
+          try {
+            const rendered = renderLatexToSvg(seg.value, baseFontSizePx, seg.display ?? false);
+            if (!rendered.error) {
+              totalContentWidth += rendered.width + 4.0;
+              maxMathHeight = Math.max(maxMathHeight, rendered.height);
+            } else {
+              const rawLen = seg.value.length + (seg.display ? 4 : 2);
+              totalContentWidth += rawLen * (blockBold ? 1.08 : 1.0) * blockSize * 8.5;
+            }
+          } catch {
+            const rawLen = seg.value.length + (seg.display ? 4 : 2);
+            totalContentWidth += rawLen * (blockBold ? 1.08 : 1.0) * blockSize * 8.5;
+          }
+        }
       }
     }
+
     const maxW = node.customWidth ?? 360.0;
-    let w = Math.min(Math.max(chars * 8.5 + 44.0, 96.0), maxW);
+    let w = Math.min(Math.max(totalContentWidth + 44.0, 96.0), maxW);
     if (node.markers.length > 0) {
       w += node.markers.length * 20;
     }
@@ -68,8 +116,9 @@ export class EstimatedMetrics implements NodeMetrics {
       w += node.labels.length * 32;
     }
     const usableW = Math.max(w - 28.0, 80.0);
-    const lines = Math.max(Math.ceil((chars * 8.5) / usableW), 1.0);
-    let h = Math.max(lines * 20.0 + 16.0, 36.0);
+    const lines = Math.max(Math.ceil(totalContentWidth / usableW), 1.0);
+    const lineHeight = Math.max(20.0, maxMathHeight > 0 ? maxMathHeight + 4.0 : 20.0);
+    let h = Math.max(lines * lineHeight + 16.0 + (hasDisplayMath ? 8.0 : 0.0), 36.0);
     if (node.hasNotes || node.markers.length > 0 || node.labels.length > 0) {
       h += 16.0;
     }
