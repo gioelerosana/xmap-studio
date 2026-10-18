@@ -81,6 +81,185 @@ export interface PrintPlan {
   pages: PrintPage[];
 }
 
+/** Tolleranza numerica per prevenire pagine addizionali spurie da arrotondamento float. */
+const FLOAT_EPSILON = 1e-6;
+
+/**
+ * Calcola il numero di suddivisioni necessarie (colonne o righe) a partire dalla dimensione
+ * su carta della mappa, la dimensione utile della pagina e il passo tra pagine adiacenti.
+ */
+function computePageCount(spanOnPaper: number, contentSpan: number, stepSpan: number): number {
+  const excess = spanOnPaper - contentSpan;
+  if (excess <= FLOAT_EPSILON) {
+    return 1;
+  }
+  return 1 + Math.max(0, Math.ceil(excess / stepSpan - FLOAT_EPSILON));
+}
+
+/**
+ * Valida i parametri di input indipendenti dall'orientamento.
+ */
+function validateInputs(bounds: WorldRect, opts: PrintOptions): void {
+  if (
+    !bounds ||
+    !Number.isFinite(bounds.x) ||
+    !Number.isFinite(bounds.y) ||
+    !Number.isFinite(bounds.w) ||
+    !Number.isFinite(bounds.h) ||
+    bounds.w <= 0 ||
+    bounds.h <= 0
+  ) {
+    throw new Error(
+      'Dimensioni del riquadro della mappa non valide: larghezza e altezza devono essere positive e finite.',
+    );
+  }
+
+  if (!opts) {
+    throw new Error('Opzioni di stampa non specificate.');
+  }
+
+  if (!(opts.paper in PAPER_SIZES_MM)) {
+    throw new Error(`Formato carta non supportato: ${String(opts.paper)}.`);
+  }
+
+  if (!Number.isFinite(opts.marginMm) || opts.marginMm < 0) {
+    throw new Error('Il margine non può essere negativo o non finito.');
+  }
+
+  if (!Number.isFinite(opts.overlapMm) || opts.overlapMm < 0) {
+    throw new Error('La sovrapposizione (overlap) non può essere negativa o non finita.');
+  }
+
+  if (opts.maxScale !== undefined && (!Number.isFinite(opts.maxScale) || opts.maxScale <= 0)) {
+    throw new Error('Il parametro maxScale deve essere un numero positivo e finito.');
+  }
+
+  if (
+    opts.orientation !== 'portrait' &&
+    opts.orientation !== 'landscape' &&
+    opts.orientation !== 'auto'
+  ) {
+    throw new Error(`Orientamento non valido: ${String(opts.orientation)}.`);
+  }
+
+  if (!opts.fit || typeof opts.fit !== 'object') {
+    throw new Error('Opzione fit non valida.');
+  }
+
+  if (opts.fit.mode === 'fit-page') {
+    // Valido
+  } else if (opts.fit.mode === 'fit-width') {
+    if (!Number.isInteger(opts.fit.pagesWide) || opts.fit.pagesWide < 1) {
+      throw new Error(
+        'Il parametro pagesWide deve essere un numero intero maggiore o uguale a 1.',
+      );
+    }
+  } else if (opts.fit.mode === 'scale') {
+    if (!Number.isFinite(opts.fit.scale) || opts.fit.scale <= 0) {
+      throw new Error('La scala deve essere un numero positivo e finito.');
+    }
+  } else {
+    throw new Error(
+      `Modalità fit non supportata: ${String((opts.fit as { mode?: unknown }).mode)}.`,
+    );
+  }
+}
+
+/**
+ * Calcola il piano di impaginazione per un orientamento specifico ('portrait' | 'landscape').
+ */
+function buildPlan(
+  bounds: WorldRect,
+  opts: PrintOptions,
+  orientation: 'portrait' | 'landscape',
+): PrintPlan {
+  const paperDimensions = PAPER_SIZES_MM[opts.paper];
+  const pageWidthMm = orientation === 'portrait' ? paperDimensions.w : paperDimensions.h;
+  const pageHeightMm = orientation === 'portrait' ? paperDimensions.h : paperDimensions.w;
+
+  const contentWMm = pageWidthMm - 2 * opts.marginMm;
+  const contentHMm = pageHeightMm - 2 * opts.marginMm;
+
+  if (contentWMm <= 0 || contentHMm <= 0) {
+    throw new Error(
+      'I margini superano o eguagliano le dimensioni del foglio: area utile non positiva.',
+    );
+  }
+
+  const contentWidthPx = contentWMm * MM_TO_PX;
+  const contentHeightPx = contentHMm * MM_TO_PX;
+  const overlapPx = opts.overlapMm * MM_TO_PX;
+
+  if (overlapPx >= contentWidthPx || overlapPx >= contentHeightPx) {
+    throw new Error(
+      "La sovrapposizione (overlap) deve essere inferiore all'area utile della pagina.",
+    );
+  }
+
+  const stepX = contentWidthPx - overlapPx;
+  const stepY = contentHeightPx - overlapPx;
+
+  const maxScale = opts.maxScale ?? 1.5;
+  let scale: number;
+  let cols: number;
+  let rows: number;
+
+  if (opts.fit.mode === 'fit-page') {
+    scale = Math.min(contentWidthPx / bounds.w, contentHeightPx / bounds.h, maxScale);
+    cols = 1;
+    rows = 1;
+  } else if (opts.fit.mode === 'fit-width') {
+    const pagesWide = opts.fit.pagesWide;
+    scale = Math.min(
+      maxScale,
+      (pagesWide * contentWidthPx - (pagesWide - 1) * overlapPx) / bounds.w,
+    );
+    cols = computePageCount(bounds.w * scale, contentWidthPx, stepX);
+    rows = computePageCount(bounds.h * scale, contentHeightPx, stepY);
+  } else {
+    scale = opts.fit.scale;
+    cols = computePageCount(bounds.w * scale, contentWidthPx, stepX);
+    rows = computePageCount(bounds.h * scale, contentHeightPx, stepY);
+  }
+
+  const totalW = (contentWidthPx + (cols - 1) * stepX) / scale;
+  const totalH = (contentHeightPx + (rows - 1) * stepY) / scale;
+
+  const originX = bounds.x - (totalW - bounds.w) / 2;
+  const originY = bounds.y - (totalH - bounds.h) / 2;
+
+  const pages: PrintPage[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      pages.push({
+        index: row * cols + col,
+        row,
+        col,
+        world: {
+          x: originX + (col * stepX) / scale,
+          y: originY + (row * stepY) / scale,
+          w: contentWidthPx / scale,
+          h: contentHeightPx / scale,
+        },
+      });
+    }
+  }
+
+  return {
+    paper: opts.paper,
+    orientation,
+    pageWidthMm,
+    pageHeightMm,
+    marginMm: opts.marginMm,
+    contentWidthPx,
+    contentHeightPx,
+    scale,
+    rows,
+    cols,
+    pages,
+  };
+}
+
 /**
  * Calcola l'impaginazione di `bounds` secondo `opts`.
  *
@@ -96,7 +275,28 @@ export interface PrintPlan {
  *   in px del mondo) rispetto alla precedente.
  */
 export function paginate(bounds: WorldRect, opts: PrintOptions): PrintPlan {
-  void bounds;
-  void opts;
-  throw new Error('paginate: non ancora implementato');
+  validateInputs(bounds, opts);
+
+  if (opts.orientation === 'auto') {
+    const portraitPlan = buildPlan(bounds, opts, 'portrait');
+    const landscapePlan = buildPlan(bounds, opts, 'landscape');
+
+    const portraitPages = portraitPlan.rows * portraitPlan.cols;
+    const landscapePages = landscapePlan.rows * landscapePlan.cols;
+
+    if (landscapePages < portraitPages) {
+      return landscapePlan;
+    }
+    if (portraitPages < landscapePages) {
+      return portraitPlan;
+    }
+
+    // A parità di numero di pagine, privilegia la scala maggiore; a parità ancora portrait.
+    if (landscapePlan.scale > portraitPlan.scale + FLOAT_EPSILON) {
+      return landscapePlan;
+    }
+    return portraitPlan;
+  }
+
+  return buildPlan(bounds, opts, opts.orientation);
 }
