@@ -128,7 +128,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 | Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `exporters/import.ts`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
 | Merge di file `.xmind` | sì | **Fatto** (Fase 2): `AppController.mergeWorkbook`, sheet accodate con id riassegnati | Media |
 | Split mappa per ramo principale | sì | **Fatto** (Fase 2): `AppController.splitTopic`, ramo → mappa autonoma validata | Bassa |
-| Export PDF senza watermark | watermark in Free | Fattibile (serve libreria PDF: dipendenza) | Bassa |
+| Export PDF senza watermark | watermark in Free | **Fatto**: "Stampa…" (`Ctrl+P`) impagina la mappa su A4/A3 (`print/paginate.ts`: una pagina, N pagine in larghezza o scala fissa, sovrapposizione per incollare) e nel desktop salva il PDF con `printToPDF` di Electron, senza dipendenze | Bassa |
 | Export Excel / Word | sì | Non prioritario (dipendenza pesante) | — |
 
 ### 3.5 Presentazione e UI
@@ -329,7 +329,8 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | Navigazione | Pan, zoom, fit, collapse, ricerca | ✅ | |
 | | Outliner, presentazione (Pitch), focus su un ramo | 🟡 | outliner sì |
 | Export | Markdown, OPML, testo | ✅ | |
-| | PNG/SVG/PDF della mappa | ⬜ | |
+| | Stampa e PDF della mappa (A4/A3, più pagine) | ✅ | anteprima delle pagine, sempre in tema chiaro; PDF solo nel desktop |
+| | PNG/SVG della mappa | ⬜ | |
 
 **Ordine di attacco:** prima ciò che rende la mappa leggibile come in XMind
 (stile testo, relazioni, boundary, linee del tema), poi l'editing diretto sulla
@@ -338,8 +339,8 @@ strutture alternative e l'export grafico.
 
 ### Fuori scope (per scelta)
 Cloud/account/collaborazione/AI; Set Password (cifratura ZIP); sticker e
-IconFinder proprietari (asset XMind, licenza); export Word/Excel e PDF nativi
-(dipendenze pesanti); registrazione audio con codec.
+IconFinder proprietari (asset XMind, licenza); export Word/Excel e PDF generato in proprio
+(dipendenze pesanti; il PDF passa dalla stampa di Chromium); registrazione audio con codec.
 
 ## 5. Invarianti (non negoziabili)
 
