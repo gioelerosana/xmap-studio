@@ -36,6 +36,8 @@ import {
   setLabels,
   setNotes,
   setTopicPosition,
+  setTopicCustomWidth,
+  setTopicImageSize,
   isDetachedTopic,
   setNotesDisplay,
   setTitle,
@@ -382,6 +384,37 @@ export class AppController {
     wb.pushHistory();
     return wb.toDto();
   }
+  /**
+   * Imposta o rimuove la larghezza manuale del blocco (`customWidth`).
+   * Passando `null` rimuove la larghezza manuale tornando all'adattamento automatico.
+   */
+  public setTopicCustomWidth(topicId: string, width: number | null): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    setTopicCustomWidth(topic, width);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /**
+   * Imposta le dimensioni in pixel dell'immagine associata al blocco,
+   * preservando tutte le altre proprietà di `image`.
+   */
+  public setTopicImageSize(
+    topicId: string,
+    size: { width: number; height: number }
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    setTopicImageSize(topic, size);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
 
   public setTopicNotesDisplay(topicId: string, display?: 'icon' | 'block' | null): WorkbookDto {
     const wb = this.ensureWorkbook();

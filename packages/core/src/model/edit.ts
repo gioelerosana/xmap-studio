@@ -1,4 +1,4 @@
-import { CODE_MOVE, XmapError } from '../errors.js';
+import { CODE_INVALID_INPUT, CODE_MOVE, XmapError } from '../errors.js';
 import {
   Boundary,
   CHILD_GROUPS,
@@ -683,4 +683,51 @@ export function siblingRange(sheets: Sheet[], ids: string[]): SiblingRange | nul
   if (start < 0 || end >= childCount) return null;
 
   return { parentId, start, end };
+}
+
+/**
+ * Imposta o rimuove la larghezza manuale del blocco (`customWidth`, in px).
+ * Con `null` o `undefined` rimuove la proprietà, ripristinando l'adattamento automatico al testo.
+ * Preserva tutti gli altri campi del topic.
+ */
+export function setTopicCustomWidth(topic: Topic, width: number | null | undefined): void {
+  if (width === null || width === undefined) {
+    delete topic.customWidth;
+    delete topic['customWidth'];
+    return;
+  }
+  if (!Number.isFinite(width) || width <= 0) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Larghezza manuale non valida.');
+  }
+  topic['customWidth'] = Math.round(width);
+}
+
+/**
+ * Imposta le dimensioni in pixel dell'immagine associata al blocco (`image.width`, `image.height`).
+ * Preserva tutte le altre proprietà di `image` (es. `align`, `lockRatio`, `src`, ecc.).
+ * Non è ammesso per formule MathJax (`isMathJaxImage`).
+ */
+export function setTopicImageSize(
+  topic: Topic,
+  size: { width: number; height: number }
+): void {
+  if (!topic.image || !topic.image.src) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Il blocco non contiene un\'immagine.');
+  }
+  if (topic.image.isMathJaxImage) {
+    throw new XmapError(
+      CODE_INVALID_INPUT,
+      'Le formule MathJax non possono essere ridimensionate manualmente.'
+    );
+  }
+  if (
+    !Number.isFinite(size.width) ||
+    !Number.isFinite(size.height) ||
+    size.width <= 0 ||
+    size.height <= 0
+  ) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Dimensioni immagine non valide.');
+  }
+  topic.image.width = Math.round(size.width);
+  topic.image.height = Math.round(size.height);
 }

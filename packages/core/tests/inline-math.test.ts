@@ -260,7 +260,8 @@ describe('splitInlineMath', () => {
         ],
       });
       const size = metrics.measure(node);
-      expect(size.w).toBeGreaterThanOrEqual(96);
+      const plain = metrics.measure(makeNode('Test '));
+      expect(size.w).toBeGreaterThan(plain.w);
       expect(size.h).toBeGreaterThanOrEqual(36);
     });
   });

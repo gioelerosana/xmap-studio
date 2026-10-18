@@ -872,7 +872,32 @@ export const App: React.FC = () => {
     [controller, refreshState, addToast]
   );
 
-  const handleMoveFloating = useCallback(
+  
+  const handleResizeTopicWidth = useCallback(
+    (id: string, width: number | null) => {
+      try {
+        controller.setTopicCustomWidth(id, width);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Ridimensionamento non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleResizeTopicImage = useCallback(
+    (id: string, size: { width: number; height: number }) => {
+      try {
+        controller.setTopicImageSize(id, size);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Ridimensionamento immagine non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+const handleMoveFloating = useCallback(
     (id: string, position: Point) => {
       try {
         controller.setTopicPosition(id, position);
@@ -1289,6 +1314,8 @@ export const App: React.FC = () => {
                 onMoveTopic={handleMove}
                 onMoveFloatingTopic={handleMoveFloating}
                 onRelationshipControlPointsChange={handleRelationshipControlPoint}
+                onResizeTopicWidth={handleResizeTopicWidth}
+                onResizeTopicImage={handleResizeTopicImage}
               />
 
               {workbook.sheets.length > 1 && (

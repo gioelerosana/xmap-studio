@@ -1,5 +1,5 @@
 import { relationshipGeometry } from './relationship.js';
-import { SheetDto, TopicView } from '../state/types.js';
+import { SheetDto, TextStyle, TitleRun, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
 import { splitInlineMath } from '../latex/inline.js';
 import { parseRange } from '../model/utils.js';
@@ -19,110 +19,352 @@ import {
   trunkX,
 } from './types.js';
 
-export class EstimatedMetrics implements NodeMetrics {
-  measure(node: MapNode): { w: number; h: number } {
-    if (node.imageW !== undefined && node.imageH !== undefined) {
-      const maxW = node.kind === 'equation' || node.latex ? 650.0 : 380.0;
-      const scale = node.imageW > maxW ? maxW / node.imageW : 1.0;
-      const fw = node.imageW * scale + 24.0;
-      let fh = node.imageH * scale + 18.0;
-      if (node.hasNotes || node.markers.length > 0 || node.labels.length > 0) {
-        fh += 18.0;
+/** Larghezza in px di `text` con il font della mappa a `fontSizePx`, grassetto o no. */
+export type TextMeasurer = (text: string, fontSizePx: number, bold: boolean) => number;
+
+let textMeasurer: TextMeasurer | null = null;
+
+/**
+ * La UI può fornire una misura reale del testo (es. canvas `measureText` con il font
+ * della mappa), così i blocchi si adattano esattamente al testo; senza, si usa la
+ * stima a tabella qui sotto (test, export senza display).
+ */
+export function setTextMeasurer(measurer: TextMeasurer | null): void {
+  textMeasurer = measurer;
+}
+
+/**
+ * Stima della larghezza di un singolo carattere in font proporzionale sans-serif
+ * (Inter / sistema) in base alla dimensione del carattere e all'eventuale grassetto.
+ */
+function estimateCharWidth(
+  ch: string,
+  fontSize: number,
+  bold: boolean,
+  mathWidths?: Map<string, number>
+): number {
+  const math = mathWidths?.get(ch);
+  if (math !== undefined) return math;
+  if (textMeasurer) return textMeasurer(ch, fontSize, bold);
+  const code = ch.charCodeAt(0);
+  let factor = 0.55;
+  if (/[ijlI1|!.,:;'" ()\[\]{}t\-]/.test(ch)) {
+    factor = 0.28;
+  } else if ('frksJ'.includes(ch)) {
+    factor = 0.42;
+  } else if ('mwMW%@&_#+='.includes(ch)) {
+    factor = 0.85;
+  } else if (code >= 0x4e00 && code <= 0x9fff) {
+    // Ideogrammi CJK
+    factor = 1.0;
+  } else if (code >= 0x2000 && code <= 0x206f) {
+    // Punteggiatura generale
+    factor = 0.35;
+  }
+  if (bold) factor *= 1.08;
+  return fontSize * factor;
+}
+
+/**
+ * Calcola la larghezza stimata di una parola o porzione di testo.
+ */
+function estimateSpanWidth(
+  text: string,
+  baseFontSize: number,
+  baseBold: boolean,
+  runs?: TitleRun[],
+  mathWidths?: Map<string, number>
+): number {
+  if (runs && runs.length > 0 && runs.map((r) => r.text).join('') === text) {
+    let sum = 0;
+    for (const r of runs) {
+      const bold = r.bold ?? baseBold;
+      const size = r.fontSizePx ?? baseFontSize;
+      if (textMeasurer) {
+        sum += textMeasurer(r.text, size, bold);
+        continue;
       }
-      return { w: Math.max(72.0, fw), h: Math.max(32.0, fh) };
+      for (const ch of r.text) {
+        sum += estimateCharWidth(ch, size, bold);
+      }
+    }
+    return sum;
+  }
+
+  if (textMeasurer && !(mathWidths && [...text].some((ch) => mathWidths.has(ch)))) {
+    return textMeasurer(text, baseFontSize, baseBold);
+  }
+  let sum = 0;
+  for (const ch of text) {
+    sum += estimateCharWidth(ch, baseFontSize, baseBold, mathWidths);
+  }
+  return sum;
+}
+
+/**
+ * Suddivide il testo in righe che non superano `usableW` pixel di larghezza utile.
+ * Spezza a parole, o a caratteri per parole singole più lunghe della riga (break-words).
+ */
+function wrapTextToLines(
+  text: string,
+  usableW: number,
+  baseFontSize: number,
+  baseBold: boolean,
+  runs?: TitleRun[],
+  mathWidths?: Map<string, number>
+): { lines: Array<{ text: string; width: number }>; maxLineWidth: number } {
+  const lines: Array<{ text: string; width: number }> = [];
+  const paragraphs = text.split('\n');
+  const spaceW = estimateCharWidth(' ', baseFontSize, baseBold);
+
+  for (const para of paragraphs) {
+    if (para.length === 0) {
+      lines.push({ text: '', width: 0 });
+      continue;
     }
 
-    const effectiveLatex = node.latex;
-    if (effectiveLatex) {
-      try {
-        const rendered = renderLatexToSvg(effectiveLatex, 18);
-        if (!rendered.error) {
-          const fw = Math.max(rendered.width + 36.0, 96.0);
-          let fh = Math.max(rendered.height + 22.0, 38.0);
-          if (node.hasNotes || node.markers.length > 0 || node.labels.length > 0) {
-            fh += 18.0;
-          }
-          return { w: Math.min(fw, 650.0), h: Math.max(32.0, fh) };
+    // Il browser va a capo anche dopo un trattino: lo si tratta come uno spazio (stima per eccesso).
+    const words = para.replace(/-(?=\S)/g, '- ').split(' ');
+    let currentLineText = '';
+    let currentLineW = 0;
+
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      if (word.length === 0) {
+        if (currentLineText.length > 0) {
+          currentLineText += ' ';
+          currentLineW += spaceW;
         }
-      } catch {}
-    }
+        continue;
+      }
 
-    const text = node.displayTitle || node.title || '';
-    const blockSize = node.textStyle?.fontSizePx ? node.textStyle.fontSizePx / 13.0 : 1.0;
-    const blockBold = node.textStyle?.bold ?? false;
-    const baseFontSizePx = node.textStyle?.fontSizePx ?? 13.0;
+      const wordW = estimateSpanWidth(word, baseFontSize, baseBold, runs, mathWidths);
 
-    let totalContentWidth = 0;
-    let maxMathHeight = 0;
-    let hasDisplayMath = false;
-
-    if (node.titleRuns && node.titleRuns.map((r) => r.text).join('') === text) {
-      for (const r of node.titleRuns) {
-        const bold = r.bold ?? blockBold;
-        const size = r.fontSizePx ? r.fontSizePx / 13.0 : blockSize;
-        const runFontSizePx = r.fontSizePx ?? baseFontSizePx;
-        const segments = splitInlineMath(r.text);
-        for (const seg of segments) {
-          if (seg.kind === 'text') {
-            totalContentWidth += seg.value.length * (bold ? 1.08 : 1.0) * size * 8.5;
+      if (currentLineText.length === 0) {
+        if (wordW <= usableW) {
+          currentLineText = word;
+          currentLineW = wordW;
+        } else {
+          // Parola singola più lunga della riga: spezza a caratteri (break-words)
+          let chunk = '';
+          let chunkW = 0;
+          for (const ch of word) {
+            const chW = estimateCharWidth(ch, baseFontSize, baseBold, mathWidths);
+            if (chunkW + chW > usableW && chunk.length > 0) {
+              lines.push({ text: chunk, width: chunkW });
+              chunk = ch;
+              chunkW = chW;
+            } else {
+              chunk += ch;
+              chunkW += chW;
+            }
+          }
+          if (chunk.length > 0) {
+            currentLineText = chunk;
+            currentLineW = chunkW;
+          }
+        }
+      } else {
+        if (currentLineW + spaceW + wordW <= usableW) {
+          currentLineText += ' ' + word;
+          currentLineW += spaceW + wordW;
+        } else {
+          lines.push({ text: currentLineText, width: currentLineW });
+          if (wordW <= usableW) {
+            currentLineText = word;
+            currentLineW = wordW;
           } else {
-            if (seg.display) hasDisplayMath = true;
-            try {
-              const rendered = renderLatexToSvg(seg.value, runFontSizePx, seg.display ?? false);
-              if (!rendered.error) {
-                totalContentWidth += rendered.width + 4.0;
-                maxMathHeight = Math.max(maxMathHeight, rendered.height);
+            let chunk = '';
+            let chunkW = 0;
+            for (const ch of word) {
+              const chW = estimateCharWidth(ch, baseFontSize, baseBold, mathWidths);
+              if (chunkW + chW > usableW && chunk.length > 0) {
+                lines.push({ text: chunk, width: chunkW });
+                chunk = ch;
+                chunkW = chW;
               } else {
-                const rawLen = seg.value.length + (seg.display ? 4 : 2);
-                totalContentWidth += rawLen * (bold ? 1.08 : 1.0) * size * 8.5;
+                chunk += ch;
+                chunkW += chW;
               }
-            } catch {
-              const rawLen = seg.value.length + (seg.display ? 4 : 2);
-              totalContentWidth += rawLen * (bold ? 1.08 : 1.0) * size * 8.5;
+            }
+            if (chunk.length > 0) {
+              currentLineText = chunk;
+              currentLineW = chunkW;
+            } else {
+              currentLineText = '';
+              currentLineW = 0;
             }
           }
         }
       }
-    } else {
-      const segments = splitInlineMath(text);
-      for (const seg of segments) {
-        if (seg.kind === 'text') {
-          totalContentWidth += seg.value.length * (blockBold ? 1.08 : 1.0) * blockSize * 8.5;
-        } else {
-          if (seg.display) hasDisplayMath = true;
+    }
+
+    if (currentLineText.length > 0 || words.length === 0) {
+      lines.push({ text: currentLineText, width: currentLineW });
+    }
+  }
+
+  const safeLines = lines.length > 0 ? lines : [{ text: '', width: 0 }];
+  const maxLineWidth = safeLines.reduce((max, l) => Math.max(max, l.width), 0);
+  return { lines: safeLines, maxLineWidth };
+}
+
+export function estimateNodeSize(
+  node: {
+    depth: number;
+    kind?: string;
+    latex?: string;
+    title?: string;
+    displayTitle?: string;
+    textStyle?: TextStyle;
+    titleRuns?: TitleRun[];
+    hasNotes?: boolean;
+    markers?: string[];
+    labels?: string[];
+    imageW?: number;
+    imageH?: number;
+    customWidth?: number;
+  },
+  overrideWidth?: number | null
+): { w: number; h: number } {
+  // 1. Immagini con dimensioni note
+  const imgW = node.imageW;
+  const imgH = node.imageH;
+  if (imgW !== undefined && imgH !== undefined) {
+    const maxW = node.kind === 'equation' || node.latex ? 650.0 : 800.0;
+    const scale = imgW > maxW ? maxW / imgW : 1.0;
+    const fw = imgW * scale + 24.0;
+    let fh = imgH * scale + 18.0;
+    if (
+      node.hasNotes ||
+      (node.markers && node.markers.length > 0) ||
+      (node.labels && node.labels.length > 0)
+    ) {
+      fh += 18.0;
+    }
+    return { w: Math.max(72.0, fw), h: Math.max(32.0, fh) };
+  }
+  if (node.kind === 'image') {
+    const fw = 200.0 + 24.0;
+    let fh = 150.0 + 18.0;
+    if (
+      node.hasNotes ||
+      (node.markers && node.markers.length > 0) ||
+      (node.labels && node.labels.length > 0)
+    ) {
+      fh += 18.0;
+    }
+    return { w: Math.max(72.0, fw), h: Math.max(32.0, fh) };
+  }
+
+  // 2. Formule LaTeX native (MathJax)
+  const effectiveLatex = node.latex;
+  if (effectiveLatex) {
+    try {
+      const rendered = renderLatexToSvg(effectiveLatex, 18);
+      if (!rendered.error) {
+        const fw = Math.max(rendered.width + 36.0, 96.0);
+        let fh = Math.max(rendered.height + 22.0, 38.0);
+        if (
+          node.hasNotes ||
+          (node.markers && node.markers.length > 0) ||
+          (node.labels && node.labels.length > 0)
+        ) {
+          fh += 18.0;
+        }
+        return { w: Math.min(fw, 650.0), h: Math.max(32.0, fh) };
+      }
+    } catch {}
+  }
+
+  // 3. Testo ordinario
+  const text = node.displayTitle || node.title || '';
+  const isRoot = node.depth === 0;
+  const isBranch = node.depth === 1;
+  const baseFontSize = node.textStyle?.fontSizePx ?? (isRoot ? 14.0 : 12.0);
+  const baseBold = node.textStyle?.bold ?? (isRoot || isBranch);
+
+  const padX = isRoot ? 24.0 : 18.0;
+  const noteW = node.hasNotes ? 20.0 : 0.0;
+  const targetCustomWidth = overrideWidth !== undefined ? overrideWidth : node.customWidth;
+  const hasCustom =
+    targetCustomWidth !== null && targetCustomWidth !== undefined && targetCustomWidth > 0;
+
+  let usableW: number;
+  if (hasCustom) {
+    usableW = Math.max(targetCustomWidth - padX - noteW, 20.0);
+  } else {
+    // Senza customWidth: limite massimo di 360 px prima di mandare a capo
+    const maxBlockW = 360.0;
+    usableW = Math.max(maxBlockW - padX - noteW, 20.0);
+  }
+
+  // Ogni formula `$…$` diventa un carattere segnaposto indivisibile, largo quanto l'SVG MathJax.
+  const mathWidths = new Map<string, number>();
+  let maxMathH = 0;
+  let measuredText = text;
+  if (text.includes('$')) {
+    const segments = splitInlineMath(text);
+    if (segments.some((seg) => seg.kind === 'math')) {
+      measuredText = segments
+        .map((seg) => {
+          if (seg.kind === 'text') return seg.value;
+          const key = String.fromCharCode(0xe000 + (mathWidths.size % 0x1900));
+          let width = estimateSpanWidth(seg.value, baseFontSize, baseBold) + 2 * baseFontSize * 0.55;
           try {
-            const rendered = renderLatexToSvg(seg.value, baseFontSizePx, seg.display ?? false);
+            const rendered = renderLatexToSvg(seg.value, baseFontSize, seg.display ?? false);
             if (!rendered.error) {
-              totalContentWidth += rendered.width + 4.0;
-              maxMathHeight = Math.max(maxMathHeight, rendered.height);
-            } else {
-              const rawLen = seg.value.length + (seg.display ? 4 : 2);
-              totalContentWidth += rawLen * (blockBold ? 1.08 : 1.0) * blockSize * 8.5;
+              width = rendered.width + 2.0;
+              maxMathH = Math.max(maxMathH, rendered.height);
             }
           } catch {
-            const rawLen = seg.value.length + (seg.display ? 4 : 2);
-            totalContentWidth += rawLen * (blockBold ? 1.08 : 1.0) * blockSize * 8.5;
+            // LaTeX non valido: la UI mostra il sorgente, si stima come testo.
           }
-        }
-      }
+          mathWidths.set(key, width);
+          return key;
+        })
+        .join('');
     }
+  }
 
-    const maxW = node.customWidth ?? 360.0;
-    let w = Math.min(Math.max(totalContentWidth + 44.0, 96.0), maxW);
-    if (node.markers.length > 0) {
-      w += node.markers.length * 20;
+  const { lines, maxLineWidth } = wrapTextToLines(
+    measuredText,
+    usableW,
+    baseFontSize,
+    baseBold,
+    mathWidths.size > 0 ? undefined : node.titleRuns,
+    mathWidths
+  );
+
+  let w: number;
+  if (hasCustom) {
+    w = Math.max(40.0, targetCustomWidth);
+  } else {
+    // Default = adattamento perfetto al testo (nessuno spazio vuoto).
+    // Per righe multiple, il blocco è largo quanto la riga più lunga (+ padding), non quanto il massimo.
+    w = maxLineWidth + padX + noteW + 2.0;
+    let badgesW = 0;
+    if (node.markers && node.markers.length > 0) badgesW += node.markers.length * 20;
+    if (node.labels && node.labels.length > 0) badgesW += node.labels.length * 32;
+    if (badgesW > 0) {
+      w = Math.max(w, badgesW + padX);
     }
-    if (node.labels.length > 0) {
-      w += node.labels.length * 32;
-    }
-    const usableW = Math.max(w - 28.0, 80.0);
-    const lines = Math.max(Math.ceil(totalContentWidth / usableW), 1.0);
-    const lineHeight = Math.max(20.0, maxMathHeight > 0 ? maxMathHeight + 4.0 : 20.0);
-    let h = Math.max(lines * lineHeight + 16.0 + (hasDisplayMath ? 8.0 : 0.0), 36.0);
-    if (node.hasNotes || node.markers.length > 0 || node.labels.length > 0) {
-      h += 16.0;
-    }
-    return { w, h };
+    w = Math.max(40.0, Math.min(w, 360.0));
+  }
+
+  const lineCount = Math.max(lines.length, 1);
+  const lineH = Math.max(isRoot ? 20.0 : 18.0, maxMathH + 4.0);
+  let h = Math.max(lineCount * lineH + 16.0, 36.0);
+  if ((node.markers && node.markers.length > 0) || (node.labels && node.labels.length > 0)) {
+    h += 16.0;
+  }
+
+  return { w: Math.round(w), h: Math.round(h) };
+}
+
+export class EstimatedMetrics implements NodeMetrics {
+  measure(node: MapNode): { w: number; h: number } {
+    return estimateNodeSize(node);
   }
 }
 
