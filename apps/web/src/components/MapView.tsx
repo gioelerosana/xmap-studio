@@ -1604,6 +1604,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
         <rect
           id="map-bg"
+          data-print-hide
           x={-15000}
           y={-15000}
           width={45000}
@@ -1731,6 +1732,7 @@ export const MapView: React.FC<MapViewProps> = ({
               {/* Alone di selezione: anello esterno adiacente al bordo (3px, 24%) */}
               {isSelected && (
                 <rect
+                  data-print-hide
                   x={-2.25}
                   y={-2.25}
                   width={node.w + 4.5}
@@ -1744,6 +1746,8 @@ export const MapView: React.FC<MapViewProps> = ({
 
               {/* Rettangolo base della card del nodo */}
               <rect
+                data-node-rect
+                data-default-stroke={look.stroke}
                 className="transition-[filter] duration-150 group-hover:brightness-110"
                 width={node.w}
                 height={node.h}
@@ -1889,6 +1893,7 @@ export const MapView: React.FC<MapViewProps> = ({
               {/* Maniglia di ridimensionamento larghezza blocco (bordo destro, solo blocchi testo) */}
               {node.id === selectedTopicId && !isPlainImage && !isEquation && editingRef.current?.id !== node.id && (
                 <g
+                  data-print-hide
                   data-map-ui
                   data-resize-handle="width"
                   className="select-none"
@@ -1927,6 +1932,7 @@ export const MapView: React.FC<MapViewProps> = ({
               {/* Maniglia d'angolo per ridimensionamento immagine (in basso a destra, mantiene proporzioni) */}
               {node.id === selectedTopicId && isPlainImage && !isEquation && editingRef.current?.id !== node.id && (
                 <g
+                  data-print-hide
                   data-map-ui
                   data-resize-handle="image"
                   className="select-none"
@@ -2261,10 +2267,13 @@ export const MapView: React.FC<MapViewProps> = ({
           La trasformazione è applicata imperativamente (applyView), non da React. */}
       <svg
         ref={svgRef}
+        data-map-canvas
         className="w-full h-full overflow-visible"
         style={{ transformOrigin: '0 0', willChange: 'transform', textRendering: 'geometricPrecision' }}
       >
-        {content}
+        <g data-map-content>
+          {content}
+        </g>
         {dragLayer}
       </svg>
 

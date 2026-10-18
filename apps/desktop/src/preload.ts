@@ -33,6 +33,7 @@ export interface ElectronAPI {
     options?: { expectedHash?: string; force?: boolean }
   ) => Promise<SaveOutcome>;
   checkXMindRunning: () => Promise<string[]>;
+  printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<number[]>;
   minimize: () => void;
   maximize: () => void;
   close: () => void;
@@ -53,6 +54,7 @@ const api: ElectronAPI = {
   saveAtomic: (filePath, bytes, options) =>
     ipcRenderer.invoke('fs:saveAtomic', filePath, bytes, options),
   checkXMindRunning: () => ipcRenderer.invoke('safety:checkXMind'),
+  printToPdf: (opts) => ipcRenderer.invoke('print:toPdf', opts),
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),

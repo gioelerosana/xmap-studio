@@ -29,3 +29,81 @@ body {
   transition-duration: 1ms !important;
   scroll-behavior: auto !important;
 }
+
+/* Contenitore di stampa mappa */
+#print-root {
+  display: none;
+}
+
+/* Carta: sempre tema chiaro, anche con l'app in tema scuro (stampa e anteprima). */
+#print-root,
+.print-light {
+  color-scheme: light;
+  --background: oklch(0.992 0 0);
+  --foreground: oklch(0.274 0.006 286.033);
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.488 0.217 264);
+  --primary-foreground: #ffffff;
+  --secondary: oklch(0.985 0 0);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.967 0.001 286.375);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.871 0.006 286.286);
+  --ring: var(--primary);
+  --map-canvas: #ffffff;
+  --map-grid-dot: oklch(0.9 0.004 286.3);
+  --map-link: oklch(0.78 0.006 286.3);
+  --map-root: oklch(0.21 0.006 285.885);
+  --map-root-foreground: #ffffff;
+  --map-central: oklch(0.32 0.03 265);
+  --map-central-foreground: #ffffff;
+  --map-tint: 14%;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Nascondi tutto tranne il contenitore dedicato di stampa */
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+
+  #print-root {
+    display: block !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color-scheme: light !important;
+
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-page {
+    box-sizing: border-box !important;
+    position: relative !important;
+    background: #ffffff !important;
+    overflow: hidden !important;
+  }
+
+  .print-page:not(:last-child) {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+}

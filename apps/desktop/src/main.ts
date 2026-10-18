@@ -248,6 +248,23 @@ ipcMain.handle(
   }
 );
 
+// Stampa su file PDF della finestra mittente
+ipcMain.handle(
+  'print:toPdf',
+  async (event, opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => {
+    const owner = senderWindow(event);
+    const target = owner?.webContents ?? event.sender;
+    const buffer = await target.printToPDF({
+      pageSize: opts.pageSize,
+      landscape: opts.landscape,
+      printBackground: true,
+      margins: { marginType: 'none' },
+      preferCSSPageSize: true,
+    });
+    return Array.from(buffer);
+  }
+);
+
 // Controlli finestra CSD, indirizzati alla finestra che ha inviato il messaggio.
 ipcMain.on('window:minimize', (event) => senderWindow(event)?.minimize());
 

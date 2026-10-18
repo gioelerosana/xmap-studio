@@ -42,6 +42,7 @@ import {
   Info,
   PanelRight,
   Settings,
+  Printer,
 } from 'lucide-react';
 import {
   openLocalXmindFile,
@@ -58,6 +59,7 @@ import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
 import { INSPECTOR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
 import { ExportModal } from './components/ExportModal.js';
+import { PrintModal } from './components/PrintModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import type { DropPlacement } from './components/map/dragTarget.js';
@@ -93,6 +95,7 @@ declare global {
         | { ok: false; code: string; message: string; processes?: string[] }
       >;
       checkXMindRunning: () => Promise<string[]>;
+      printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<number[]>;
       minimize: () => void;
       maximize: () => void;
       close: () => void;
@@ -290,6 +293,7 @@ export const App: React.FC = () => {
   const [busy, setBusy] = useState(false);
 
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -701,11 +705,16 @@ export const App: React.FC = () => {
         if (inField) return;
         e.preventDefault();
         handleCreateSummary();
+      } else if (key === 'p') {
+        if (workbook) {
+          e.preventDefault();
+          setPrintModalOpen(true);
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleCreateSummary]);
+  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleCreateSummary, workbook]);
 
   // Esc chiude l'Inspector se aperto e non si sta editando testo; con selezione multipla torna a singola
   useEffect(() => {
@@ -1415,6 +1424,7 @@ const handleMoveFloating = useCallback(
         ...overflowItems,
         { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', separatorBefore: overflowItems.length > 0, onSelect: handleSaveAs },
         { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: () => setExportModalOpen(true) },
+        { id: 'print', label: 'Stampa…', icon: <Printer className="size-4" />, shortcut: 'Ctrl+P', onSelect: () => setPrintModalOpen(true) },
         { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="size-4" />, onSelect: () => setImportModalOpen(true) },
         {
           id: 'export-svg',
@@ -1587,7 +1597,8 @@ const handleMoveFloating = useCallback(
                 onCancelEdit={() => setEditing(null)}
                 onToggleCollapse={handleToggleCollapse}
                 resourceResolver={resolveResource}
-                darkMode={darkMode}
+                // In stampa la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
+                darkMode={darkMode && !printModalOpen}
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
                 onMoveTopic={handleMove}
@@ -1654,6 +1665,12 @@ const handleMoveFloating = useCallback(
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
         getExportContent={(fmt) => controller.export(fmt)}
+        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+      />
+      <PrintModal
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+        layout={currentLayout}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
       />
       <ImportModal
