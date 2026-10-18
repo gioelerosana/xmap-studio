@@ -137,7 +137,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       onKeyDown={onKeyDown}
       style={{ left: coords.left, top: coords.top }}
       className={cn(
-        'surface-glass fixed z-50 min-w-[14rem] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
+        'bg-popover fixed z-50 min-w-[14rem] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
         'animate-pop-in overflow-y-auto rounded-lg border p-1 text-sm text-popover-foreground shadow-dialog',
       )}
     >

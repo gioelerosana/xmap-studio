@@ -80,7 +80,7 @@ packages/core/src/
   state/         # workbook aperto, undo/redo, DTO verso la UI
   controller.ts  # API unica verso la UI
 apps/web/src/
-  components/    # Sidebar (albero), MapView, Inspector, modali
+  components/    # MapView (+ map/: editor, menu contestuale), Inspector, modali
   adapters/      # dialogo file web / Electron
 apps/desktop/src # main (finestra, IPC, scrittura atomica) + preload
 ```

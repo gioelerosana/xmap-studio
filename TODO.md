@@ -1,11 +1,11 @@
 - [ ] Spostamento libero delle immagini legate da frecce (parziale: i blocchi liberi — immagini, formule o testo collegati da frecce — si trascinano sulla mappa e la posizione si salva in `position`; manca la verifica in XMind che li riapra nello stesso punto)
 
-- Aggiungere l'opzione di poter creare oggetti summary tra più nodi fratelli come su Xmind
-- Possibilità di poter ridimensionare le caselle di testo in maniera dinamica. Voglio poter rimpicciolire e di conseguenza scrivere il contenuto su più righe. Il comportamento di default deve essere un adattamento dinamico perfetto al testo
-- Scorciatoria Ctrl + B per render bold un testo selezionato
-- Click destro su un blocco per aggiunta rapida di sottoblocchi, nodi fratelli, freccie, copia e incolla blocco, ...
+- [x] Aggiungere l'opzione di poter creare oggetti summary tra più nodi fratelli come su Xmind (Maiusc/Ctrl+clic per selezionare più fratelli, poi pulsante "Sommario" o Ctrl+]: graffa sull'intervallo contiguo, come in XMind)
+- [ ] Possibilità di poter ridimensionare le caselle di testo in maniera dinamica. Voglio poter rimpicciolire e di conseguenza scrivere il contenuto su più righe. Il comportamento di default deve essere un adattamento dinamico perfetto al testo (parziale: i blocchi si adattano al testo misurato col font reale e vanno a capo oltre 360 px; maniglia sul bordo destro del blocco selezionato per stringere/allargare, doppio clic per tornare automatico; salvato in `customWidth`. Manca la verifica in XMind che riapra il blocco con la stessa larghezza)
+- [ ] Scorciatoria Ctrl + B per render bold un testo selezionato (parziale: nell'editor in place Ctrl+B/I/U formattano solo la selezione, salvata in `attributedTitle`; manca la verifica in XMind che la mostri uguale)
+- [x] Click destro su un blocco per aggiunta rapida di sottoblocchi, nodi fratelli, freccie, copia e incolla blocco, ... (menu contestuale anche con pressione lunga su touch: sotto-blocco, fratelli, modifica, dettagli, LaTeX, collega con freccia, copia/taglia/incolla/duplica con Ctrl+C/X/V/D, sommario, elimina)
 - (GRANDE IMPLEMENTAZIONE - bassa priorità) Implementare tutta la lagica di stampa per rendere gli schemi fruibili su fogli A4
-- Integrare la scrittura del latex direttamente nel blocco attraverso i marcatori $. Esempio: $\mathcal A$. esattamente come in markdown
-- La barra laterale sinistra può essere eliminata, a mio avviso
-- Possibilità di incollare immagini direttamente nella mappa e di ridimensionarle
-- Quando creo una nuova mappa, al primo salvataggio, il titolo del file .xmind deve essere il titolo dell'argomento principale
+- [x] Integrare la scrittura del latex direttamente nel blocco attraverso i marcatori $. Esempio: $\mathcal A$. esattamente come in markdown (`$…$` e `$$…$$` resi con MathJax sulla mappa, `\$` per il dollaro; nel file resta testo, quindi XMind mostra il sorgente)
+- [x] La barra laterale sinistra può essere eliminata, a mio avviso (rimossa con la sua impostazione)
+- [ ] Possibilità di incollare immagini direttamente nella mappa e di ridimensionarle (parziale: Ctrl+V o trascinamento creano un sotto-blocco immagine nativo, maniglia d'angolo per ridimensionarla in proporzione; manca la verifica in XMind del file salvato)
+- [x] Quando creo una nuova mappa, al primo salvataggio, il titolo del file .xmind deve essere il titolo dell'argomento principale
