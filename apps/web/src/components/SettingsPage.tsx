@@ -127,13 +127,6 @@ export function SettingsPage({ isOpen, onClose, settings, onUpdate, onReset }: S
         </SettingsSection>
 
         <SettingsSection title="Interfaccia">
-          <SettingRow label="Mostra la barra laterale all'avvio" hint="Su desktop. Il pulsante nella barra la ricorda.">
-            <Switch
-              aria-label="Mostra la barra laterale all'avvio"
-              checked={settings.sidebarOnStartup}
-              onCheckedChange={(sidebarOnStartup) => onUpdate({ sidebarOnStartup })}
-            />
-          </SettingRow>
           <SettingRow
             label="Apri i dettagli alla selezione"
             hint="Su desktop. Di base i dettagli si aprono solo su richiesta (pulsante, scorciatoia o doppio clic)."

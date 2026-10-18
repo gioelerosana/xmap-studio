@@ -4,13 +4,6 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 const MAP_MIN_WIDTH = 360;
 
 /** Configurazione dei pannelli ridimensionabili (larghezze in px, default = larghezze precedenti). */
-export const SIDEBAR_PANEL = {
-  storageKey: 'xmap-studio.sidebar-width',
-  defaultWidth: 280,
-  min: 200,
-  max: 480,
-} as const;
-
 export const INSPECTOR_PANEL = {
   storageKey: 'xmap-studio.inspector-width',
   defaultWidth: 352,

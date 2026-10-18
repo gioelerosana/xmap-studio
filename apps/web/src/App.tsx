@@ -39,7 +39,6 @@ import {
   Trash2,
   Info,
   PanelRight,
-  PanelLeft,
   Settings,
 } from 'lucide-react';
 import {
@@ -50,17 +49,16 @@ import {
   confirmForceSave,
   downloadBlob,
 } from './adapters/fileSystem.js';
-import { Sidebar } from './components/Sidebar.js';
 import { MapView, type MapEditing } from './components/MapView.js';
 import type { EditExit } from './components/map/NodeEditor.js';
 import { neighborId, selectionAfterDelete } from './components/map/navigation.js';
 import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
-import { INSPECTOR_PANEL, SIDEBAR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
+import { INSPECTOR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
 import { ExportModal } from './components/ExportModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
-import { DropPlacement, TopicFilter } from './components/TopicTree.js';
+import type { DropPlacement } from './components/map/dragTarget.js';
 import { SettingsPage } from './components/SettingsPage.js';
 import { useSettings } from './settings.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
@@ -108,6 +106,9 @@ declare global {
 type CloseAction = null | 'confirm';
 type ReplacementAction = 'save' | 'discard' | 'cancel';
 
+/** Nome provvisorio di una mappa nuova, mai salvata: al primo salvataggio si propone il titolo della radice. */
+const UNTITLED_FILE_NAME = 'senza_titolo.xmind';
+
 function sanitizeName(name: string): string {
   return (
     name
@@ -142,34 +143,15 @@ export const App: React.FC = () => {
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   // Cresce a ogni documento aperto: la mappa si riadatta solo allora (o al cambio di foglio).
   const [documentKey, setDocumentKey] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<TopicFilter>('all');
   const { settings, darkMode, update: updateSettings, reset: resetSettings } = useSettings();
   const toggleDarkMode = useCallback(() => updateSettings({ theme: darkMode ? 'light' : 'dark' }), [darkMode, updateSettings]);
   const [selectedTopicId, setSelectedTopicId] = useState<string | undefined>();
-  // Sotto lg la sidebar è un drawer, chiuso di default.
-  // Su desktop parte come da impostazioni; il pulsante nella barra la ricorda.
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.(WIDE_QUERY).matches && settings.sidebarOnStartup
-  );
-  const [sidebarWidth, setSidebarWidth] = usePanelWidth(
-    SIDEBAR_PANEL.storageKey,
-    SIDEBAR_PANEL.defaultWidth,
-    SIDEBAR_PANEL.min,
-    SIDEBAR_PANEL.max,
-  );
   const [inspectorWidth, setInspectorWidth] = usePanelWidth(
     INSPECTOR_PANEL.storageKey,
     INSPECTOR_PANEL.defaultWidth,
     INSPECTOR_PANEL.min,
     INSPECTOR_PANEL.max,
-    sidebarOpen ? sidebarWidth : 0,
   );
-  const toggleSidebar = useCallback(() => {
-    const next = !sidebarOpen;
-    setSidebarOpen(next);
-    if (window.matchMedia(WIDE_QUERY).matches) updateSettings({ sidebarOnStartup: next });
-  }, [sidebarOpen, updateSettings]);
   // Smartphone: il tap seleziona soltanto, il pannello dettagli (bottom sheet)
   // si apre su richiesta per non coprire la mappa a ogni tocco.
   // Su desktop la selezione apre i dettagli solo se l'impostazione lo chiede.
@@ -428,7 +410,7 @@ export const App: React.FC = () => {
     };
     const bytes = await buildArchiveBytes(raw);
     await requestWorkbookReplacement(async () => {
-      const dto = await controller.open(bytes, undefined, 'senza_titolo.xmind');
+      const dto = await controller.open(bytes, undefined, UNTITLED_FILE_NAME);
       setWorkbook(dto);
       setFileHandle(undefined);
       setActiveSheetIndex(0);
@@ -451,11 +433,15 @@ export const App: React.FC = () => {
             ? controller.expectedFileHash()
             : undefined;
         const contentHash = await sha256HexAsync(bytes);
+        const suggestedName =
+          workbook.path === null && workbook.fileName === UNTITLED_FILE_NAME
+            ? `${sanitizeName(controller.mapTitle() || 'mappa')}.xmind`
+            : workbook.fileName || 'mappa.xmind';
 
         if (isElectron && window.electronAPI) {
           let savePath = workbook.path;
           if (saveAs || !savePath) {
-            const selected = await window.electronAPI.saveFileDialog(workbook.fileName || 'mappa.xmind');
+            const selected = await window.electronAPI.saveFileDialog(suggestedName);
             if (!selected) return false;
             savePath = selected;
           }
@@ -480,7 +466,7 @@ export const App: React.FC = () => {
 
         const handle = await saveLocalXmindFile(
           bytes,
-          workbook.fileName || 'mappa.xmind',
+          suggestedName,
           saveAs ? undefined : fileHandle,
           expectedHash
         );
@@ -938,16 +924,6 @@ export const App: React.FC = () => {
         headerRef={headerRef}
         leftContent={
           <>
-            {workbook && (
-              <IconButton
-                size="sm"
-                active={sidebarOpen}
-                onClick={toggleSidebar}
-                label={sidebarOpen ? 'Nascondi elenco blocchi' : 'Mostra elenco blocchi'}
-              >
-                <PanelLeft className="size-4" />
-              </IconButton>
-            )}
             {inlineOpen && (
               <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
                 <span className={cn(!showLabels && 'sr-only')}>Apri</span>
@@ -1034,29 +1010,6 @@ export const App: React.FC = () => {
           />
         ) : (
           <>
-            <Sidebar
-              topics={allTopics}
-              searchQuery={searchQuery}
-              onSearch={setSearchQuery}
-              filter={filter}
-              onFilter={setFilter}
-              selectedTopicId={selectedTopicId}
-              collapsedIds={collapsedIds}
-              onSelect={(id) => {
-                setSelectedTopicId(id);
-                // Sotto lg il drawer copre la mappa: si chiude dopo la scelta.
-                if (!window.matchMedia(WIDE_QUERY).matches) setSidebarOpen(false);
-              }}
-              open={sidebarOpen}
-              onClose={() => setSidebarOpen(false)}
-              width={sidebarWidth}
-              onWidthChange={setSidebarWidth}
-              onToggleCollapse={handleToggleCollapse}
-              onAddChild={handleAddChild}
-              onAddRootChild={() => allTopics[0] && handleAddChild(allTopics[0].id)}
-              onMove={handleMove}
-            />
-
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <MapView
                 layout={currentLayout}
