@@ -21,6 +21,7 @@ import {
   sha256HexAsync,
   RawArchive,
   MapStructure,
+  TitleRun,
 } from '@xmap/core';
 import {
   FolderOpen,
@@ -900,14 +901,24 @@ export const App: React.FC = () => {
     [controller, refreshState, addToast]
   );
 
-  const handleCommitEdit = (id: string, text: string, exit: EditExit) => {
+  const handleCommitEdit = (id: string, text: string, exit: EditExit, runs?: TitleRun[]) => {
     const isNew = editing?.id === id && editing.isNew;
     setEditing(null);
     const topic = allTopics.find((t) => t.id === id);
     try {
-      if (topic && text.trim().length > 0 && text !== topic.title) {
-        controller.setTopicTitle(id, text, { mergeWithPrevious: isNew });
-        refreshState();
+      if (topic) {
+        if (runs && runs.length > 0) {
+          controller.setTopicTitleRuns(id, runs, { mergeWithPrevious: isNew });
+          refreshState();
+        } else if (topic.titleRuns && topic.titleRuns.length > 0) {
+          controller.setTopicTitleRuns(id, [{ text: text.trim().length > 0 ? text : topic.title }], {
+            mergeWithPrevious: isNew,
+          });
+          refreshState();
+        } else if (text.trim().length > 0 && text !== topic.title) {
+          controller.setTopicTitle(id, text, { mergeWithPrevious: isNew });
+          refreshState();
+        }
       }
     } catch (err: any) {
       addToast('error', err.message);

@@ -42,7 +42,7 @@ import {
   toggleMarker,
 } from './model/edit.js';
 import { Sheet, Topic } from './model/types.js';
-import { setTextStyle, TextStylePatch } from './model/style.js';
+import { setTitleRuns, setTextStyle, TextStylePatch } from './model/style.js';
 import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
 import {
   countTopics,
@@ -79,6 +79,7 @@ import {
   Point,
   RelationshipShape,
   SaveResultDto,
+  TitleRun,
   WorkbookDto,
 } from './state/types.js';
 import { cloneSheets, OpenWorkbook } from './state/workbook.js';
@@ -299,6 +300,43 @@ export class AppController {
 
     if (topic.title === title && topic.titleUnedited === undefined) return wb.toDto();
     setTitle(topic, title);
+    const lc = this.lastCreated;
+    if (opts?.mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
+      wb.replaceHistoryTop();
+    } else {
+      wb.pushHistory();
+    }
+    return wb.toDto();
+  }
+
+  /**
+   * Imposta il titolo con formattazione parziale (`attributedTitle`).
+   * Stessa semantica di cronologia di `setTopicTitle`: senza cambiamenti
+   * non registra un passo; con `mergeWithPrevious` sostituisce l'ultimo snapshot
+   * se era la creazione del blocco.
+   */
+  public setTopicTitleRuns(
+    topicId: string,
+    runs: TitleRun[],
+    opts?: { mergeWithPrevious?: boolean }
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    const prevTitle = topic.title;
+    const prevAttributed = JSON.stringify(topic.attributedTitle);
+    const prevUnedited = topic.titleUnedited;
+
+    setTitleRuns(topic, runs);
+
+    const nextTitle = topic.title;
+    const nextAttributed = JSON.stringify(topic.attributedTitle);
+
+    if (prevTitle === nextTitle && prevAttributed === nextAttributed && prevUnedited === undefined) {
+      return wb.toDto();
+    }
+
     const lc = this.lastCreated;
     if (opts?.mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
       wb.replaceHistoryTop();

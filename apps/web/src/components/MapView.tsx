@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Layout, LayoutNode, MapStructure, Point, renderLatexToSvg, SUMMARY_BRACE_W, trunkX } from '@xmap/core';
+import { Layout, LayoutNode, MapStructure, Point, renderLatexToSvg, SUMMARY_BRACE_W, TitleRun, trunkX } from '@xmap/core';
 import {
   Plus,
   Minus,
@@ -154,7 +154,7 @@ export interface MapViewProps {
   viewKey?: string;
   editing?: MapEditing | null;
   onStartEdit?: (topicId: string) => void;
-  onCommitEdit?: (topicId: string, text: string, exit: EditExit) => void;
+  onCommitEdit?: (topicId: string, text: string, exit: EditExit, runs?: TitleRun[]) => void;
   onCancelEdit?: () => void;
   layout: Layout | null;
   selectedTopicId?: string;
@@ -1673,8 +1673,9 @@ export const MapView: React.FC<MapViewProps> = ({
             h={editingNode.h}
             isRoot={editingNode.depth === 0}
             initialText={editing.mode === 'text' ? editing.text ?? '' : editingNode.title}
+            initialRuns={editing.mode === 'text' ? undefined : editingNode.titleRuns}
             selectAll={editing.mode === 'all'}
-            onCommit={(text, exit) => onCommitEdit(editing.id, text, exit)}
+            onCommit={(text, exit, runs) => onCommitEdit(editing.id, text, exit, runs)}
             onCancel={() => onCancelEdit?.()}
           />
         </div>

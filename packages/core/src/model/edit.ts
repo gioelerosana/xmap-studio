@@ -15,6 +15,8 @@ import {
   walkTopic,
 } from './utils.js';
 
+export { setTitleRuns } from './style.js';
+
 export function setTitle(topic: Topic, title: string): void {
   topic.title = title;
   delete topic.titleUnedited;
