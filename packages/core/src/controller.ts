@@ -21,8 +21,17 @@ import { buildArchiveBytes, readArchive, sha256HexAsync } from './archive/archiv
 import { RawArchive } from './archive/types.js';
 import type { Platform } from './platform.js';
 import {
+  base64ToBytes,
+  bytesToBase64,
+  cloneTopicSubtree,
+  subtreeResourceNames,
+  XMAP_CLIPBOARD_VERSION,
+  XmapClipboardPayload,
+} from './model/clone.js';
+import {
   addChild,
   insertSibling,
+  insertSiblingTopic,
   addRelationship,
   addSummary,
   addBoundary,
@@ -492,6 +501,122 @@ export class AppController {
       return this.addTopic(topicId, title);
     }
     const newId = insertSibling(wb.content, topicId, title, where);
+    wb.pushHistory();
+    this.lastCreated = { id: newId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), newId };
+  }
+
+  /**
+   * Copia un topic (e il suo intero sottoalbero) serializzandolo come payload JSON
+   * con marcatore { xmapStudioClipboard: 1, topic }.
+   */
+  public copyTopic(topicId: string): string {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const resources: Record<string, string> = {};
+    for (const name of subtreeResourceNames(topic)) {
+      const bytes = wb.archive.resources.get(name);
+      if (bytes) resources[name] = bytesToBase64(bytes);
+    }
+    const payload: XmapClipboardPayload = {
+      xmapStudioClipboard: XMAP_CLIPBOARD_VERSION,
+      topic,
+      ...(Object.keys(resources).length > 0 ? { resources } : {}),
+    };
+    return JSON.stringify(payload);
+  }
+
+  /**
+   * Incolla un topic copiato come sotto-blocco del blocco `parentId`.
+   * Rigenera tutti gli id del sottoalbero preservando le proprietà sconosciute e
+   * la coerenza dei riferimenti interni (sommari, ecc.).
+   * Le risorse referenziate (image.src xap:resources/…) restano valide perché incolli
+   * nello stesso file; se il payload viene da un altro file e la risorsa manca,
+   * conserva comunque il riferimento per non perdere dati.
+   */
+  public pasteTopic(
+    parentId: string,
+    payload: string | XmapClipboardPayload
+  ): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const parent = findTopic(wb.content, parentId);
+    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic genitore ${parentId} non trovato`);
+
+    let data: XmapClipboardPayload;
+    if (typeof payload === "string") {
+      try {
+        data = JSON.parse(payload) as XmapClipboardPayload;
+      } catch {
+        throw new XmapError(
+          CODE_INVALID_INPUT,
+          "Dati negli appunti non validi: formato JSON non valido."
+        );
+      }
+    } else {
+      data = payload;
+    }
+
+    if (
+      !data ||
+      typeof data !== "object" ||
+      typeof data.xmapStudioClipboard !== "number" ||
+      !data.topic ||
+      typeof data.topic !== "object"
+    ) {
+      throw new XmapError(
+        CODE_INVALID_INPUT,
+        "Dati negli appunti non validi: blocco XMap Studio non riconosciuto."
+      );
+    }
+
+    // Le risorse mancanti (blocco copiato da un altro file) si aggiungono all'archivio,
+    // altrimenti la validazione prima del salvataggio fallirebbe.
+    const added: string[] = [];
+    if (data.resources && typeof data.resources === 'object') {
+      for (const [name, b64] of Object.entries(data.resources)) {
+        if (!name.startsWith('resources/') || typeof b64 !== 'string') continue;
+        if (wb.archive.resources.has(name)) continue;
+        try {
+          wb.archive.resources.set(name, base64ToBytes(b64));
+          added.push(name);
+        } catch {
+          throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: immagine danneggiata.');
+        }
+      }
+    }
+    if (added.length > 0) refreshManifest(wb.manifest, added, false);
+
+    const cloned = cloneTopicSubtree(data.topic);
+    if (!parent.children) {
+      parent.children = {};
+    }
+    if (!parent.children.attached) {
+      parent.children.attached = [];
+    }
+    parent.children.attached.push(cloned);
+
+    wb.pushHistory();
+    this.lastCreated = { id: cloned.id!, wb, pos: wb.pos };
+    return { dto: wb.toDto(), newId: cloned.id! };
+  }
+
+  /**
+   * Duplica un blocco (e il suo sottoalbero), inserendo la copia come blocco fratello subito dopo.
+   * Lancia un errore comprensibile se chiamato sulla radice (non ha fratelli).
+   * Un unico passo di cronologia undo.
+   */
+  public duplicateTopic(topicId: string): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    if (wb.content.some((s) => s.rootTopic?.id === topicId)) {
+      throw new XmapError(CODE_MOVE, "La radice non può essere duplicata come blocco fratello.");
+    }
+
+    const cloned = cloneTopicSubtree(topic);
+    const newId = insertSiblingTopic(wb.content, topicId, cloned, "after");
     wb.pushHistory();
     this.lastCreated = { id: newId, wb, pos: wb.pos };
     return { dto: wb.toDto(), newId };

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   HeaderBar,
+  Banner,
   Button,
   IconButton,
   Menu,
@@ -293,7 +294,10 @@ export const App: React.FC = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [closePrompt, setClosePrompt] = useState<CloseAction>(null);
-  const [editing, setEditing] = useState<(MapEditing & { isNew?: boolean }) | null>(null);
+  const [editing, setEditing] = useState<MapEditing | null>(null);
+  const [connectingTopicId, setConnectingTopicId] = useState<string | null>(null);
+  const inMemoryClipboard = useRef<string | null>(null);
+  const [canPaste, setCanPaste] = useState(false);
 
   const addToast = useCallback((type: ToastMessage['type'], message: string) => {
     const id = Math.random().toString(36).slice(2);
@@ -726,6 +730,21 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [editing, inspectorVisible, selectedTopicIds, selectedTopicId]);
 
+
+  // Annulla la modalità di connessione relazione con Esc
+  useEffect(() => {
+    if (!connectingTopicId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setConnectingTopicId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [connectingTopicId]);
+
   // Chiusura con modifiche non salvate
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -774,61 +793,7 @@ export const App: React.FC = () => {
     [controller, selectedTopic, allTopics, refreshState, addToast]
   );
 
-  // Incolla (Ctrl+V) e Drag & Drop di immagini sulla mappa
-  useEffect(() => {
-    const onPaste = (e: ClipboardEvent) => {
-      if (e.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"]')) return;
-      if (editing) return;
-      const target = e.target as Element | null;
-      if (target?.closest?.(TEXT_FIELD)) return;
 
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (file) {
-            e.preventDefault();
-            void handleAddImage(file, 'paste');
-            return;
-          }
-        }
-      }
-    };
-
-    const onDragOver = (e: DragEvent) => {
-      const types = e.dataTransfer?.types;
-      if (types && Array.from(types).includes('Files')) {
-        e.preventDefault();
-      }
-    };
-
-    const onDrop = (e: DragEvent) => {
-      if (e.defaultPrevented) return;
-      if (editing) return;
-      const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.type.startsWith('image/')) {
-          e.preventDefault();
-          void handleAddImage(file, 'drop');
-          return;
-        }
-      }
-    };
-
-    window.addEventListener('paste', onPaste);
-    window.addEventListener('dragover', onDragOver);
-    window.addEventListener('drop', onDrop);
-    return () => {
-      window.removeEventListener('paste', onPaste);
-      window.removeEventListener('dragover', onDragOver);
-      window.removeEventListener('drop', onDrop);
-    };
-  }, [editing, handleAddImage]);
 
 
   const handleToggleCollapse = useCallback((topicId: string) => {
@@ -996,6 +961,290 @@ const handleMoveFloating = useCallback(
     }
   };
 
+  const handleCopyTopic = useCallback(
+    (topicId?: string) => {
+      const id = topicId ?? selectedTopic?.id;
+      if (!id) return;
+      try {
+        const payload = controller.copyTopic(id);
+        inMemoryClipboard.current = payload;
+        setCanPaste(true);
+        navigator.clipboard?.writeText(payload).catch(() => {});
+        addToast('info', 'Blocco copiato');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile copiare il blocco: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, addToast]
+  );
+
+  const handleCutTopic = useCallback(
+    (topicId?: string) => {
+      const id = topicId ?? selectedTopic?.id;
+      if (!id) return;
+      const topic = allTopics.find((t) => t.id === id);
+      if (!topic || topic.depth === 0) {
+        addToast('warning', 'La radice non può essere tagliata');
+        return;
+      }
+      try {
+        const payload = controller.copyTopic(id);
+        inMemoryClipboard.current = payload;
+        setCanPaste(true);
+        navigator.clipboard?.writeText(payload).catch(() => {});
+        const next = currentLayout ? selectionAfterDelete(currentLayout, id) : undefined;
+        controller.removeTopic(id);
+        setSelectedTopicId(next);
+        setSelectedTopicIds(next ? [next] : []);
+        setEditing(null);
+        refreshState();
+        addToast('info', 'Blocco tagliato');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile tagliare il blocco: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, allTopics, currentLayout, refreshState, addToast]
+  );
+
+  const handleDuplicateTopic = useCallback(
+    (topicId?: string) => {
+      const id = topicId ?? selectedTopic?.id;
+      if (!id) return;
+      try {
+        const { newId } = controller.duplicateTopic(id);
+        setSelectedTopicId(newId);
+        setSelectedTopicIds([newId]);
+        refreshState();
+        addToast('success', 'Blocco duplicato');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile duplicare il blocco: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, refreshState, addToast]
+  );
+
+  const handlePasteTopic = useCallback(
+    async (targetParentId?: string) => {
+      let text = '';
+      try {
+        text = await navigator.clipboard?.readText();
+      } catch {
+        text = inMemoryClipboard.current || '';
+      }
+      if (!text && inMemoryClipboard.current) {
+        text = inMemoryClipboard.current;
+      }
+
+      const targetId =
+        targetParentId ??
+        selectedTopic?.id ??
+        allTopics.find((t) => t.depth === 0)?.id;
+
+      if (!targetId) return;
+
+      if (text && text.includes('"xmapStudioClipboard"')) {
+        try {
+          const { newId } = controller.pasteTopic(targetId, text);
+          setCollapsedIds((prev) => {
+            if (!prev.has(targetId)) return prev;
+            const next = new Set(prev);
+            next.delete(targetId);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Blocco incollato');
+          return;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile incollare il blocco: ${msg}`);
+          return;
+        }
+      }
+
+      const clean = text?.trim() ?? '';
+      if (clean.length > 0) {
+        try {
+          const { newId } = controller.addTopic(targetId, clean);
+          setCollapsedIds((prev) => {
+            if (!prev.has(targetId)) return prev;
+            const next = new Set(prev);
+            next.delete(targetId);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Nuovo blocco creato dal testo');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile creare il blocco: ${msg}`);
+        }
+      }
+    },
+    [controller, selectedTopic, allTopics, refreshState, addToast]
+  );
+
+  const handleConnectRelationshipTarget = useCallback(
+    (targetTopicId: string) => {
+      if (!connectingTopicId) return;
+      if (connectingTopicId === targetTopicId) {
+        addToast('warning', 'Non puoi collegare un blocco a se stesso');
+        setConnectingTopicId(null);
+        return;
+      }
+      try {
+        controller.addTopicRelationship(connectingTopicId, targetTopicId);
+        refreshState();
+        addToast('success', 'Relazione creata');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile creare la relazione: ${msg}`);
+      }
+      setConnectingTopicId(null);
+    },
+    [connectingTopicId, controller, refreshState, addToast]
+  );
+
+  // Incolla (Ctrl+V), Copia (Ctrl+C), Taglia (Ctrl+X) e Drag & Drop sulla mappa
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (editing) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+
+      // 1. Se c'è un'immagine, usa il flusso immagini esistente
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              e.preventDefault();
+              void handleAddImage(file, 'paste');
+              return;
+            }
+          }
+        }
+      }
+
+      // 2. Altrimenti testo / payload blocco XMap Studio
+      const text = e.clipboardData?.getData('text/plain') || inMemoryClipboard.current;
+      if (!text) return;
+
+      const targetParentId =
+        selectedTopic?.id ?? allTopics.find((t) => t.depth === 0)?.id ?? allTopics[0]?.id;
+      if (!targetParentId) return;
+
+      if (text.includes('"xmapStudioClipboard"')) {
+        e.preventDefault();
+        try {
+          const { newId } = controller.pasteTopic(targetParentId, text);
+          setCollapsedIds((prev) => {
+            if (!prev.has(targetParentId)) return prev;
+            const next = new Set(prev);
+            next.delete(targetParentId);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Blocco incollato');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile incollare il blocco: ${msg}`);
+        }
+        return;
+      }
+
+      // Altrimenti se c'è un blocco selezionato e testo semplice, crea un sotto-blocco con quel testo
+      const clean = text.trim();
+      if (clean.length > 0 && selectedTopic) {
+        e.preventDefault();
+        try {
+          const { newId } = controller.addTopic(selectedTopic.id, clean);
+          setCollapsedIds((prev) => {
+            if (!prev.has(selectedTopic.id)) return prev;
+            const next = new Set(prev);
+            next.delete(selectedTopic.id);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Nuovo blocco creato dal testo');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile creare il blocco: ${msg}`);
+        }
+      }
+    };
+
+    const onCopy = (e: ClipboardEvent) => {
+      if (editing) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+      if (!selectedTopic) return;
+
+      e.preventDefault();
+      handleCopyTopic(selectedTopic.id);
+    };
+
+    const onCut = (e: ClipboardEvent) => {
+      if (editing) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+      if (!selectedTopic || selectedTopic.depth === 0) return;
+
+      e.preventDefault();
+      handleCutTopic(selectedTopic.id);
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      const types = e.dataTransfer?.types;
+      if (types && Array.from(types).includes('Files')) {
+        e.preventDefault();
+      }
+    };
+
+    const onDrop = (e: DragEvent) => {
+      if (e.defaultPrevented) return;
+      if (editing) return;
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/')) {
+          e.preventDefault();
+          void handleAddImage(file, 'drop');
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('copy', onCopy);
+    window.addEventListener('cut', onCut);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      window.removeEventListener('copy', onCopy);
+      window.removeEventListener('cut', onCut);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [editing, handleAddImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic]);
+
   // Nuovo blocco da tastiera o dalla mappa: si seleziona ed entra subito in editing in place.
   const createTopic = useCallback(
     (anchorId: string, kind: 'child' | 'after' | 'before') => {
@@ -1070,7 +1319,20 @@ const handleMoveFloating = useCallback(
   useEffect(() => {
     if (!mapKeysEnabled) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      if (e.defaultPrevented || e.isComposing) return;
+
+      // Scorciatoia Ctrl+D / Cmd+D: duplica il blocco selezionato
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'd') {
+        const target = e.target as Element | null;
+        if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+        if (selectedTopic && selectedTopic.depth > 0) {
+          e.preventDefault();
+          handleDuplicateTopic(selectedTopic.id);
+        }
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as Element | null;
       if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
       const sel = selectedTopic;
@@ -1120,7 +1382,7 @@ const handleMoveFloating = useCallback(
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mapKeysEnabled, selectedTopic, currentLayout, selectedTopicIds, selectedTopicId]);
+  }, [mapKeysEnabled, selectedTopic, currentLayout, selectedTopicIds, selectedTopicId, handleDuplicateTopic]);
 
   const handleConfirmClose = async (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') {
@@ -1287,7 +1549,24 @@ const handleMoveFloating = useCallback(
           />
         ) : (
           <>
-            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+              {connectingTopicId && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto px-4 w-full max-w-md animate-fade-in">
+                  <Banner
+                    variant="info"
+                    title="Clicca il blocco da collegare — Esc per annullare"
+                    action={
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => setConnectingTopicId(null)}
+                      >
+                        Annulla
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
               <MapView
                 layout={currentLayout}
                 viewKey={`${documentKey}:${activeSheetIndex}`}
@@ -1300,7 +1579,7 @@ const handleMoveFloating = useCallback(
                 onOpenLatex={openDetails}
                 detailsOpen={inspectorVisible}
                 onAddChild={(id) => createTopic(id, 'child')}
-                onAddSibling={(id) => createTopic(id, 'after')}
+                onAddSibling={(id, where) => createTopic(id, where ?? 'after')}
                 onDeleteTopic={handleDeleteSelected}
                 editing={editing}
                 onStartEdit={startEdit}
@@ -1316,6 +1595,14 @@ const handleMoveFloating = useCallback(
                 onRelationshipControlPointsChange={handleRelationshipControlPoint}
                 onResizeTopicWidth={handleResizeTopicWidth}
                 onResizeTopicImage={handleResizeTopicImage}
+                onCopyTopic={handleCopyTopic}
+                onCutTopic={handleCutTopic}
+                onPasteTopic={handlePasteTopic}
+                onDuplicateTopic={handleDuplicateTopic}
+                onStartConnectRelationship={(id) => setConnectingTopicId(id)}
+                canPaste={canPaste || Boolean(inMemoryClipboard.current)}
+                isConnectingRelationship={Boolean(connectingTopicId)}
+                onConnectRelationshipTarget={handleConnectRelationshipTarget}
               />
 
               {workbook.sheets.length > 1 && (

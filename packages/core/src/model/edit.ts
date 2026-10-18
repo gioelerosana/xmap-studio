@@ -78,10 +78,14 @@ function shiftRangesOnInsert(parent: Topic, index: number): void {
  * Errore per la radice (non ha fratelli) e per blocchi `detached`/`summary`:
  * il chiamante decide il ripiego (di norma un figlio).
  */
-export function insertSibling(
+/**
+ * Inserisce un blocco Topic completo come fratello di `topicId` nello stesso gruppo
+ * `children.attached` del genitore, subito dopo o prima. Restituisce l'id del blocco inserito.
+ */
+export function insertSiblingTopic(
   sheets: Sheet[],
   topicId: string,
-  title: string,
+  topic: Topic,
   where: 'after' | 'before' = 'after'
 ): string {
   for (const sheet of sheets) {
@@ -97,15 +101,36 @@ export function insertSibling(
       throw new XmapError(CODE_MOVE, 'Questo blocco non può avere fratelli (è staccato o è un sommario).');
     }
     const parent = descend(root, path.slice(0, -1));
-    const list = parent.children?.attached;
-    if (!list) break;
-    const id = newTopicId();
+    if (!parent.children) {
+      parent.children = {};
+    }
+    if (!parent.children.attached) {
+      parent.children.attached = [];
+    }
+    const list = parent.children.attached;
+    if (!topic.id) topic.id = newTopicId();
+    const id = topic.id;
     const index = where === 'after' ? last.index + 1 : last.index;
-    list.splice(index, 0, { id, title });
+    list.splice(index, 0, topic);
     shiftRangesOnInsert(parent, index);
     return id;
   }
   throw new XmapError(CODE_MOVE, 'Blocco non trovato.');
+}
+
+/**
+ * Inserisce un nuovo fratello di `topicId` nello stesso gruppo `children.attached`
+ * del genitore, subito dopo o prima. Restituisce l'id del nuovo blocco.
+ * Errore per la radice (non ha fratelli) e per blocchi `detached`/`summary`:
+ * il chiamante decide il ripiego (di norma un figlio).
+ */
+export function insertSibling(
+  sheets: Sheet[],
+  topicId: string,
+  title: string,
+  where: 'after' | 'before' = 'after'
+): string {
+  return insertSiblingTopic(sheets, topicId, { id: newTopicId(), title }, where);
 }
 
 export function escapeHtml(s: string): string {

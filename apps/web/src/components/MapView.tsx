@@ -12,8 +12,15 @@ import {
   GitFork,
   CornerDownLeft,
   Braces,
+  Copy,
+  Scissors,
+  ClipboardPaste,
+  CopyPlus,
+  Info,
+  Sigma,
 } from 'lucide-react';
-import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+import { ContextMenu } from './map/ContextMenu.js';
+import { Button, IconButton, MenuItem, Separator, cn } from '@xmap/ui-kit';
 import { NodeEditor, type EditExit } from './map/NodeEditor.js';
 import { hexLuminance, RichTitle, textStyleCss } from './map/RichTitle.js';
 import { RelationshipLayer, type ControlPointsPatch } from './map/RelationshipLayer.js';
@@ -132,6 +139,7 @@ export interface MapEditing {
   /** `all` = seleziona il testo esistente; `text` = parte da `text` (digitazione su blocco selezionato). */
   mode: 'all' | 'text';
   text?: string;
+  isNew?: boolean;
 }
 
 const INTERACTIVE = 'input, textarea, select, button, [contenteditable="true"]';
@@ -174,8 +182,17 @@ export interface MapViewProps {
   onOpenLatex?: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
   /** Crea un fratello dopo il blocco, come Invio. */
-  onAddSibling?: (topicId: string) => void;
+  /** Crea un fratello dopo o prima del blocco, come Invio / Maiusc+Invio. */
+  onAddSibling?: (topicId: string, where?: 'after' | 'before') => void;
   onDeleteTopic?: (topicId: string) => void;
+  onCopyTopic?: (topicId: string) => void;
+  onCutTopic?: (topicId: string) => void;
+  onPasteTopic?: (targetTopicId?: string) => void;
+  onDuplicateTopic?: (topicId: string) => void;
+  onStartConnectRelationship?: (topicId: string) => void;
+  canPaste?: boolean;
+  isConnectingRelationship?: boolean;
+  onConnectRelationshipTarget?: (targetTopicId: string) => void;
   onToggleCollapse: (topicId: string) => void;
   resourceResolver: (src: string) => Uint8Array | null;
   darkMode?: boolean;
@@ -227,6 +244,14 @@ export const MapView: React.FC<MapViewProps> = ({
   onCancelEdit,
   onAddSummary,
   canAddSummary = false,
+  onCopyTopic,
+  onCutTopic,
+  onPasteTopic,
+  onDuplicateTopic,
+  onStartConnectRelationship,
+  canPaste = false,
+  isConnectingRelationship = false,
+  onConnectRelationshipTarget,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -250,10 +275,16 @@ export const MapView: React.FC<MapViewProps> = ({
   const zoomTargetRef = useRef<number | null>(null); // zoom di arrivo dei click +/- in corso
   const gestureCleanupRef = useRef<(() => void) | null>(null);
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
+  const selectedTopicIdsRef = useRef(selectedTopicIds);
+  selectedTopicIdsRef.current = selectedTopicIds;
+
   const handlers = useRef({
     onSelectTopic,
     onOpenDetails,
     onOpenLatex,
+    onAddChild,
+    onAddSibling,
+    onDeleteTopic,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
@@ -262,11 +293,21 @@ export const MapView: React.FC<MapViewProps> = ({
     onAddSummary,
     onResizeTopicWidth,
     onResizeTopicImage,
+    onCopyTopic,
+    onCutTopic,
+    onPasteTopic,
+    onDuplicateTopic,
+    onStartConnectRelationship,
+    isConnectingRelationship,
+    onConnectRelationshipTarget,
   });
   handlers.current = {
     onSelectTopic,
     onOpenDetails,
     onOpenLatex,
+    onAddChild,
+    onAddSibling,
+    onDeleteTopic,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
@@ -275,6 +316,162 @@ export const MapView: React.FC<MapViewProps> = ({
     onAddSummary,
     onResizeTopicWidth,
     onResizeTopicImage,
+    onCopyTopic,
+    onCutTopic,
+    onPasteTopic,
+    onDuplicateTopic,
+    onStartConnectRelationship,
+    isConnectingRelationship,
+    onConnectRelationshipTarget,
+  };
+
+  interface ContextMenuState {
+    x: number;
+    y: number;
+    target: { type: 'node'; topicId: string } | { type: 'background' };
+  }
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  const buildNodeMenuItems = (nodeId: string): MenuItem[] => {
+    const node = layout?.nodes.find((n) => n.id === nodeId);
+    if (!node) return [];
+    const isRoot = node.depth === 0;
+    const isText = node.kind === 'text';
+
+    const items: MenuItem[] = [
+      {
+        id: 'add-child',
+        label: 'Aggiungi sotto-blocco',
+        shortcut: 'Tab',
+        icon: <CornerDownLeft className="size-4" />,
+        onSelect: () => handlers.current.onAddChild?.(node.id),
+      },
+      {
+        id: 'add-sibling',
+        label: 'Aggiungi blocco fratello',
+        shortcut: 'Invio',
+        icon: <ListTree className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onAddSibling?.(node.id, 'after'),
+      },
+      {
+        id: 'add-sibling-before',
+        label: 'Aggiungi fratello prima',
+        shortcut: 'Maiusc+Invio',
+        icon: <ListTree className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onAddSibling?.(node.id, 'before'),
+      },
+      {
+        id: 'edit-text',
+        label: 'Modifica testo',
+        shortcut: 'F2',
+        separatorBefore: true,
+        icon: <Edit3 className="size-4" />,
+        onSelect: () => {
+          if (isText && handlers.current.onStartEdit) {
+            handlers.current.onStartEdit(node.id);
+          } else {
+            handlers.current.onOpenDetails(node.id);
+          }
+        },
+      },
+      {
+        id: 'details',
+        label: 'Dettagli',
+        shortcut: 'Ctrl+I',
+        icon: <Info className="size-4" />,
+        onSelect: () => handlers.current.onOpenDetails(node.id),
+      },
+      ...(handlers.current.onOpenLatex
+        ? [
+            {
+              id: 'latex',
+              label: 'Formula LaTeX',
+              shortcut: 'Ctrl+Maiusc+L',
+              icon: <Sigma className="size-4" />,
+              onSelect: () => handlers.current.onOpenLatex?.(node.id),
+            },
+          ]
+        : []),
+      {
+        id: 'connect-arrow',
+        label: 'Collega con freccia…',
+        separatorBefore: true,
+        icon: <Network className="size-4" />,
+        onSelect: () => handlers.current.onStartConnectRelationship?.(node.id),
+      },
+      {
+        id: 'copy',
+        label: 'Copia',
+        shortcut: 'Ctrl+C',
+        icon: <Copy className="size-4" />,
+        onSelect: () => handlers.current.onCopyTopic?.(node.id),
+      },
+      {
+        id: 'cut',
+        label: 'Taglia',
+        shortcut: 'Ctrl+X',
+        icon: <Scissors className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onCutTopic?.(node.id),
+      },
+      {
+        id: 'paste',
+        label: 'Incolla',
+        shortcut: 'Ctrl+V',
+        icon: <ClipboardPaste className="size-4" />,
+        disabled: !canPaste,
+        onSelect: () => handlers.current.onPasteTopic?.(node.id),
+      },
+      {
+        id: 'duplicate',
+        label: 'Duplica',
+        shortcut: 'Ctrl+D',
+        icon: <CopyPlus className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onDuplicateTopic?.(node.id),
+      },
+      {
+        id: 'summary',
+        label: 'Sommario',
+        shortcut: 'Ctrl+]',
+        separatorBefore: true,
+        icon: <Braces className="size-4" />,
+        disabled: !canAddSummary,
+        onSelect: () => handlers.current.onAddSummary?.(),
+      },
+      {
+        id: 'delete',
+        label: 'Elimina',
+        shortcut: 'Canc',
+        icon: <Trash2 className="size-4" />,
+        danger: true,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onDeleteTopic?.(node.id),
+      },
+    ];
+
+    return items;
+  };
+
+  const buildBackgroundMenuItems = (): MenuItem[] => {
+    return [
+      {
+        id: 'bg-paste',
+        label: 'Incolla',
+        shortcut: 'Ctrl+V',
+        icon: <ClipboardPaste className="size-4" />,
+        disabled: !canPaste,
+        onSelect: () => handlers.current.onPasteTopic?.(),
+      },
+      {
+        id: 'bg-fit',
+        label: 'Adatta alla finestra',
+        icon: <Maximize2 className="size-4" />,
+        onSelect: () => fitToView(),
+      },
+    ];
   };
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
@@ -624,6 +821,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!container) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      setContextMenu(null);
       cancelMotion();
       const rect = container.getBoundingClientRect();
       const unit = e.deltaMode === 1 ? LINE_PX : e.deltaMode === 2 ? rect.height : 1;
@@ -862,6 +1060,7 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const beginPinch = () => {
+      setContextMenu(null);
       window.clearTimeout(longPressTimer);
       pressedNode = -1;
       const [a, b] = [...pointers.values()];
@@ -873,6 +1072,7 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const beginPan = (p: { x: number; y: number }) => {
+      setContextMenu(null);
       mode = 'pan';
       last = p;
       samples = [];
@@ -919,14 +1119,9 @@ export const MapView: React.FC<MapViewProps> = ({
       if (mode === 'nodepress') {
         const slopPress = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < slopPress) return;
-        if (pointerType === 'mouse') {
-          beginDrag();
-          return;
-        }
-        // Touch: un dito che si muove prima della pressione prolungata fa pan.
         window.clearTimeout(longPressTimer);
-        pressedNode = -1;
-        beginPan({ x: start.x, y: start.y });
+        beginDrag();
+        return;
       }
       if (mode === 'pinch' && pointers.size >= 2) {
         const [a, b] = [...pointers.values()];
@@ -944,6 +1139,7 @@ export const MapView: React.FC<MapViewProps> = ({
       const slop = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
       if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < slop) return;
       moved = true;
+      window.clearTimeout(longPressTimer);
       const now = performance.now();
       const v = viewRef.current;
       viewRef.current = { ...v, x: v.x + e.clientX - last.x, y: v.y + e.clientY - last.y };
@@ -1020,6 +1216,17 @@ export const MapView: React.FC<MapViewProps> = ({
       }
       if (pointers.size >= 2) return;
       cancelMotion();
+
+      if (handlers.current.isConnectingRelationship) {
+        if (nodeIdx >= 0) {
+          const n = layoutRef.current?.nodes[nodeIdx];
+          if (n) {
+            handlers.current.onConnectRelationshipTarget?.(n.id);
+          }
+        }
+        return;
+      }
+
       if (pointers.size === 0) {
         gestureCleanupRef.current?.();
         pointerType = e.pointerType;
@@ -1038,20 +1245,76 @@ export const MapView: React.FC<MapViewProps> = ({
         pressedNode = nodeIdx;
         last = { x: e.clientX, y: e.clientY };
         samples = [];
-        // Touch: il drag parte con pressione prolungata, così il pan col dito resta possibile.
+        // Touch: pressione lunga (~500 ms senza movimento) apre il menu contestuale
         if (e.pointerType !== 'mouse') {
           longPressTimer = window.setTimeout(() => {
-            if (mode === 'nodepress') beginDrag();
-          }, LONG_PRESS_MS);
+            if (mode === 'nodepress') {
+              mode = 'none';
+              pressedNode = -1;
+              const n = layoutRef.current?.nodes[nodeIdx];
+              if (n) {
+                navigator.vibrate?.(12);
+                const currentMulti = selectedTopicIdsRef.current ?? [];
+                if (!currentMulti.includes(n.id)) {
+                  handlers.current.onSelectTopic(n.id);
+                }
+                setContextMenu({
+                  x: start.x,
+                  y: start.y,
+                  target: { type: 'node', topicId: n.id },
+                });
+                suppressClickUntil = performance.now() + 400;
+                cleanup();
+              }
+            }
+          }, 500);
         }
       } else {
+        if (e.pointerType !== 'mouse') {
+          longPressTimer = window.setTimeout(() => {
+            if (mode === 'pan' && !moved) {
+              mode = 'none';
+              navigator.vibrate?.(12);
+              setContextMenu({
+                x: start.x,
+                y: start.y,
+                target: { type: 'background' },
+              });
+              suppressClickUntil = performance.now() + 400;
+              cleanup();
+            }
+          }, 500);
+        }
         beginPan({ x: e.clientX, y: e.clientY });
       }
     };
 
-    // Il menu contestuale della pressione prolungata (touch) coprirebbe il drag.
-    const onContextMenu = (e: Event) => {
-      if (mode === 'nodepress' || mode === 'drag') e.preventDefault();
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      if (handlers.current.isConnectingRelationship) return;
+      if (mode === 'drag') return;
+
+      const target = e.target as Element;
+      const nodeEl = target.closest?.('[data-node-id]');
+      const nodeId = nodeEl?.getAttribute('data-node-id');
+
+      if (nodeId) {
+        const currentMulti = selectedTopicIdsRef.current ?? [];
+        if (!currentMulti.includes(nodeId)) {
+          handlers.current.onSelectTopic(nodeId);
+        }
+        setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          target: { type: 'node', topicId: nodeId },
+        });
+      } else {
+        setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          target: { type: 'background' },
+        });
+      }
     };
 
     const onMouseCapture = (e: MouseEvent) => {
@@ -1443,6 +1706,10 @@ export const MapView: React.FC<MapViewProps> = ({
               className="cursor-pointer group"
               onClick={(e) => {
                 e.stopPropagation();
+                if (handlers.current.isConnectingRelationship) {
+                  handlers.current.onConnectRelationshipTarget?.(node.id);
+                  return;
+                }
                 setSelectedRelationshipId(undefined);
                 const isMulti = e.shiftKey || e.ctrlKey || e.metaKey;
                 handlers.current.onSelectTopic(
@@ -1804,7 +2071,8 @@ export const MapView: React.FC<MapViewProps> = ({
       ref={containerRef}
       className={cn(
         'relative flex-1 h-full w-full overflow-clip bg-[var(--map-canvas)] select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150',
-        dragOverlay && '!cursor-grabbing'
+        dragOverlay && '!cursor-grabbing',
+        isConnectingRelationship && '!cursor-crosshair'
       )}
       onClick={(e) => {
         // Click sullo sfondo: deseleziona la relazione.
@@ -1999,6 +2267,24 @@ export const MapView: React.FC<MapViewProps> = ({
         {content}
         {dragLayer}
       </svg>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={
+            contextMenu.target.type === 'node'
+              ? buildNodeMenuItems(contextMenu.target.topicId)
+              : buildBackgroundMenuItems()
+          }
+          onClose={() => setContextMenu(null)}
+          ariaLabel={
+            contextMenu.target.type === 'node'
+              ? 'Menu contestuale blocco'
+              : 'Menu contestuale mappa'
+          }
+        />
+      )}
     </div>
   );
 };
