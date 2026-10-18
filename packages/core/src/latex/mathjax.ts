@@ -17,6 +17,9 @@ let mathjaxInitialized = false;
 let adaptorInstance: any;
 let docInstance: any;
 
+const renderCache = new Map<string, RenderResult>();
+const MAX_CACHE_SIZE = 1000;
+
 function initMathJax() {
   if (!mathjaxInitialized) {
     adaptorInstance = liteAdaptor();
@@ -40,12 +43,26 @@ function decodeHtml(s: string): string {
 
 /**
  * Converte codice LaTeX in SVG MathJax identico a quello prodotto da XMind.
+ *
+ * @param latex Codice sorgente della formula.
+ * @param emPx Dimensione di base del font (default 23.33px per le equazioni di blocco).
+ * @param display true per formule a blocco, false per formule in linea con allineamento baseline.
  */
-export function renderLatexToSvg(latex: string, emPx: number = 23.33): RenderResult {
+export function renderLatexToSvg(
+  latex: string,
+  emPx: number = 23.33,
+  display: boolean = true
+): RenderResult {
+  const cacheKey = `${latex}::${emPx.toFixed(2)}::${display}`;
+  const cached = renderCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const { adaptor, doc } = initMathJax();
 
   const node = doc.convert(latex, {
-    display: true,
+    display,
     em: 16,
     ex: 8,
     containerWidth: 80 * 16,
@@ -58,7 +75,7 @@ export function renderLatexToSvg(latex: string, emPx: number = 23.33): RenderRes
 
   const vbMatch = svgStr.match(/viewBox="([-\d.]+)\s+([-\d.]+)\s+([\d.]+)\s+([\d.]+)"/);
   if (!vbMatch) {
-    throw new XmapError(CODE_RENDERER, 'viewBox non trovato nell\'output MathJax');
+    throw new XmapError(CODE_RENDERER, "viewBox non trovato nell'output MathJax");
   }
 
   const widthPx = (parseFloat(vbMatch[3]) / 1000) * emPx;
@@ -69,20 +86,30 @@ export function renderLatexToSvg(latex: string, emPx: number = 23.33): RenderRes
     svgStr = svgStr.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
   }
 
-  // Dimensioni esplicite in px per rasterizzatori
+  // Dimensioni esplicite in px per rasterizzatori e visualizzazione
   svgStr = svgStr
     .replace(/\swidth="[^"]*"/, ` width="${widthPx.toFixed(2)}px"`)
-    .replace(/\sheight="[^"]*"/, ` height="${heightPx.toFixed(2)}px"`)
-    .replace(/\sstyle="vertical-align:[^"]*"/, '');
+    .replace(/\sheight="[^"]*"/, ` height="${heightPx.toFixed(2)}px"`);
+
+  if (display) {
+    svgStr = svgStr.replace(/\sstyle="vertical-align:[^"]*"/, '');
+  }
 
   if (!svgStr.includes('fill="currentColor"')) {
     svgStr = svgStr.replace('<svg ', '<svg fill="currentColor" ');
   }
 
-  return {
+  const result: RenderResult = {
     svg: svgStr,
     width: widthPx,
     height: heightPx,
     error,
   };
+
+  if (renderCache.size >= MAX_CACHE_SIZE) {
+    renderCache.clear();
+  }
+  renderCache.set(cacheKey, result);
+
+  return result;
 }

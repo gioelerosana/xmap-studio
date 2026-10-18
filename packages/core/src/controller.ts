@@ -1,4 +1,10 @@
 import {
+  AddImageTopicOptions,
+  addImageChild,
+  computeImageResourceName,
+  setTopicImage,
+} from './model/image.js';
+import {
   CODE_FORMAT,
   CODE_INVALID_INPUT,
   CODE_IO,
@@ -15,8 +21,17 @@ import { buildArchiveBytes, readArchive, sha256HexAsync } from './archive/archiv
 import { RawArchive } from './archive/types.js';
 import type { Platform } from './platform.js';
 import {
+  base64ToBytes,
+  bytesToBase64,
+  cloneTopicSubtree,
+  subtreeResourceNames,
+  XMAP_CLIPBOARD_VERSION,
+  XmapClipboardPayload,
+} from './model/clone.js';
+import {
   addChild,
   insertSibling,
+  insertSiblingTopic,
   addRelationship,
   addSummary,
   addBoundary,
@@ -30,13 +45,17 @@ import {
   setLabels,
   setNotes,
   setTopicPosition,
+  setTopicCustomWidth,
+  setTopicImageSize,
   isDetachedTopic,
   setNotesDisplay,
   setTitle,
   toggleMarker,
+  siblingRange,
+  SiblingRange,
 } from './model/edit.js';
 import { Sheet, Topic } from './model/types.js';
-import { setTextStyle, TextStylePatch } from './model/style.js';
+import { setTitleRuns, setTextStyle, TextStylePatch } from './model/style.js';
 import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
 import {
   countTopics,
@@ -73,6 +92,7 @@ import {
   Point,
   RelationshipShape,
   SaveResultDto,
+  TitleRun,
   WorkbookDto,
 } from './state/types.js';
 import { cloneSheets, OpenWorkbook } from './state/workbook.js';
@@ -302,6 +322,43 @@ export class AppController {
     return wb.toDto();
   }
 
+  /**
+   * Imposta il titolo con formattazione parziale (`attributedTitle`).
+   * Stessa semantica di cronologia di `setTopicTitle`: senza cambiamenti
+   * non registra un passo; con `mergeWithPrevious` sostituisce l'ultimo snapshot
+   * se era la creazione del blocco.
+   */
+  public setTopicTitleRuns(
+    topicId: string,
+    runs: TitleRun[],
+    opts?: { mergeWithPrevious?: boolean }
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    const prevTitle = topic.title;
+    const prevAttributed = JSON.stringify(topic.attributedTitle);
+    const prevUnedited = topic.titleUnedited;
+
+    setTitleRuns(topic, runs);
+
+    const nextTitle = topic.title;
+    const nextAttributed = JSON.stringify(topic.attributedTitle);
+
+    if (prevTitle === nextTitle && prevAttributed === nextAttributed && prevUnedited === undefined) {
+      return wb.toDto();
+    }
+
+    const lc = this.lastCreated;
+    if (opts?.mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
+      wb.replaceHistoryTop();
+    } else {
+      wb.pushHistory();
+    }
+    return wb.toDto();
+  }
+
   /** Grassetto, corsivo, sottolineato, barrato, colore e dimensione del blocco intero. */
   public setTopicTextStyle(topicId: string, patch: TextStylePatch): WorkbookDto {
     const wb = this.ensureWorkbook();
@@ -336,6 +393,37 @@ export class AppController {
     wb.pushHistory();
     return wb.toDto();
   }
+  /**
+   * Imposta o rimuove la larghezza manuale del blocco (`customWidth`).
+   * Passando `null` rimuove la larghezza manuale tornando all'adattamento automatico.
+   */
+  public setTopicCustomWidth(topicId: string, width: number | null): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    setTopicCustomWidth(topic, width);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /**
+   * Imposta le dimensioni in pixel dell'immagine associata al blocco,
+   * preservando tutte le altre proprietà di `image`.
+   */
+  public setTopicImageSize(
+    topicId: string,
+    size: { width: number; height: number }
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    setTopicImageSize(topic, size);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
 
   public setTopicNotesDisplay(topicId: string, display?: 'icon' | 'block' | null): WorkbookDto {
     const wb = this.ensureWorkbook();
@@ -413,6 +501,122 @@ export class AppController {
       return this.addTopic(topicId, title);
     }
     const newId = insertSibling(wb.content, topicId, title, where);
+    wb.pushHistory();
+    this.lastCreated = { id: newId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), newId };
+  }
+
+  /**
+   * Copia un topic (e il suo intero sottoalbero) serializzandolo come payload JSON
+   * con marcatore { xmapStudioClipboard: 1, topic }.
+   */
+  public copyTopic(topicId: string): string {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const resources: Record<string, string> = {};
+    for (const name of subtreeResourceNames(topic)) {
+      const bytes = wb.archive.resources.get(name);
+      if (bytes) resources[name] = bytesToBase64(bytes);
+    }
+    const payload: XmapClipboardPayload = {
+      xmapStudioClipboard: XMAP_CLIPBOARD_VERSION,
+      topic,
+      ...(Object.keys(resources).length > 0 ? { resources } : {}),
+    };
+    return JSON.stringify(payload);
+  }
+
+  /**
+   * Incolla un topic copiato come sotto-blocco del blocco `parentId`.
+   * Rigenera tutti gli id del sottoalbero preservando le proprietà sconosciute e
+   * la coerenza dei riferimenti interni (sommari, ecc.).
+   * Le risorse referenziate (image.src xap:resources/…) restano valide perché incolli
+   * nello stesso file; se il payload viene da un altro file e la risorsa manca,
+   * conserva comunque il riferimento per non perdere dati.
+   */
+  public pasteTopic(
+    parentId: string,
+    payload: string | XmapClipboardPayload
+  ): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const parent = findTopic(wb.content, parentId);
+    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic genitore ${parentId} non trovato`);
+
+    let data: XmapClipboardPayload;
+    if (typeof payload === "string") {
+      try {
+        data = JSON.parse(payload) as XmapClipboardPayload;
+      } catch {
+        throw new XmapError(
+          CODE_INVALID_INPUT,
+          "Dati negli appunti non validi: formato JSON non valido."
+        );
+      }
+    } else {
+      data = payload;
+    }
+
+    if (
+      !data ||
+      typeof data !== "object" ||
+      typeof data.xmapStudioClipboard !== "number" ||
+      !data.topic ||
+      typeof data.topic !== "object"
+    ) {
+      throw new XmapError(
+        CODE_INVALID_INPUT,
+        "Dati negli appunti non validi: blocco XMap Studio non riconosciuto."
+      );
+    }
+
+    // Le risorse mancanti (blocco copiato da un altro file) si aggiungono all'archivio,
+    // altrimenti la validazione prima del salvataggio fallirebbe.
+    const added: string[] = [];
+    if (data.resources && typeof data.resources === 'object') {
+      for (const [name, b64] of Object.entries(data.resources)) {
+        if (!name.startsWith('resources/') || typeof b64 !== 'string') continue;
+        if (wb.archive.resources.has(name)) continue;
+        try {
+          wb.archive.resources.set(name, base64ToBytes(b64));
+          added.push(name);
+        } catch {
+          throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: immagine danneggiata.');
+        }
+      }
+    }
+    if (added.length > 0) refreshManifest(wb.manifest, added, false);
+
+    const cloned = cloneTopicSubtree(data.topic);
+    if (!parent.children) {
+      parent.children = {};
+    }
+    if (!parent.children.attached) {
+      parent.children.attached = [];
+    }
+    parent.children.attached.push(cloned);
+
+    wb.pushHistory();
+    this.lastCreated = { id: cloned.id!, wb, pos: wb.pos };
+    return { dto: wb.toDto(), newId: cloned.id! };
+  }
+
+  /**
+   * Duplica un blocco (e il suo sottoalbero), inserendo la copia come blocco fratello subito dopo.
+   * Lancia un errore comprensibile se chiamato sulla radice (non ha fratelli).
+   * Un unico passo di cronologia undo.
+   */
+  public duplicateTopic(topicId: string): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    if (wb.content.some((s) => s.rootTopic?.id === topicId)) {
+      throw new XmapError(CODE_MOVE, "La radice non può essere duplicata come blocco fratello.");
+    }
+
+    const cloned = cloneTopicSubtree(topic);
+    const newId = insertSiblingTopic(wb.content, topicId, cloned, "after");
     wb.pushHistory();
     this.lastCreated = { id: newId, wb, pos: wb.pos };
     return { dto: wb.toDto(), newId };
@@ -536,12 +740,21 @@ export class AppController {
     return wb.toDto();
   }
 
+  /**
+   * Calcola l'intervallo di blocchi fratelli contigui per un elenco di ID.
+   * Restituisce `null` se i blocchi non sono fratelli validi.
+   */
+  public siblingRange(ids: string[]): SiblingRange | null {
+    if (!this.currentWorkbook) return null;
+    return siblingRange(this.currentWorkbook.content, ids);
+  }
+
   public addTopicSummary(
     topicId: string,
     start?: number,
     end?: number,
     title: string = 'Sommario'
-  ): WorkbookDto {
+  ): { dto: WorkbookDto; summaryTopicId: string } {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
     if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
@@ -550,9 +763,26 @@ export class AppController {
     const rangeStart = start ?? 0;
     const rangeEnd = end ?? Math.max(0, childCount - 1);
     validateChildRange(rangeStart, rangeEnd, childCount);
-    addSummary(topic, rangeStart, rangeEnd, title);
+    const summaryTopicId = addSummary(topic, rangeStart, rangeEnd, title);
     wb.pushHistory();
-    return wb.toDto();
+    this.lastCreated = { id: summaryTopicId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), summaryTopicId };
+  }
+
+  /**
+   * Crea un sommario su un intervallo di blocchi fratelli contigui (min..max indice).
+   * Lancia un errore se i blocchi non sono fratelli validi.
+   */
+  public addSummaryForSiblings(
+    topicIds: string[],
+    title: string = 'Sommario'
+  ): { dto: WorkbookDto; summaryTopicId: string } {
+    const wb = this.ensureWorkbook();
+    const range = siblingRange(wb.content, topicIds);
+    if (!range) {
+      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati non sono validi per creare un sommario.');
+    }
+    return this.addTopicSummary(range.parentId, range.start, range.end, title);
   }
 
   public removeTopicSummary(topicId: string, summaryTopicId: string): WorkbookDto {
@@ -608,6 +838,57 @@ export class AppController {
     wb.archive.entries.set(attachmentPath, fileBytes);
     setHref(topic, `xap:${attachmentPath}`);
     if (!topicTitle(topic).trim()) setTitle(topic, fileName.trim() || 'allegato');
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /**
+   * Crea un nuovo sotto-blocco (titolo vuoto, come fanno le immagini in XMind) con l'immagine,
+   * aggiunge la risorsa all'archivio (deduplicata per hash SHA-256), la registra nel manifest,
+   * genera un solo passo di undo e restituisce { dto, newId }.
+   */
+  public addImageTopic(
+    parentId: string,
+    bytes: Uint8Array,
+    mimeType: string,
+    size: { width: number; height: number },
+    opts?: AddImageTopicOptions
+  ): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const parent = findTopic(wb.content, parentId);
+    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
+    if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
+
+    const resourceName = computeImageResourceName(bytes, mimeType);
+    wb.archive.resources.set(resourceName, bytes);
+    refreshManifest(wb.manifest, [resourceName], false);
+
+    const { newId } = addImageChild(parent, resourceName, size, opts);
+    wb.pushHistory();
+    this.lastCreated = { id: newId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), newId };
+  }
+
+  /**
+   * Imposta o sostituisce l'immagine su un blocco esistente preservando le altre chiavi di `image`.
+   * Aggiunge la risorsa all'archivio e al manifest con un solo passo di undo.
+   */
+  public setTopicImage(
+    topicId: string,
+    bytes: Uint8Array,
+    mimeType: string,
+    size: { width: number; height: number }
+  ): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
+
+    const resourceName = computeImageResourceName(bytes, mimeType);
+    wb.archive.resources.set(resourceName, bytes);
+    refreshManifest(wb.manifest, [resourceName], false);
+
+    setTopicImage(topic, resourceName, size);
     wb.pushHistory();
     return wb.toDto();
   }

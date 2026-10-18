@@ -279,8 +279,8 @@ nella build di produzione). Per una modifica alla UI controlla anche:
   (`HEADER_LEVEL` in `App.tsx`); nessun pulsante deve sovrapporsi;
 - gesti sulla mappa (`MapView.tsx`): pan con un dito, pinch a due dita, tap e
   doppio tap; il pinch da trackpad in Safari arriva come `GestureEvent`;
-- sotto `lg` sidebar e inspector sono pannelli sovrapposti; la sidebar è
-  nascosta di default ovunque.
+- sotto `lg` l'inspector è un pannello sovrapposto (bottom sheet su smartphone);
+  non c'è più una barra laterale con l'elenco dei blocchi.
 - la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
   `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
   disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (drawer,
@@ -409,8 +409,9 @@ punto da verificare in UI.
 - Editing: testo (anche in place sulla mappa), stile del testo, note, marker e
   task dei blocchi, aggiunta di sotto-blocchi e fratelli (Tab/Invio), eliminazione
   (con i figli, senza conferma: si annulla), spostamento (riordino/riannidamento)
-  via drag & drop nell'albero e sulla mappa, posizione dei blocchi liberi, punti
-  di controllo delle relazioni.
+  via drag & drop sulla mappa, posizione dei blocchi liberi, punti di controllo
+  delle relazioni, formattazione parziale (Ctrl+B/I/U), larghezza dei blocchi e
+  dimensione delle immagini, copia/incolla/duplica dal menu contestuale.
   I temi non si modificano ancora (vedi matrice di parità). Inventario aggiornato in
   [`docs/PRODUCT.md`](docs/PRODUCT.md).
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della

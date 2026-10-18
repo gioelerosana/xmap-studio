@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   HeaderBar,
+  Banner,
   Button,
   IconButton,
   Menu,
@@ -21,6 +22,7 @@ import {
   sha256HexAsync,
   RawArchive,
   MapStructure,
+  TitleRun,
 } from '@xmap/core';
 import {
   FolderOpen,
@@ -39,8 +41,8 @@ import {
   Trash2,
   Info,
   PanelRight,
-  PanelLeft,
   Settings,
+  Printer,
 } from 'lucide-react';
 import {
   openLocalXmindFile,
@@ -50,17 +52,17 @@ import {
   confirmForceSave,
   downloadBlob,
 } from './adapters/fileSystem.js';
-import { Sidebar } from './components/Sidebar.js';
 import { MapView, type MapEditing } from './components/MapView.js';
 import type { EditExit } from './components/map/NodeEditor.js';
 import { neighborId, selectionAfterDelete } from './components/map/navigation.js';
 import { AppMark } from './components/AppMark.js';
 import { Inspector } from './components/Inspector.js';
-import { INSPECTOR_PANEL, SIDEBAR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
+import { INSPECTOR_PANEL, usePanelWidth } from './components/usePanelWidth.js';
 import { ExportModal } from './components/ExportModal.js';
+import { PrintModal } from './components/PrintModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
-import { DropPlacement, TopicFilter } from './components/TopicTree.js';
+import type { DropPlacement } from './components/map/dragTarget.js';
 import { SettingsPage } from './components/SettingsPage.js';
 import { useSettings } from './settings.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
@@ -93,6 +95,7 @@ declare global {
         | { ok: false; code: string; message: string; processes?: string[] }
       >;
       checkXMindRunning: () => Promise<string[]>;
+      printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<number[]>;
       minimize: () => void;
       maximize: () => void;
       close: () => void;
@@ -107,6 +110,9 @@ declare global {
 
 type CloseAction = null | 'confirm';
 type ReplacementAction = 'save' | 'discard' | 'cancel';
+
+/** Nome provvisorio di una mappa nuova, mai salvata: al primo salvataggio si propone il titolo della radice. */
+const UNTITLED_FILE_NAME = 'senza_titolo.xmind';
 
 function sanitizeName(name: string): string {
   return (
@@ -135,6 +141,54 @@ function useMediaQuery(query: string): boolean {
   return Boolean(matches);
 }
 
+async function readImageBlob(blob: Blob): Promise<{
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+  mimeType: string;
+}> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  const mimeType = blob.type || 'image/png';
+
+  let width = 0;
+  let height = 0;
+
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      width = bitmap.width;
+      height = bitmap.height;
+      bitmap.close();
+    } catch {
+      // Fallback a Image se createImageBitmap fallisce
+    }
+  }
+
+  if (width === 0 || height === 0) {
+    await new Promise<void>((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        width = img.naturalWidth || img.width;
+        height = img.naturalHeight || img.height;
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      img.onerror = (err) => {
+        URL.revokeObjectURL(url);
+        reject(new Error(`Impossibile decodificare l'immagine: ${err}`));
+      };
+      img.src = url;
+    });
+  }
+
+  if (width <= 0) width = 400;
+  if (height <= 0) height = 400;
+
+  return { bytes, width, height, mimeType };
+}
+
 export const App: React.FC = () => {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI);
   const [controller] = useState(() => new AppController());
@@ -142,34 +196,23 @@ export const App: React.FC = () => {
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   // Cresce a ogni documento aperto: la mappa si riadatta solo allora (o al cambio di foglio).
   const [documentKey, setDocumentKey] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<TopicFilter>('all');
   const { settings, darkMode, update: updateSettings, reset: resetSettings } = useSettings();
   const toggleDarkMode = useCallback(() => updateSettings({ theme: darkMode ? 'light' : 'dark' }), [darkMode, updateSettings]);
   const [selectedTopicId, setSelectedTopicId] = useState<string | undefined>();
-  // Sotto lg la sidebar è un drawer, chiuso di default.
-  // Su desktop parte come da impostazioni; il pulsante nella barra la ricorda.
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.(WIDE_QUERY).matches && settings.sidebarOnStartup
-  );
-  const [sidebarWidth, setSidebarWidth] = usePanelWidth(
-    SIDEBAR_PANEL.storageKey,
-    SIDEBAR_PANEL.defaultWidth,
-    SIDEBAR_PANEL.min,
-    SIDEBAR_PANEL.max,
-  );
+  const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
+  // La selezione multipla contiene sempre la primaria: ogni altro cambio di
+  // `selectedTopicId` (nuovo blocco, undo, immagine incollata…) la riporta a singola.
+  useEffect(() => {
+    setSelectedTopicIds((prev) =>
+      selectedTopicId && prev.includes(selectedTopicId) ? prev : selectedTopicId ? [selectedTopicId] : []
+    );
+  }, [selectedTopicId]);
   const [inspectorWidth, setInspectorWidth] = usePanelWidth(
     INSPECTOR_PANEL.storageKey,
     INSPECTOR_PANEL.defaultWidth,
     INSPECTOR_PANEL.min,
     INSPECTOR_PANEL.max,
-    sidebarOpen ? sidebarWidth : 0,
   );
-  const toggleSidebar = useCallback(() => {
-    const next = !sidebarOpen;
-    setSidebarOpen(next);
-    if (window.matchMedia(WIDE_QUERY).matches) updateSettings({ sidebarOnStartup: next });
-  }, [sidebarOpen, updateSettings]);
   // Smartphone: il tap seleziona soltanto, il pannello dettagli (bottom sheet)
   // si apre su richiesta per non coprire la mappa a ogni tocco.
   // Su desktop la selezione apre i dettagli solo se l'impostazione lo chiede.
@@ -225,6 +268,7 @@ export const App: React.FC = () => {
 
   const openDetails = useCallback((id: string) => {
     setSelectedTopicId(id);
+    setSelectedTopicIds([id]);
     setDetailsClosed(false);
     setDetailsOpen(true);
   }, []);
@@ -249,11 +293,15 @@ export const App: React.FC = () => {
   const [busy, setBusy] = useState(false);
 
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [closePrompt, setClosePrompt] = useState<CloseAction>(null);
-  const [editing, setEditing] = useState<(MapEditing & { isNew?: boolean }) | null>(null);
+  const [editing, setEditing] = useState<MapEditing | null>(null);
+  const [connectingTopicId, setConnectingTopicId] = useState<string | null>(null);
+  const inMemoryClipboard = useRef<string | null>(null);
+  const [canPaste, setCanPaste] = useState(false);
 
   const addToast = useCallback((type: ToastMessage['type'], message: string) => {
     const id = Math.random().toString(36).slice(2);
@@ -267,6 +315,42 @@ export const App: React.FC = () => {
   const refreshState = useCallback(() => {
     setWorkbook(controller.workbook());
   }, [controller]);
+
+  const handleSelectTopic = useCallback(
+    (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => {
+      const isMulti = Boolean(modifiers?.shiftKey || modifiers?.ctrlKey);
+      if (!isMulti) {
+        // Clic semplice: torna alla selezione singola
+        setSelectedTopicId(topicId);
+        setSelectedTopicIds([topicId]);
+        return;
+      }
+
+      // Maiusc+clic o Ctrl/Cmd+clic: aggiunge o toglie dalla selezione
+      setSelectedTopicIds((prev) => {
+        const base = prev.length > 0 ? prev : (selectedTopicId ? [selectedTopicId] : []);
+        const alreadySelected = base.includes(topicId);
+        let next: string[];
+
+        if (alreadySelected) {
+          next = base.filter((id) => id !== topicId);
+        } else {
+          next = [...base, topicId];
+        }
+
+        // Mantiene la selezione primaria se ancora valida, altrimenti aggiorna
+        if (next.length === 0) {
+          setSelectedTopicId(undefined);
+        } else if (alreadySelected && selectedTopicId === topicId) {
+          setSelectedTopicId(next[next.length - 1]);
+        } else if (!alreadySelected && !selectedTopicId) {
+          setSelectedTopicId(topicId);
+        }
+        return next;
+      });
+    },
+    [selectedTopicId]
+  );
 
   const resolveResource = useCallback(
     (src: string) => controller.resourceBytes(src),
@@ -327,6 +411,7 @@ export const App: React.FC = () => {
           setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
+          setSelectedTopicIds([]);
           addToast('success', `Aperto: ${res.name}`);
         });
       } catch (err: any) {
@@ -357,6 +442,7 @@ export const App: React.FC = () => {
           setDocumentKey((k) => k + 1);
           setCollapsedIds(new Set());
           setSelectedTopicId(undefined);
+          setSelectedTopicIds([]);
           addToast('success', `Mappa aperta: ${res.name}`);
         });
         return;
@@ -372,6 +458,7 @@ export const App: React.FC = () => {
         setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
+        setSelectedTopicIds([]);
         addToast('success', `Mappa aperta: ${res.name}`);
       });
     } catch (err: any) {
@@ -392,6 +479,7 @@ export const App: React.FC = () => {
         setDocumentKey((k) => k + 1);
         setCollapsedIds(new Set());
         setSelectedTopicId(undefined);
+        setSelectedTopicIds([]);
         addToast('info', 'Mappa demo caricata');
       });
     } catch (err: any) {
@@ -428,13 +516,14 @@ export const App: React.FC = () => {
     };
     const bytes = await buildArchiveBytes(raw);
     await requestWorkbookReplacement(async () => {
-      const dto = await controller.open(bytes, undefined, 'senza_titolo.xmind');
+      const dto = await controller.open(bytes, undefined, UNTITLED_FILE_NAME);
       setWorkbook(dto);
       setFileHandle(undefined);
       setActiveSheetIndex(0);
       setDocumentKey((k) => k + 1);
       setCollapsedIds(new Set());
       setSelectedTopicId(undefined);
+      setSelectedTopicIds([]);
       addToast('success', 'Nuova mappa creata');
     });
   };
@@ -451,11 +540,15 @@ export const App: React.FC = () => {
             ? controller.expectedFileHash()
             : undefined;
         const contentHash = await sha256HexAsync(bytes);
+        const suggestedName =
+          workbook.path === null && workbook.fileName === UNTITLED_FILE_NAME
+            ? `${sanitizeName(controller.mapTitle() || 'mappa')}.xmind`
+            : workbook.fileName || 'mappa.xmind';
 
         if (isElectron && window.electronAPI) {
           let savePath = workbook.path;
           if (saveAs || !savePath) {
-            const selected = await window.electronAPI.saveFileDialog(workbook.fileName || 'mappa.xmind');
+            const selected = await window.electronAPI.saveFileDialog(suggestedName);
             if (!selected) return false;
             savePath = selected;
           }
@@ -480,7 +573,7 @@ export const App: React.FC = () => {
 
         const handle = await saveLocalXmindFile(
           bytes,
-          workbook.fileName || 'mappa.xmind',
+          suggestedName,
           saveAs ? undefined : fileHandle,
           expectedHash
         );
@@ -533,6 +626,39 @@ export const App: React.FC = () => {
     }
   };
 
+  const siblingRangeInfo = useMemo(() => {
+    const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);
+    if (ids.length === 0) return null;
+    return controller.siblingRange(ids);
+  }, [selectedTopicIds, selectedTopicId, controller, workbook]);
+
+  const canAddSummary = Boolean(siblingRangeInfo);
+
+  const handleCreateSummary = useCallback(() => {
+    const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);
+    if (ids.length === 0) {
+      addToast('warning', 'Seleziona almeno un blocco per creare un sommario.');
+      return;
+    }
+
+    const range = controller.siblingRange(ids);
+    if (!range) {
+      addToast('warning', 'Impossibile creare un sommario con questa selezione (radice, blocchi liberi o fogli diversi).');
+      return;
+    }
+
+    try {
+      const { summaryTopicId } = controller.addTopicSummary(range.parentId, range.start, range.end, 'Sommario');
+      setSelectedTopicId(summaryTopicId);
+      setSelectedTopicIds([summaryTopicId]);
+      setEditing({ id: summaryTopicId, mode: 'all', isNew: true });
+      refreshState();
+      addToast('success', 'Sommario aggiunto');
+    } catch (err: any) {
+      addToast('error', err.message || 'Impossibile creare il sommario.');
+    }
+  }, [selectedTopicIds, selectedTopicId, controller, refreshState, addToast]);
+
   // Undo/redo: la selezione resta se il blocco esiste ancora, altrimenti risale al genitore.
   const doUndoRedo = useCallback(
     (kind: 'undo' | 'redo') => {
@@ -543,6 +669,7 @@ export const App: React.FC = () => {
       let cur = selectedTopicId;
       while (cur && !alive.has(cur)) cur = parentOf.get(cur);
       setSelectedTopicId(cur);
+      setSelectedTopicIds(cur ? [cur] : []);
       setEditing(null);
       refreshState();
     },
@@ -574,13 +701,22 @@ export const App: React.FC = () => {
       } else if (key === ',') {
         e.preventDefault();
         setSettingsOpen(true);
+      } else if (key === ']' || e.code === 'BracketRight') {
+        if (inField) return;
+        e.preventDefault();
+        handleCreateSummary();
+      } else if (key === 'p') {
+        if (workbook) {
+          e.preventDefault();
+          setPrintModalOpen(true);
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics]);
+  }, [controller, doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleCreateSummary, workbook]);
 
-  // Esc chiude l'Inspector se aperto e non si sta editando testo
+  // Esc chiude l'Inspector se aperto e non si sta editando testo; con selezione multipla torna a singola
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -588,6 +724,11 @@ export const App: React.FC = () => {
       if (editing) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
+      if (selectedTopicIds.length > 1) {
+        e.preventDefault();
+        setSelectedTopicIds(selectedTopicId ? [selectedTopicId] : []);
+        return;
+      }
       if (inspectorVisible) {
         e.preventDefault();
         setDetailsClosed(true);
@@ -596,7 +737,22 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editing, inspectorVisible]);
+  }, [editing, inspectorVisible, selectedTopicIds, selectedTopicId]);
+
+
+  // Annulla la modalità di connessione relazione con Esc
+  useEffect(() => {
+    if (!connectingTopicId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setConnectingTopicId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [connectingTopicId]);
 
   // Chiusura con modifiche non salvate
   useEffect(() => {
@@ -614,6 +770,40 @@ export const App: React.FC = () => {
       else window.electronAPI?.forceClose();
     });
   }, [isElectron, controller]);
+
+  const handleAddImage = useCallback(
+    async (file: Blob, source: 'paste' | 'drop' = 'paste') => {
+      try {
+        const targetParentId =
+          selectedTopic?.id ?? allTopics.find((t) => t.depth === 0)?.id ?? allTopics[0]?.id;
+        if (!targetParentId) return;
+
+        const { bytes, width, height, mimeType } = await readImageBlob(file);
+        const { newId } = controller.addImageTopic(targetParentId, bytes, mimeType, { width, height });
+
+        setCollapsedIds((prev) => {
+          if (!prev.has(targetParentId)) return prev;
+          const next = new Set(prev);
+          next.delete(targetParentId);
+          return next;
+        });
+
+        setSelectedTopicId(newId);
+        refreshState();
+        addToast(
+          'success',
+          source === 'paste' ? 'Immagine incollata sulla mappa' : 'Immagine aggiunta alla mappa'
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile aggiungere l'immagine: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, allTopics, refreshState, addToast]
+  );
+
+
+
 
   const handleToggleCollapse = useCallback((topicId: string) => {
     setCollapsedIds((prev) => {
@@ -633,6 +823,7 @@ export const App: React.FC = () => {
           return next;
         });
         setSelectedTopicId(newId);
+        setSelectedTopicIds([newId]);
         setDetailsOpen(true);
         refreshState();
       } catch (err: any) {
@@ -655,7 +846,32 @@ export const App: React.FC = () => {
     [controller, refreshState, addToast]
   );
 
-  const handleMoveFloating = useCallback(
+  
+  const handleResizeTopicWidth = useCallback(
+    (id: string, width: number | null) => {
+      try {
+        controller.setTopicCustomWidth(id, width);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Ridimensionamento non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+  const handleResizeTopicImage = useCallback(
+    (id: string, size: { width: number; height: number }) => {
+      try {
+        controller.setTopicImageSize(id, size);
+        refreshState();
+      } catch (err: any) {
+        addToast('error', `Ridimensionamento immagine non riuscito: ${err.message}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
+const handleMoveFloating = useCallback(
     (id: string, position: Point) => {
       try {
         controller.setTopicPosition(id, position);
@@ -745,6 +961,7 @@ export const App: React.FC = () => {
       const next = currentLayout ? selectionAfterDelete(currentLayout, selectedTopic.id) : undefined;
       controller.removeTopic(selectedTopic.id);
       setSelectedTopicId(next);
+      setSelectedTopicIds(next ? [next] : []);
       setEditing(null);
       refreshState();
       addToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
@@ -752,6 +969,290 @@ export const App: React.FC = () => {
       addToast('error', err.message);
     }
   };
+
+  const handleCopyTopic = useCallback(
+    (topicId?: string) => {
+      const id = topicId ?? selectedTopic?.id;
+      if (!id) return;
+      try {
+        const payload = controller.copyTopic(id);
+        inMemoryClipboard.current = payload;
+        setCanPaste(true);
+        navigator.clipboard?.writeText(payload).catch(() => {});
+        addToast('info', 'Blocco copiato');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile copiare il blocco: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, addToast]
+  );
+
+  const handleCutTopic = useCallback(
+    (topicId?: string) => {
+      const id = topicId ?? selectedTopic?.id;
+      if (!id) return;
+      const topic = allTopics.find((t) => t.id === id);
+      if (!topic || topic.depth === 0) {
+        addToast('warning', 'La radice non può essere tagliata');
+        return;
+      }
+      try {
+        const payload = controller.copyTopic(id);
+        inMemoryClipboard.current = payload;
+        setCanPaste(true);
+        navigator.clipboard?.writeText(payload).catch(() => {});
+        const next = currentLayout ? selectionAfterDelete(currentLayout, id) : undefined;
+        controller.removeTopic(id);
+        setSelectedTopicId(next);
+        setSelectedTopicIds(next ? [next] : []);
+        setEditing(null);
+        refreshState();
+        addToast('info', 'Blocco tagliato');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile tagliare il blocco: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, allTopics, currentLayout, refreshState, addToast]
+  );
+
+  const handleDuplicateTopic = useCallback(
+    (topicId?: string) => {
+      const id = topicId ?? selectedTopic?.id;
+      if (!id) return;
+      try {
+        const { newId } = controller.duplicateTopic(id);
+        setSelectedTopicId(newId);
+        setSelectedTopicIds([newId]);
+        refreshState();
+        addToast('success', 'Blocco duplicato');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile duplicare il blocco: ${msg}`);
+      }
+    },
+    [controller, selectedTopic, refreshState, addToast]
+  );
+
+  const handlePasteTopic = useCallback(
+    async (targetParentId?: string) => {
+      let text = '';
+      try {
+        text = await navigator.clipboard?.readText();
+      } catch {
+        text = inMemoryClipboard.current || '';
+      }
+      if (!text && inMemoryClipboard.current) {
+        text = inMemoryClipboard.current;
+      }
+
+      const targetId =
+        targetParentId ??
+        selectedTopic?.id ??
+        allTopics.find((t) => t.depth === 0)?.id;
+
+      if (!targetId) return;
+
+      if (text && text.includes('"xmapStudioClipboard"')) {
+        try {
+          const { newId } = controller.pasteTopic(targetId, text);
+          setCollapsedIds((prev) => {
+            if (!prev.has(targetId)) return prev;
+            const next = new Set(prev);
+            next.delete(targetId);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Blocco incollato');
+          return;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile incollare il blocco: ${msg}`);
+          return;
+        }
+      }
+
+      const clean = text?.trim() ?? '';
+      if (clean.length > 0) {
+        try {
+          const { newId } = controller.addTopic(targetId, clean);
+          setCollapsedIds((prev) => {
+            if (!prev.has(targetId)) return prev;
+            const next = new Set(prev);
+            next.delete(targetId);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Nuovo blocco creato dal testo');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile creare il blocco: ${msg}`);
+        }
+      }
+    },
+    [controller, selectedTopic, allTopics, refreshState, addToast]
+  );
+
+  const handleConnectRelationshipTarget = useCallback(
+    (targetTopicId: string) => {
+      if (!connectingTopicId) return;
+      if (connectingTopicId === targetTopicId) {
+        addToast('warning', 'Non puoi collegare un blocco a se stesso');
+        setConnectingTopicId(null);
+        return;
+      }
+      try {
+        controller.addTopicRelationship(connectingTopicId, targetTopicId);
+        refreshState();
+        addToast('success', 'Relazione creata');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile creare la relazione: ${msg}`);
+      }
+      setConnectingTopicId(null);
+    },
+    [connectingTopicId, controller, refreshState, addToast]
+  );
+
+  // Incolla (Ctrl+V), Copia (Ctrl+C), Taglia (Ctrl+X) e Drag & Drop sulla mappa
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (editing) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+
+      // 1. Se c'è un'immagine, usa il flusso immagini esistente
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              e.preventDefault();
+              void handleAddImage(file, 'paste');
+              return;
+            }
+          }
+        }
+      }
+
+      // 2. Altrimenti testo / payload blocco XMap Studio
+      const text = e.clipboardData?.getData('text/plain') || inMemoryClipboard.current;
+      if (!text) return;
+
+      const targetParentId =
+        selectedTopic?.id ?? allTopics.find((t) => t.depth === 0)?.id ?? allTopics[0]?.id;
+      if (!targetParentId) return;
+
+      if (text.includes('"xmapStudioClipboard"')) {
+        e.preventDefault();
+        try {
+          const { newId } = controller.pasteTopic(targetParentId, text);
+          setCollapsedIds((prev) => {
+            if (!prev.has(targetParentId)) return prev;
+            const next = new Set(prev);
+            next.delete(targetParentId);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Blocco incollato');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile incollare il blocco: ${msg}`);
+        }
+        return;
+      }
+
+      // Altrimenti se c'è un blocco selezionato e testo semplice, crea un sotto-blocco con quel testo
+      const clean = text.trim();
+      if (clean.length > 0 && selectedTopic) {
+        e.preventDefault();
+        try {
+          const { newId } = controller.addTopic(selectedTopic.id, clean);
+          setCollapsedIds((prev) => {
+            if (!prev.has(selectedTopic.id)) return prev;
+            const next = new Set(prev);
+            next.delete(selectedTopic.id);
+            return next;
+          });
+          setSelectedTopicId(newId);
+          setSelectedTopicIds([newId]);
+          refreshState();
+          addToast('success', 'Nuovo blocco creato dal testo');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile creare il blocco: ${msg}`);
+        }
+      }
+    };
+
+    const onCopy = (e: ClipboardEvent) => {
+      if (editing) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+      if (!selectedTopic) return;
+
+      e.preventDefault();
+      handleCopyTopic(selectedTopic.id);
+    };
+
+    const onCut = (e: ClipboardEvent) => {
+      if (editing) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(TEXT_FIELD)) return;
+      if (!selectedTopic || selectedTopic.depth === 0) return;
+
+      e.preventDefault();
+      handleCutTopic(selectedTopic.id);
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      const types = e.dataTransfer?.types;
+      if (types && Array.from(types).includes('Files')) {
+        e.preventDefault();
+      }
+    };
+
+    const onDrop = (e: DragEvent) => {
+      if (e.defaultPrevented) return;
+      if (editing) return;
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/')) {
+          e.preventDefault();
+          void handleAddImage(file, 'drop');
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('copy', onCopy);
+    window.addEventListener('cut', onCut);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      window.removeEventListener('copy', onCopy);
+      window.removeEventListener('cut', onCut);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [editing, handleAddImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic]);
 
   // Nuovo blocco da tastiera o dalla mappa: si seleziona ed entra subito in editing in place.
   const createTopic = useCallback(
@@ -769,6 +1270,7 @@ export const App: React.FC = () => {
           return next;
         });
         setSelectedTopicId(newId);
+        setSelectedTopicIds([newId]);
         setEditing({ id: newId, mode: 'all', isNew: true });
         refreshState();
       } catch (err: any) {
@@ -778,14 +1280,24 @@ export const App: React.FC = () => {
     [controller, refreshState, addToast]
   );
 
-  const handleCommitEdit = (id: string, text: string, exit: EditExit) => {
+  const handleCommitEdit = (id: string, text: string, exit: EditExit, runs?: TitleRun[]) => {
     const isNew = editing?.id === id && editing.isNew;
     setEditing(null);
     const topic = allTopics.find((t) => t.id === id);
     try {
-      if (topic && text.trim().length > 0 && text !== topic.title) {
-        controller.setTopicTitle(id, text, { mergeWithPrevious: isNew });
-        refreshState();
+      if (topic) {
+        if (runs && runs.length > 0) {
+          controller.setTopicTitleRuns(id, runs, { mergeWithPrevious: isNew });
+          refreshState();
+        } else if (topic.titleRuns && topic.titleRuns.length > 0) {
+          controller.setTopicTitleRuns(id, [{ text: text.trim().length > 0 ? text : topic.title }], {
+            mergeWithPrevious: isNew,
+          });
+          refreshState();
+        } else if (text.trim().length > 0 && text !== topic.title) {
+          controller.setTopicTitle(id, text, { mergeWithPrevious: isNew });
+          refreshState();
+        }
       }
     } catch (err: any) {
       addToast('error', err.message);
@@ -816,7 +1328,20 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!mapKeysEnabled) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      if (e.defaultPrevented || e.isComposing) return;
+
+      // Scorciatoia Ctrl+D / Cmd+D: duplica il blocco selezionato
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'd') {
+        const target = e.target as Element | null;
+        if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+        if (selectedTopic && selectedTopic.depth > 0) {
+          e.preventDefault();
+          handleDuplicateTopic(selectedTopic.id);
+        }
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as Element | null;
       if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
       const sel = selectedTopic;
@@ -824,7 +1349,10 @@ export const App: React.FC = () => {
       const c = keyCtx.current;
       const go = (dir: 'up' | 'down' | 'left' | 'right') => {
         const id = currentLayout ? neighborId(currentLayout, sel.id, dir) : undefined;
-        if (id) setSelectedTopicId(id);
+        if (id) {
+          setSelectedTopicId(id);
+          setSelectedTopicIds([id]);
+        }
       };
       switch (e.key) {
         case 'Tab':
@@ -848,7 +1376,12 @@ export const App: React.FC = () => {
         case 'ArrowLeft': go('left'); break;
         case 'ArrowRight': go('right'); break;
         case 'Escape':
-          setSelectedTopicId(undefined);
+          if (selectedTopicIds.length > 1) {
+            setSelectedTopicIds(selectedTopicId ? [selectedTopicId] : []);
+          } else {
+            setSelectedTopicId(undefined);
+            setSelectedTopicIds([]);
+          }
           break;
         default:
           if (e.key.length !== 1 || sel.kind !== 'text') return;
@@ -858,7 +1391,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mapKeysEnabled, selectedTopic, currentLayout]);
+  }, [mapKeysEnabled, selectedTopic, currentLayout, selectedTopicIds, selectedTopicId, handleDuplicateTopic]);
 
   const handleConfirmClose = async (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') {
@@ -891,6 +1424,7 @@ export const App: React.FC = () => {
         ...overflowItems,
         { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', separatorBefore: overflowItems.length > 0, onSelect: handleSaveAs },
         { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: () => setExportModalOpen(true) },
+        { id: 'print', label: 'Stampa…', icon: <Printer className="size-4" />, shortcut: 'Ctrl+P', onSelect: () => setPrintModalOpen(true) },
         { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="size-4" />, onSelect: () => setImportModalOpen(true) },
         {
           id: 'export-svg',
@@ -938,16 +1472,6 @@ export const App: React.FC = () => {
         headerRef={headerRef}
         leftContent={
           <>
-            {workbook && (
-              <IconButton
-                size="sm"
-                active={sidebarOpen}
-                onClick={toggleSidebar}
-                label={sidebarOpen ? 'Nascondi elenco blocchi' : 'Mostra elenco blocchi'}
-              >
-                <PanelLeft className="size-4" />
-              </IconButton>
-            )}
             {inlineOpen && (
               <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={handleOpenLocalFile} title="Apri (Ctrl+O)">
                 <span className={cn(!showLabels && 'sr-only')}>Apri</span>
@@ -1029,45 +1553,43 @@ export const App: React.FC = () => {
               setDocumentKey((k) => k + 1);
               setCollapsedIds(new Set());
               setSelectedTopicId(undefined);
+              setSelectedTopicIds([]);
               addToast('success', `Aperto ${file.name}`);
             }}
           />
         ) : (
           <>
-            <Sidebar
-              topics={allTopics}
-              searchQuery={searchQuery}
-              onSearch={setSearchQuery}
-              filter={filter}
-              onFilter={setFilter}
-              selectedTopicId={selectedTopicId}
-              collapsedIds={collapsedIds}
-              onSelect={(id) => {
-                setSelectedTopicId(id);
-                // Sotto lg il drawer copre la mappa: si chiude dopo la scelta.
-                if (!window.matchMedia(WIDE_QUERY).matches) setSidebarOpen(false);
-              }}
-              open={sidebarOpen}
-              onClose={() => setSidebarOpen(false)}
-              width={sidebarWidth}
-              onWidthChange={setSidebarWidth}
-              onToggleCollapse={handleToggleCollapse}
-              onAddChild={handleAddChild}
-              onAddRootChild={() => allTopics[0] && handleAddChild(allTopics[0].id)}
-              onMove={handleMove}
-            />
-
-            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+              {connectingTopicId && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto px-4 w-full max-w-md animate-fade-in">
+                  <Banner
+                    variant="info"
+                    title="Clicca il blocco da collegare — Esc per annullare"
+                    action={
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => setConnectingTopicId(null)}
+                      >
+                        Annulla
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
               <MapView
                 layout={currentLayout}
                 viewKey={`${documentKey}:${activeSheetIndex}`}
                 selectedTopicId={selectedTopicId}
-                onSelectTopic={setSelectedTopicId}
+                selectedTopicIds={selectedTopicIds}
+                onSelectTopic={handleSelectTopic}
+                onAddSummary={handleCreateSummary}
+                canAddSummary={canAddSummary}
                 onOpenDetails={openDetails}
                 onOpenLatex={openDetails}
                 detailsOpen={inspectorVisible}
                 onAddChild={(id) => createTopic(id, 'child')}
-                onAddSibling={(id) => createTopic(id, 'after')}
+                onAddSibling={(id, where) => createTopic(id, where ?? 'after')}
                 onDeleteTopic={handleDeleteSelected}
                 editing={editing}
                 onStartEdit={startEdit}
@@ -1075,12 +1597,23 @@ export const App: React.FC = () => {
                 onCancelEdit={() => setEditing(null)}
                 onToggleCollapse={handleToggleCollapse}
                 resourceResolver={resolveResource}
-                darkMode={darkMode}
+                // In stampa la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
+                darkMode={darkMode && !printModalOpen}
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
                 onMoveTopic={handleMove}
                 onMoveFloatingTopic={handleMoveFloating}
                 onRelationshipControlPointsChange={handleRelationshipControlPoint}
+                onResizeTopicWidth={handleResizeTopicWidth}
+                onResizeTopicImage={handleResizeTopicImage}
+                onCopyTopic={handleCopyTopic}
+                onCutTopic={handleCutTopic}
+                onPasteTopic={handlePasteTopic}
+                onDuplicateTopic={handleDuplicateTopic}
+                onStartConnectRelationship={(id) => setConnectingTopicId(id)}
+                canPaste={canPaste || Boolean(inMemoryClipboard.current)}
+                isConnectingRelationship={Boolean(connectingTopicId)}
+                onConnectRelationshipTarget={handleConnectRelationshipTarget}
               />
 
               {workbook.sheets.length > 1 && (
@@ -1094,6 +1627,7 @@ export const App: React.FC = () => {
                       onClick={() => {
                         setActiveSheetIndex(idx);
                         setSelectedTopicId(undefined);
+                        setSelectedTopicIds([]);
                       }}
                     >
                       {sheet.title}
@@ -1118,6 +1652,9 @@ export const App: React.FC = () => {
                 onToast={addToast}
                 width={inspectorWidth}
                 onWidthChange={setInspectorWidth}
+                selectedTopicIds={selectedTopicIds}
+                onAddSummaryForSiblings={handleCreateSummary}
+                canAddSummary={canAddSummary}
               />
             )}
           </>
@@ -1128,6 +1665,12 @@ export const App: React.FC = () => {
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
         getExportContent={(fmt) => controller.export(fmt)}
+        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+      />
+      <PrintModal
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+        layout={currentLayout}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
       />
       <ImportModal

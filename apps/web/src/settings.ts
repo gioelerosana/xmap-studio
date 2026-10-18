@@ -17,8 +17,6 @@ export interface Settings {
   theme: ThemePreference;
   /** Struttura predefinita della mappa; il selettore nella mappa scrive qui. */
   mapStructure: MapStructureSetting;
-  /** Barra laterale aperta all'avvio su desktop (la scelta fatta dal pulsante viene ricordata). */
-  sidebarOnStartup: boolean;
   /** Su desktop, selezionare un blocco apre il pannello dettagli. */
   detailsOnSelect: boolean;
   /** Azzera transizioni e animazioni (classe `reduce-motion` su `<html>`). */
@@ -27,7 +25,6 @@ export interface Settings {
 
 const SETTINGS_KEY = 'xmap-studio.settings';
 const LEGACY_STRUCTURE_KEY = 'xmap-studio.map-structure';
-const LEGACY_SIDEBAR_KEY = 'xmap-studio.sidebar';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 const REDUCE_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 const THEMES: readonly ThemePreference[] = ['system', 'light', 'dark'];
@@ -42,7 +39,6 @@ export function defaultSettings(): Settings {
   return {
     theme: 'system',
     mapStructure: 'tree',
-    sidebarOnStartup: false,
     detailsOnSelect: false,
     reduceMotion: systemPrefers(REDUCE_MOTION_QUERY),
   };
@@ -62,7 +58,6 @@ export function sanitizeSettings(value: unknown, base: Settings): Settings {
   return {
     theme: pickOneOf(record.theme, THEMES, base.theme),
     mapStructure: pickOneOf(record.mapStructure, STRUCTURES, base.mapStructure),
-    sidebarOnStartup: typeof record.sidebarOnStartup === 'boolean' ? record.sidebarOnStartup : base.sidebarOnStartup,
     detailsOnSelect:
       typeof record.detailsOnSelect === 'boolean' ? record.detailsOnSelect : base.detailsOnSelect,
     reduceMotion: typeof record.reduceMotion === 'boolean' ? record.reduceMotion : base.reduceMotion,
@@ -79,17 +74,14 @@ function readRawSettings(): string | null {
 
 function readLegacy(defaults: Settings): Settings {
   let structure: string | null = null;
-  let sidebar: string | null = null;
   try {
     structure = window.localStorage?.getItem(LEGACY_STRUCTURE_KEY) ?? null;
-    sidebar = window.localStorage?.getItem(LEGACY_SIDEBAR_KEY) ?? null;
   } catch {
     return defaults;
   }
   return {
     ...defaults,
     mapStructure: structure === 'logic' ? 'logic' : defaults.mapStructure,
-    sidebarOnStartup: sidebar === 'open' ? true : defaults.sidebarOnStartup,
   };
 }
 

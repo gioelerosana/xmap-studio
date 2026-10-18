@@ -1,7 +1,7 @@
 import { trunkX } from '@xmap/core';
 import type { Layout, LayoutNode, Point } from '@xmap/core';
 
-/** Dove inserire il blocco trascinato rispetto al bersaglio (stessi valori di `TopicTree`). */
+/** Dove inserire il blocco trascinato rispetto al bersaglio. */
 export type DropPlacement = 'before' | 'after' | 'into';
 
 /** Margine con cui si allarga il rettangolo di un blocco per l'hit-test (px mondo). */

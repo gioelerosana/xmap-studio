@@ -11,5 +11,5 @@ allowBuilds:
 # Windows, così la build di release può impacchettare l'app Windows da Linux.
 supportedArchitectures:
   os: [current, win32]
-  cpu: [x64]
+  cpu: [current, x64]
   libc: [glibc]

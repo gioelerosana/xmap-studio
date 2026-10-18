@@ -1,4 +1,4 @@
-import { CODE_MOVE, XmapError } from '../errors.js';
+import { CODE_INVALID_INPUT, CODE_MOVE, XmapError } from '../errors.js';
 import {
   Boundary,
   CHILD_GROUPS,
@@ -12,8 +12,11 @@ import {
   formatRange,
   newTopicId,
   parseRange,
+  sheetIndexOf,
   walkTopic,
 } from './utils.js';
+
+export { setTitleRuns } from './style.js';
 
 export function setTitle(topic: Topic, title: string): void {
   topic.title = title;
@@ -75,10 +78,14 @@ function shiftRangesOnInsert(parent: Topic, index: number): void {
  * Errore per la radice (non ha fratelli) e per blocchi `detached`/`summary`:
  * il chiamante decide il ripiego (di norma un figlio).
  */
-export function insertSibling(
+/**
+ * Inserisce un blocco Topic completo come fratello di `topicId` nello stesso gruppo
+ * `children.attached` del genitore, subito dopo o prima. Restituisce l'id del blocco inserito.
+ */
+export function insertSiblingTopic(
   sheets: Sheet[],
   topicId: string,
-  title: string,
+  topic: Topic,
   where: 'after' | 'before' = 'after'
 ): string {
   for (const sheet of sheets) {
@@ -94,15 +101,36 @@ export function insertSibling(
       throw new XmapError(CODE_MOVE, 'Questo blocco non può avere fratelli (è staccato o è un sommario).');
     }
     const parent = descend(root, path.slice(0, -1));
-    const list = parent.children?.attached;
-    if (!list) break;
-    const id = newTopicId();
+    if (!parent.children) {
+      parent.children = {};
+    }
+    if (!parent.children.attached) {
+      parent.children.attached = [];
+    }
+    const list = parent.children.attached;
+    if (!topic.id) topic.id = newTopicId();
+    const id = topic.id;
     const index = where === 'after' ? last.index + 1 : last.index;
-    list.splice(index, 0, { id, title });
+    list.splice(index, 0, topic);
     shiftRangesOnInsert(parent, index);
     return id;
   }
   throw new XmapError(CODE_MOVE, 'Blocco non trovato.');
+}
+
+/**
+ * Inserisce un nuovo fratello di `topicId` nello stesso gruppo `children.attached`
+ * del genitore, subito dopo o prima. Restituisce l'id del nuovo blocco.
+ * Errore per la radice (non ha fratelli) e per blocchi `detached`/`summary`:
+ * il chiamante decide il ripiego (di norma un figlio).
+ */
+export function insertSibling(
+  sheets: Sheet[],
+  topicId: string,
+  title: string,
+  where: 'after' | 'before' = 'after'
+): string {
+  return insertSiblingTopic(sheets, topicId, { id: newTopicId(), title }, where);
 }
 
 export function escapeHtml(s: string): string {
@@ -616,4 +644,113 @@ export function setTopicPosition(topic: Topic, pos: { x: number; y: number }): v
     throw new XmapError(CODE_MOVE, 'Posizione non valida.');
   }
   topic['position'] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+}
+
+export interface SiblingRange {
+  parentId: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Individua l'intervallo contiguo (da min a max indice) di figli 'attached' che racchiude
+ * un insieme di blocchi: fratelli diretti, oppure, con genitori diversi, i rami del primo
+ * antenato comune che li contengono.
+ * Restituisce `null` se la selezione è vuota, se i blocchi non esistono, sono su fogli
+ * diversi, o contengono la radice o blocchi liberi/sommari.
+ */
+export function siblingRange(sheets: Sheet[], ids: string[]): SiblingRange | null {
+  const uniqueIds = Array.from(new Set(ids.map((id) => id?.trim()).filter(Boolean)));
+  if (uniqueIds.length === 0) return null;
+
+  let sheetIdx: number | undefined;
+  for (const id of uniqueIds) {
+    const idx = sheetIndexOf(sheets, id);
+    if (idx === -1) return null;
+    if (sheetIdx === undefined) sheetIdx = idx;
+    else if (sheetIdx !== idx) return null;
+  }
+
+  const sheet = sheets[sheetIdx!];
+  if (!sheet?.rootTopic) return null;
+
+  const paths: PathItem[][] = [];
+  for (const id of uniqueIds) {
+    if (sheet.rootTopic.id === id) return null;
+    const path: PathItem[] = [];
+    if (!findPath(sheet.rootTopic, id, path) || path.length === 0) return null;
+    if (path.some((p) => p.group !== 'attached')) return null;
+    paths.push(path);
+  }
+
+  // Primo antenato comune: se i blocchi hanno genitori diversi (o uno contiene l'altro)
+  // il sommario copre i rami figli di quell'antenato che contengono la selezione.
+  const minLen = Math.min(...paths.map((p) => p.length));
+  let depth = 0;
+  while (
+    depth < minLen - 1 &&
+    paths.every((p) => p[depth].index === paths[0][depth].index)
+  ) {
+    depth++;
+  }
+
+  const parentTopic = descend(sheet.rootTopic, paths[0].slice(0, depth));
+  const parentId = parentTopic.id;
+  if (!parentId) return null;
+
+  const indices = paths.map((p) => p[depth].index);
+  const start = Math.min(...indices);
+  const end = Math.max(...indices);
+  const childCount = parentTopic.children?.attached?.length ?? 0;
+
+  if (start < 0 || end >= childCount) return null;
+
+  return { parentId, start, end };
+}
+
+/**
+ * Imposta o rimuove la larghezza manuale del blocco (`customWidth`, in px).
+ * Con `null` o `undefined` rimuove la proprietà, ripristinando l'adattamento automatico al testo.
+ * Preserva tutti gli altri campi del topic.
+ */
+export function setTopicCustomWidth(topic: Topic, width: number | null | undefined): void {
+  if (width === null || width === undefined) {
+    delete topic.customWidth;
+    delete topic['customWidth'];
+    return;
+  }
+  if (!Number.isFinite(width) || width <= 0) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Larghezza manuale non valida.');
+  }
+  topic['customWidth'] = Math.round(width);
+}
+
+/**
+ * Imposta le dimensioni in pixel dell'immagine associata al blocco (`image.width`, `image.height`).
+ * Preserva tutte le altre proprietà di `image` (es. `align`, `lockRatio`, `src`, ecc.).
+ * Non è ammesso per formule MathJax (`isMathJaxImage`).
+ */
+export function setTopicImageSize(
+  topic: Topic,
+  size: { width: number; height: number }
+): void {
+  if (!topic.image || !topic.image.src) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Il blocco non contiene un\'immagine.');
+  }
+  if (topic.image.isMathJaxImage) {
+    throw new XmapError(
+      CODE_INVALID_INPUT,
+      'Le formule MathJax non possono essere ridimensionate manualmente.'
+    );
+  }
+  if (
+    !Number.isFinite(size.width) ||
+    !Number.isFinite(size.height) ||
+    size.width <= 0 ||
+    size.height <= 0
+  ) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Dimensioni immagine non valide.');
+  }
+  topic.image.width = Math.round(size.width);
+  topic.image.height = Math.round(size.height);
 }

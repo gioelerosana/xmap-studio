@@ -82,6 +82,12 @@ export interface InspectorProps {
   /** Larghezza da `lg` in su (px) e setter: la maniglia sul bordo sinistro la modifica. */
   width: number;
   onWidthChange: (width: number) => void;
+  /** Elenco degli ID dei blocchi selezionati nella mappa (selezione multipla). */
+  selectedTopicIds?: string[];
+  /** Callback per creare un sommario sui blocchi fratelli selezionati. */
+  onAddSummaryForSiblings?: () => void;
+  /** Indica se i blocchi selezionati sono fratelli validi. */
+  canAddSummary?: boolean;
 }
 
 // Anello di focus dei bottoni ui-kit, riusato dai controlli che non sono `Button`.
@@ -278,6 +284,9 @@ export const Inspector: React.FC<InspectorProps> = ({
   onToast,
   width,
   onWidthChange,
+  selectedTopicIds,
+  onAddSummaryForSiblings,
+  canAddSummary,
 }) => {
   if (!topic) return null;
   return (
@@ -293,6 +302,9 @@ export const Inspector: React.FC<InspectorProps> = ({
       onToast={onToast}
       width={width}
       onWidthChange={onWidthChange}
+      selectedTopicIds={selectedTopicIds}
+      onAddSummaryForSiblings={onAddSummaryForSiblings}
+      canAddSummary={canAddSummary}
     />
   );
 };
@@ -308,6 +320,9 @@ const InspectorBody: React.FC<InspectorProps> = ({
   onToast,
   width,
   onWidthChange,
+  selectedTopicIds,
+  onAddSummaryForSiblings,
+  canAddSummary,
 }) => {
   const t = topic as TopicView;
   const ts: TextStyle = t.textStyle ?? {};
@@ -1120,6 +1135,20 @@ const InspectorBody: React.FC<InspectorProps> = ({
                     Rimuovi sommario
                   </Button>
                 )}
+              </div>
+            )}
+            {selectedTopicIds && selectedTopicIds.length > 1 && onAddSummaryForSiblings && (
+              <div className="flex flex-col gap-1.5 pt-2 border-t mt-1">
+                <GroupLabel>Selezione multipla ({selectedTopicIds.length} blocchi)</GroupLabel>
+                <Button
+                  size="sm"
+                  variant={canAddSummary ? 'secondary' : 'ghost'}
+                  icon={<Boxes className="size-4" />}
+                  onClick={onAddSummaryForSiblings}
+                  title="Crea sommario sui blocchi fratelli selezionati (Ctrl+])"
+                >
+                  Crea sommario (Ctrl+])
+                </Button>
               </div>
             )}
           </div>

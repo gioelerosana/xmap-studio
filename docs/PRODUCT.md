@@ -128,7 +128,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 | Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `exporters/import.ts`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
 | Merge di file `.xmind` | sì | **Fatto** (Fase 2): `AppController.mergeWorkbook`, sheet accodate con id riassegnati | Media |
 | Split mappa per ramo principale | sì | **Fatto** (Fase 2): `AppController.splitTopic`, ramo → mappa autonoma validata | Bassa |
-| Export PDF senza watermark | watermark in Free | Fattibile (serve libreria PDF: dipendenza) | Bassa |
+| Export PDF senza watermark | watermark in Free | **Fatto**: "Stampa…" (`Ctrl+P`) impagina la mappa su A4/A3 (`print/paginate.ts`: una pagina, N pagine in larghezza o scala fissa, sovrapposizione per incollare) e nel desktop salva il PDF con `printToPDF` di Electron, senza dipendenze | Bassa |
 | Export Excel / Word | sì | Non prioritario (dipendenza pesante) | — |
 
 ### 3.5 Presentazione e UI
@@ -304,29 +304,33 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | Editing sulla mappa | Drag & drop dei blocchi (riordino e riannidamento) | ✅ | `MapView`; stesse regole di `moveTopic` |
 | | Modifica del titolo direttamente nel blocco (doppio clic / F2 / Spazio / digitando) | ✅ | `map/NodeEditor.tsx`; creazione + rinomina = un solo undo |
 | | Tab = figlio, Invio = fratello, Canc = elimina sulla mappa | ✅ | anche Maiusc+Invio (fratello prima), frecce, Esc; eliminazione senza conferma |
-| | Copia/incolla e duplica di sottoalberi | ⬜ | rigenerare gli id (`remapIds`) |
-| | Selezione multipla e spostamento di gruppo | ⬜ | |
+| | Copia/incolla e duplica di sottoalberi | ✅ | `model/clone.ts` rigenera gli id; le risorse immagine viaggiano negli appunti; menu contestuale |
+| | Selezione multipla e spostamento di gruppo | 🟡 | selezione con Maiusc/Ctrl+clic (usata dal sommario); spostamento di gruppo da fare |
 | | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | trascinabili, `position` = centro relativo alla radice (dal codice di XMind); round-trip in XMind da verificare |
 | Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | ispettore |
-| | Formattazione parziale del titolo (`attributedTitle`) | 🟡 | resa; edit da fare |
+| | Formattazione parziale del titolo (`attributedTitle`) | ✅ | Ctrl+B/I/U sulla selezione nell'editor in place; round-trip in XMind da verificare |
 | | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti |
 | Relazioni | Forme curved/straight/angled/zigzag, tratteggio, frecce dal tema | ✅ | `layout/relationship.ts` |
 | | Punti di controllo trascinabili (`controlPoints`) | ✅ | maniglie sulla relazione selezionata |
-| | Creazione di una relazione trascinando dalla mappa | ⬜ | oggi dall'ispettore |
+| | Creazione di una relazione trascinando dalla mappa | 🟡 | dal menu contestuale ("Collega con freccia…" + clic sul bersaglio); trascinamento da fare |
 | | Titolo della relazione modificabile in place | ⬜ | |
-| Struttura | Sommari (graffa + topic) e boundary | 🟡 | sommari resi; boundary da disegnare |
+| Struttura | Sommari (graffa + topic) e boundary | 🟡 | sommari resi e creabili su più fratelli (Ctrl+]); boundary da disegnare |
 | | Logic Chart, Tree Chart | ✅ | |
 | | Mind map bilanciata, org chart, fishbone, timeline, matrice | ⬜ | oggi rese come Logic Chart |
 | Stile | Tema del foglio (colori, forme dei blocchi, linee dei rami) | 🟡 | colori dei rami; forme/linee dal tema da fare |
 | | Forma, riempimento e bordo del singolo blocco | 🟡 | riempimento fatto |
 | | Linee dei rami a gomito/curve come da tema | ⬜ | |
 | Contenuto | Equazioni LaTeX native (MathJax) | ✅ | supera Free |
+| | Formule `$…$` in linea nel testo del blocco | ✅ | solo resa nell'app: nel file resta testo, XMind mostra il sorgente |
+| | Larghezza del blocco (`customWidth`) e dimensione delle immagini trascinabili | ✅ | maniglie sul blocco selezionato; round-trip in XMind da verificare |
+| | Immagini incollate o trascinate sulla mappa | ✅ | risorsa SHA-256 in `resources/`, registrata nel manifest |
 | | Note, etichette, marker, link, task, allegati, immagini | ✅ | |
 | | Callout | 🟡 | letti, non disegnati come callout |
 | Navigazione | Pan, zoom, fit, collapse, ricerca | ✅ | |
 | | Outliner, presentazione (Pitch), focus su un ramo | 🟡 | outliner sì |
 | Export | Markdown, OPML, testo | ✅ | |
-| | PNG/SVG/PDF della mappa | ⬜ | |
+| | Stampa e PDF della mappa (A4/A3, più pagine) | ✅ | anteprima delle pagine, sempre in tema chiaro; PDF solo nel desktop |
+| | PNG/SVG della mappa | ⬜ | |
 
 **Ordine di attacco:** prima ciò che rende la mappa leggibile come in XMind
 (stile testo, relazioni, boundary, linee del tema), poi l'editing diretto sulla
@@ -335,8 +339,8 @@ strutture alternative e l'export grafico.
 
 ### Fuori scope (per scelta)
 Cloud/account/collaborazione/AI; Set Password (cifratura ZIP); sticker e
-IconFinder proprietari (asset XMind, licenza); export Word/Excel e PDF nativi
-(dipendenze pesanti); registrazione audio con codec.
+IconFinder proprietari (asset XMind, licenza); export Word/Excel e PDF generato in proprio
+(dipendenze pesanti; il PDF passa dalla stampa di Chromium); registrazione audio con codec.
 
 ## 5. Invarianti (non negoziabili)
 

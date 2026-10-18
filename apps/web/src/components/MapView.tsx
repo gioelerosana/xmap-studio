@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Layout, LayoutNode, MapStructure, Point, renderLatexToSvg, SUMMARY_BRACE_W, trunkX } from '@xmap/core';
+import { Layout, LayoutNode, MapStructure, Point, renderLatexToSvg, SUMMARY_BRACE_W, TitleRun, trunkX, estimateNodeSize } from '@xmap/core';
 import {
   Plus,
   Minus,
@@ -11,8 +11,16 @@ import {
   ListTree,
   GitFork,
   CornerDownLeft,
+  Braces,
+  Copy,
+  Scissors,
+  ClipboardPaste,
+  CopyPlus,
+  Info,
+  Sigma,
 } from 'lucide-react';
-import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+import { ContextMenu } from './map/ContextMenu.js';
+import { Button, IconButton, MenuItem, Separator, cn } from '@xmap/ui-kit';
 import { NodeEditor, type EditExit } from './map/NodeEditor.js';
 import { hexLuminance, RichTitle, textStyleCss } from './map/RichTitle.js';
 import { RelationshipLayer, type ControlPointsPatch } from './map/RelationshipLayer.js';
@@ -131,6 +139,7 @@ export interface MapEditing {
   /** `all` = seleziona il testo esistente; `text` = parte da `text` (digitazione su blocco selezionato). */
   mode: 'all' | 'text';
   text?: string;
+  isNew?: boolean;
 }
 
 const INTERACTIVE = 'input, textarea, select, button, [contenteditable="true"]';
@@ -154,17 +163,36 @@ export interface MapViewProps {
   viewKey?: string;
   editing?: MapEditing | null;
   onStartEdit?: (topicId: string) => void;
-  onCommitEdit?: (topicId: string, text: string, exit: EditExit) => void;
+  onCommitEdit?: (topicId: string, text: string, exit: EditExit, runs?: TitleRun[]) => void;
   onCancelEdit?: () => void;
   layout: Layout | null;
+  /** Blocco con selezione primaria (determina l'Inspector e i dettagli). */
   selectedTopicId?: string;
-  onSelectTopic: (topicId: string) => void;
+  /**
+   * Elenco degli ID dei blocchi selezionati nella mappa (selezione multipla).
+   * Include la selezione primaria ed è evidenziato con lo stesso stile di selezione.
+   */
+  selectedTopicIds?: string[];
+  /**
+   * Clic su un blocco: con clic semplice deseleziona gli altri, con modificatore (Maiusc o Ctrl/Cmd)
+   * aggiunge o toglie il blocco alla selezione multipla.
+   */
+  onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
   onOpenDetails: (topicId: string) => void;
   onOpenLatex?: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
   /** Crea un fratello dopo il blocco, come Invio. */
-  onAddSibling?: (topicId: string) => void;
+  /** Crea un fratello dopo o prima del blocco, come Invio / Maiusc+Invio. */
+  onAddSibling?: (topicId: string, where?: 'after' | 'before') => void;
   onDeleteTopic?: (topicId: string) => void;
+  onCopyTopic?: (topicId: string) => void;
+  onCutTopic?: (topicId: string) => void;
+  onPasteTopic?: (targetTopicId?: string) => void;
+  onDuplicateTopic?: (topicId: string) => void;
+  onStartConnectRelationship?: (topicId: string) => void;
+  canPaste?: boolean;
+  isConnectingRelationship?: boolean;
+  onConnectRelationshipTarget?: (targetTopicId: string) => void;
   onToggleCollapse: (topicId: string) => void;
   resourceResolver: (src: string) => Uint8Array | null;
   darkMode?: boolean;
@@ -176,14 +204,23 @@ export interface MapViewProps {
   onMoveFloatingTopic?: (topicId: string, position: Point) => void;
   /** Punti di controllo di una relazione trascinati (`null` = ripristina, `undefined` = invariato). */
   onRelationshipControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
+  /** Larghezza custom modificata tramite maniglia. */
+  onResizeTopicWidth?: (topicId: string, width: number | null) => void;
+  /** Dimensioni immagine modificate tramite maniglia d'angolo. */
+  onResizeTopicImage?: (topicId: string, size: { width: number; height: number }) => void;
   /** Pannello dettagli aperto: su smartphone il blocco viene portato sopra il bottom sheet. */
   detailsOpen?: boolean;
+  /** Callback per creare un sommario sui blocchi selezionati (es. Ctrl+] o pulsante barra). */
+  onAddSummary?: () => void;
+  /** Indica se i blocchi correntemente selezionati sono fratelli validi per creare un sommario. */
+  canAddSummary?: boolean;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
   layout,
   viewKey,
   selectedTopicId,
+  selectedTopicIds,
   onSelectTopic,
   onOpenDetails,
   onOpenLatex,
@@ -199,10 +236,22 @@ export const MapView: React.FC<MapViewProps> = ({
   onMoveTopic,
   onMoveFloatingTopic,
   onRelationshipControlPointsChange,
+  onResizeTopicWidth,
+  onResizeTopicImage,
   editing = null,
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onAddSummary,
+  canAddSummary = false,
+  onCopyTopic,
+  onCutTopic,
+  onPasteTopic,
+  onDuplicateTopic,
+  onStartConnectRelationship,
+  canPaste = false,
+  isConnectingRelationship = false,
+  onConnectRelationshipTarget,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -226,25 +275,203 @@ export const MapView: React.FC<MapViewProps> = ({
   const zoomTargetRef = useRef<number | null>(null); // zoom di arrivo dei click +/- in corso
   const gestureCleanupRef = useRef<(() => void) | null>(null);
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
+  const selectedTopicIdsRef = useRef(selectedTopicIds);
+  selectedTopicIdsRef.current = selectedTopicIds;
+
   const handlers = useRef({
     onSelectTopic,
     onOpenDetails,
     onOpenLatex,
+    onAddChild,
+    onAddSibling,
+    onDeleteTopic,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
     onRelationshipControlPointsChange,
     onStartEdit,
+    onAddSummary,
+    onResizeTopicWidth,
+    onResizeTopicImage,
+    onCopyTopic,
+    onCutTopic,
+    onPasteTopic,
+    onDuplicateTopic,
+    onStartConnectRelationship,
+    isConnectingRelationship,
+    onConnectRelationshipTarget,
   });
   handlers.current = {
     onSelectTopic,
     onOpenDetails,
     onOpenLatex,
+    onAddChild,
+    onAddSibling,
+    onDeleteTopic,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
     onRelationshipControlPointsChange,
     onStartEdit,
+    onAddSummary,
+    onResizeTopicWidth,
+    onResizeTopicImage,
+    onCopyTopic,
+    onCutTopic,
+    onPasteTopic,
+    onDuplicateTopic,
+    onStartConnectRelationship,
+    isConnectingRelationship,
+    onConnectRelationshipTarget,
+  };
+
+  interface ContextMenuState {
+    x: number;
+    y: number;
+    target: { type: 'node'; topicId: string } | { type: 'background' };
+  }
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  const buildNodeMenuItems = (nodeId: string): MenuItem[] => {
+    const node = layout?.nodes.find((n) => n.id === nodeId);
+    if (!node) return [];
+    const isRoot = node.depth === 0;
+    const isText = node.kind === 'text';
+
+    const items: MenuItem[] = [
+      {
+        id: 'add-child',
+        label: 'Aggiungi sotto-blocco',
+        shortcut: 'Tab',
+        icon: <CornerDownLeft className="size-4" />,
+        onSelect: () => handlers.current.onAddChild?.(node.id),
+      },
+      {
+        id: 'add-sibling',
+        label: 'Aggiungi blocco fratello',
+        shortcut: 'Invio',
+        icon: <ListTree className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onAddSibling?.(node.id, 'after'),
+      },
+      {
+        id: 'add-sibling-before',
+        label: 'Aggiungi fratello prima',
+        shortcut: 'Maiusc+Invio',
+        icon: <ListTree className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onAddSibling?.(node.id, 'before'),
+      },
+      {
+        id: 'edit-text',
+        label: 'Modifica testo',
+        shortcut: 'F2',
+        separatorBefore: true,
+        icon: <Edit3 className="size-4" />,
+        onSelect: () => {
+          if (isText && handlers.current.onStartEdit) {
+            handlers.current.onStartEdit(node.id);
+          } else {
+            handlers.current.onOpenDetails(node.id);
+          }
+        },
+      },
+      {
+        id: 'details',
+        label: 'Dettagli',
+        shortcut: 'Ctrl+I',
+        icon: <Info className="size-4" />,
+        onSelect: () => handlers.current.onOpenDetails(node.id),
+      },
+      ...(handlers.current.onOpenLatex
+        ? [
+            {
+              id: 'latex',
+              label: 'Formula LaTeX',
+              shortcut: 'Ctrl+Maiusc+L',
+              icon: <Sigma className="size-4" />,
+              onSelect: () => handlers.current.onOpenLatex?.(node.id),
+            },
+          ]
+        : []),
+      {
+        id: 'connect-arrow',
+        label: 'Collega con freccia…',
+        separatorBefore: true,
+        icon: <Network className="size-4" />,
+        onSelect: () => handlers.current.onStartConnectRelationship?.(node.id),
+      },
+      {
+        id: 'copy',
+        label: 'Copia',
+        shortcut: 'Ctrl+C',
+        icon: <Copy className="size-4" />,
+        onSelect: () => handlers.current.onCopyTopic?.(node.id),
+      },
+      {
+        id: 'cut',
+        label: 'Taglia',
+        shortcut: 'Ctrl+X',
+        icon: <Scissors className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onCutTopic?.(node.id),
+      },
+      {
+        id: 'paste',
+        label: 'Incolla',
+        shortcut: 'Ctrl+V',
+        icon: <ClipboardPaste className="size-4" />,
+        disabled: !canPaste,
+        onSelect: () => handlers.current.onPasteTopic?.(node.id),
+      },
+      {
+        id: 'duplicate',
+        label: 'Duplica',
+        shortcut: 'Ctrl+D',
+        icon: <CopyPlus className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onDuplicateTopic?.(node.id),
+      },
+      {
+        id: 'summary',
+        label: 'Sommario',
+        shortcut: 'Ctrl+]',
+        separatorBefore: true,
+        icon: <Braces className="size-4" />,
+        disabled: !canAddSummary,
+        onSelect: () => handlers.current.onAddSummary?.(),
+      },
+      {
+        id: 'delete',
+        label: 'Elimina',
+        shortcut: 'Canc',
+        icon: <Trash2 className="size-4" />,
+        danger: true,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onDeleteTopic?.(node.id),
+      },
+    ];
+
+    return items;
+  };
+
+  const buildBackgroundMenuItems = (): MenuItem[] => {
+    return [
+      {
+        id: 'bg-paste',
+        label: 'Incolla',
+        shortcut: 'Ctrl+V',
+        icon: <ClipboardPaste className="size-4" />,
+        disabled: !canPaste,
+        onSelect: () => handlers.current.onPasteTopic?.(),
+      },
+      {
+        id: 'bg-fit',
+        label: 'Adatta alla finestra',
+        icon: <Maximize2 className="size-4" />,
+        onSelect: () => fitToView(),
+      },
+    ];
   };
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
@@ -254,6 +481,68 @@ export const MapView: React.FC<MapViewProps> = ({
   const dragIndexRef = useRef(dragIndex);
   dragIndexRef.current = dragIndex;
 
+
+  interface ResizeState {
+    topicId: string;
+    width: number;
+    height?: number;
+    imageSize?: { width: number; height: number };
+  }
+  const [resizing, setResizing] = useState<ResizeState | null>(null);
+  const resizingRef = useRef<ResizeState | null>(null);
+  resizingRef.current = resizing;
+
+  interface ActiveResize {
+    type: 'width' | 'image';
+    topicId: string;
+    startPtr: { x: number; y: number };
+    startWorld: Point;
+    startWidth: number;
+    startHeight: number;
+    startImageW: number;
+    startImageH: number;
+    moved: boolean;
+  }
+  const activeResizeRef = useRef<ActiveResize | null>(null);
+  const lastWidthTapRef = useRef<number>(0);
+
+  // Layout effettivo con anteprima live durante il ridimensionamento
+  const effectiveLayout = useMemo(() => {
+    if (!layout) return null;
+    if (!resizing) return layout;
+    const nodeIdx = layout.nodes.findIndex((n) => n.id === resizing.topicId);
+    if (nodeIdx === -1) return layout;
+    const targetNode = layout.nodes[nodeIdx];
+    const deltaW = resizing.width - targetNode.w;
+    const desc = subtreeOf(layout, nodeIdx);
+    const newNodes = layout.nodes.map((n, i) => {
+      if (i === nodeIdx) {
+        return {
+          ...n,
+          w: resizing.width,
+          h: resizing.height ?? n.h,
+          imageW: resizing.imageSize ? resizing.imageSize.width : n.imageW,
+          imageH: resizing.imageSize ? resizing.imageSize.height : n.imageH,
+        };
+      }
+      if (desc.has(i)) {
+        return { ...n, x: n.x + deltaW };
+      }
+      return n;
+    });
+    return { ...layout, nodes: newNodes };
+  }, [layout, resizing]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeResizeRef.current) {
+        activeResizeRef.current = null;
+        setResizing(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   // Coordinate client -> coordinate mondo con pan/zoom correnti (anche a gesto in corso).
   const toWorld = useCallback((clientX: number, clientY: number): Point => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -532,6 +821,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!container) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      setContextMenu(null);
       cancelMotion();
       const rect = container.getBoundingClientRect();
       const unit = e.deltaMode === 1 ? LINE_PX : e.deltaMode === 2 ? rect.height : 1;
@@ -770,6 +1060,7 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const beginPinch = () => {
+      setContextMenu(null);
       window.clearTimeout(longPressTimer);
       pressedNode = -1;
       const [a, b] = [...pointers.values()];
@@ -781,6 +1072,7 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const beginPan = (p: { x: number; y: number }) => {
+      setContextMenu(null);
       mode = 'pan';
       last = p;
       samples = [];
@@ -827,14 +1119,9 @@ export const MapView: React.FC<MapViewProps> = ({
       if (mode === 'nodepress') {
         const slopPress = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < slopPress) return;
-        if (pointerType === 'mouse') {
-          beginDrag();
-          return;
-        }
-        // Touch: un dito che si muove prima della pressione prolungata fa pan.
         window.clearTimeout(longPressTimer);
-        pressedNode = -1;
-        beginPan({ x: start.x, y: start.y });
+        beginDrag();
+        return;
       }
       if (mode === 'pinch' && pointers.size >= 2) {
         const [a, b] = [...pointers.values()];
@@ -852,6 +1139,7 @@ export const MapView: React.FC<MapViewProps> = ({
       const slop = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
       if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < slop) return;
       moved = true;
+      window.clearTimeout(longPressTimer);
       const now = performance.now();
       const v = viewRef.current;
       viewRef.current = { ...v, x: v.x + e.clientX - last.x, y: v.y + e.clientY - last.y };
@@ -928,6 +1216,17 @@ export const MapView: React.FC<MapViewProps> = ({
       }
       if (pointers.size >= 2) return;
       cancelMotion();
+
+      if (handlers.current.isConnectingRelationship) {
+        if (nodeIdx >= 0) {
+          const n = layoutRef.current?.nodes[nodeIdx];
+          if (n) {
+            handlers.current.onConnectRelationshipTarget?.(n.id);
+          }
+        }
+        return;
+      }
+
       if (pointers.size === 0) {
         gestureCleanupRef.current?.();
         pointerType = e.pointerType;
@@ -946,20 +1245,76 @@ export const MapView: React.FC<MapViewProps> = ({
         pressedNode = nodeIdx;
         last = { x: e.clientX, y: e.clientY };
         samples = [];
-        // Touch: il drag parte con pressione prolungata, così il pan col dito resta possibile.
+        // Touch: pressione lunga (~500 ms senza movimento) apre il menu contestuale
         if (e.pointerType !== 'mouse') {
           longPressTimer = window.setTimeout(() => {
-            if (mode === 'nodepress') beginDrag();
-          }, LONG_PRESS_MS);
+            if (mode === 'nodepress') {
+              mode = 'none';
+              pressedNode = -1;
+              const n = layoutRef.current?.nodes[nodeIdx];
+              if (n) {
+                navigator.vibrate?.(12);
+                const currentMulti = selectedTopicIdsRef.current ?? [];
+                if (!currentMulti.includes(n.id)) {
+                  handlers.current.onSelectTopic(n.id);
+                }
+                setContextMenu({
+                  x: start.x,
+                  y: start.y,
+                  target: { type: 'node', topicId: n.id },
+                });
+                suppressClickUntil = performance.now() + 400;
+                cleanup();
+              }
+            }
+          }, 500);
         }
       } else {
+        if (e.pointerType !== 'mouse') {
+          longPressTimer = window.setTimeout(() => {
+            if (mode === 'pan' && !moved) {
+              mode = 'none';
+              navigator.vibrate?.(12);
+              setContextMenu({
+                x: start.x,
+                y: start.y,
+                target: { type: 'background' },
+              });
+              suppressClickUntil = performance.now() + 400;
+              cleanup();
+            }
+          }, 500);
+        }
         beginPan({ x: e.clientX, y: e.clientY });
       }
     };
 
-    // Il menu contestuale della pressione prolungata (touch) coprirebbe il drag.
-    const onContextMenu = (e: Event) => {
-      if (mode === 'nodepress' || mode === 'drag') e.preventDefault();
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      if (handlers.current.isConnectingRelationship) return;
+      if (mode === 'drag') return;
+
+      const target = e.target as Element;
+      const nodeEl = target.closest?.('[data-node-id]');
+      const nodeId = nodeEl?.getAttribute('data-node-id');
+
+      if (nodeId) {
+        const currentMulti = selectedTopicIdsRef.current ?? [];
+        if (!currentMulti.includes(nodeId)) {
+          handlers.current.onSelectTopic(nodeId);
+        }
+        setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          target: { type: 'node', topicId: nodeId },
+        });
+      } else {
+        setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          target: { type: 'background' },
+        });
+      }
     };
 
     const onMouseCapture = (e: MouseEvent) => {
@@ -1024,16 +1379,16 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [hasContent, animateTo, applyView, cancelMotion, scheduleApply, scheduleSync, toWorld]);
 
   const selectedNode = useMemo(() => {
-    if (!layout || !selectedTopicId) return null;
-    return layout.nodes.find((n) => n.id === selectedTopicId) || null;
-  }, [layout, selectedTopicId]);
+    if (!effectiveLayout || !selectedTopicId) return null;
+    return effectiveLayout.nodes.find((n) => n.id === selectedTopicId) || null;
+  }, [effectiveLayout, selectedTopicId]);
 
   selectedNodeRef.current = selectedNode;
 
   const editingNode = useMemo(() => {
-    if (!layout || !editing) return null;
-    return layout.nodes.find((n) => n.id === editing.id) || null;
-  }, [layout, editing]);
+    if (!effectiveLayout || !editing) return null;
+    return effectiveLayout.nodes.find((n) => n.id === editing.id) || null;
+  }, [effectiveLayout, editing]);
 
   // Un blocco appena creato può cadere fuori schermo: lo si porta in vista.
   useEffect(() => {
@@ -1097,6 +1452,11 @@ export const MapView: React.FC<MapViewProps> = ({
           e.preventDefault();
           handlers.current.onOpenLatex(selectedTopicId);
         }
+      } else if (key === ']' || e.code === 'BracketRight') {
+        if (handlers.current.onAddSummary) {
+          e.preventDefault();
+          handlers.current.onAddSummary();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1108,16 +1468,111 @@ export const MapView: React.FC<MapViewProps> = ({
     applyView();
   });
 
+
+  const startResize = useCallback(
+    (e: React.PointerEvent<SVGElement>, node: LayoutNode, type: 'width' | 'image') => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      const startPtr = { x: e.clientX, y: e.clientY };
+      const startWorld = toWorld(e.clientX, e.clientY);
+      const startWidth = node.w;
+      const startHeight = node.h;
+      const startImageW = node.imageW ?? Math.max(node.w - 16, 20);
+      const startImageH = node.imageH ?? Math.max(node.h - 8, 20);
+
+      activeResizeRef.current = {
+        type,
+        topicId: node.id,
+        startPtr,
+        startWorld,
+        startWidth,
+        startHeight,
+        startImageW,
+        startImageH,
+        moved: false,
+      };
+
+      const onMove = (pe: PointerEvent) => {
+        const state = activeResizeRef.current;
+        if (!state) return;
+        if (!state.moved && Math.hypot(pe.clientX - state.startPtr.x, pe.clientY - state.startPtr.y) >= 3) {
+          state.moved = true;
+        }
+        if (!state.moved) return;
+
+        const currWorld = toWorld(pe.clientX, pe.clientY);
+        const dx = currWorld.x - state.startWorld.x;
+
+        if (state.type === 'width') {
+          const liveW = Math.max(40, Math.round(state.startWidth + dx));
+          const { h: liveH } = estimateNodeSize(node, liveW);
+          setResizing({ topicId: node.id, width: liveW, height: liveH });
+        } else if (state.type === 'image') {
+          const ratio = state.startImageW / Math.max(1, state.startImageH);
+          const liveImageW = Math.max(40, Math.round(state.startImageW + dx));
+          const liveImageH = Math.max(30, Math.round(liveImageW / ratio));
+          const { w: liveW, h: liveH } = estimateNodeSize({
+            ...node,
+            imageW: liveImageW,
+            imageH: liveImageH,
+          });
+          setResizing({
+            topicId: node.id,
+            width: liveW,
+            height: liveH,
+            imageSize: { width: liveImageW, height: liveImageH },
+          });
+        }
+      };
+
+      const onUp = (pe: PointerEvent) => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+
+        const state = activeResizeRef.current;
+        activeResizeRef.current = null;
+        const currentResizing = resizingRef.current;
+        setResizing(null);
+
+        if (state && state.moved && currentResizing) {
+          if (state.type === 'width') {
+            handlers.current.onResizeTopicWidth?.(state.topicId, currentResizing.width);
+          } else if (state.type === 'image' && currentResizing.imageSize) {
+            handlers.current.onResizeTopicImage?.(state.topicId, currentResizing.imageSize);
+          }
+        } else if (state && !state.moved && state.type === 'width') {
+          // Doppio tap su touch per rimuovere customWidth
+          const now = performance.now();
+          if (now - lastWidthTapRef.current < 320) {
+            lastWidthTapRef.current = 0;
+            handlers.current.onResizeTopicWidth?.(state.topicId, null);
+          } else {
+            lastWidthTapRef.current = now;
+          }
+        }
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    },
+    [toWorld]
+  );
   // Contenuto pesante dell'SVG: dipende solo da layout/selezione/tema, non da zoom
   // e pan, così durante i gesti React non lo ricostruisce.
   const content = useMemo(() => {
-    if (!layout) return null;
+    const l = effectiveLayout;
+    if (!l) return null;
+    const selectedSet = new Set(selectedTopicIds && selectedTopicIds.length > 0 ? selectedTopicIds : []);
+    if (selectedTopicId) selectedSet.add(selectedTopicId);
     // Un tronco per genitore Tree Chart, fino al centro del figlio più basso.
     const trunkMap = new Map<number, { parent: number; x: number; y1: number; y2: number }>();
-    for (const edge of layout.edges) {
+    for (const edge of l.edges) {
       if (edge.kind !== 'tree') continue;
-      const p = layout.nodes[edge.parent];
-      const c = layout.nodes[edge.child];
+      const p = l.nodes[edge.parent];
+      const c = l.nodes[edge.child];
       if (!p || !c) continue;
       const cy = c.y + c.h / 2;
       const prev = trunkMap.get(edge.parent);
@@ -1149,6 +1604,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
         <rect
           id="map-bg"
+          data-print-hide
           x={-15000}
           y={-15000}
           width={45000}
@@ -1162,16 +1618,16 @@ export const MapView: React.FC<MapViewProps> = ({
             key={`trunk-${t.parent}`}
             d={`M ${t.x} ${t.y1} L ${t.x} ${t.y2}`}
             fill="none"
-            stroke={layout.nodes[t.parent]?.accent || 'var(--map-link)'}
+            stroke={l.nodes[t.parent]?.accent || 'var(--map-link)'}
             strokeWidth={2}
             strokeLinecap="round"
           />
         ))}
 
         {/* Connettori gerarchici */}
-        {layout.edges.map((edge, idx) => {
-          const p = layout.nodes[edge.parent];
-          const c = layout.nodes[edge.child];
+        {l.edges.map((edge, idx) => {
+          const p = l.nodes[edge.parent];
+          const c = l.nodes[edge.child];
           if (!p || !c) return null;
 
           const endY = c.y + c.h / 2;
@@ -1202,8 +1658,8 @@ export const MapView: React.FC<MapViewProps> = ({
         })}
 
         {/* Sommari: graffa di chiusura "}" e raccordo verso il blocco */}
-        {layout.summaries.map((s, idx) => {
-          const t = layout.nodes[s.topic];
+        {l.summaries.map((s, idx) => {
+          const t = l.nodes[s.topic];
           if (!t) return null;
           const ym = (s.y1 + s.y2) / 2;
           const hw = SUMMARY_BRACE_W / 2;
@@ -1228,14 +1684,16 @@ export const MapView: React.FC<MapViewProps> = ({
         })}
 
         {/* Nodi della mappa */}
-        {layout.nodes.map((node) => {
-          const isSelected = node.id === selectedTopicId;
+        {l.nodes.map((node) => {
+          const isSelected = selectedSet.has(node.id);
           const isRoot = node.depth === 0;
           const isBranch = node.depth === 1;
           const look = nodeLook(node, darkMode);
           const hasChildren = node.childCount > 0;
           const formulaSvg = formulaSvgCache.get(node.id);
           const hasImage = Boolean(node.imageSrc && resourceUrls.has(node.imageSrc));
+          const isEquation = node.kind === 'equation' || Boolean(node.latex) || Boolean(formulaSvg);
+          const isPlainImage = Boolean(hasImage && !isEquation);
           // Su riempimento pieno i chip si tingono del colore del testo.
           const chipSolidStyle = look.solid
             ? { backgroundColor: 'color-mix(in oklab, currentColor 18%, transparent)' }
@@ -1249,8 +1707,16 @@ export const MapView: React.FC<MapViewProps> = ({
               className="cursor-pointer group"
               onClick={(e) => {
                 e.stopPropagation();
+                if (handlers.current.isConnectingRelationship) {
+                  handlers.current.onConnectRelationshipTarget?.(node.id);
+                  return;
+                }
                 setSelectedRelationshipId(undefined);
-                handlers.current.onSelectTopic(node.id);
+                const isMulti = e.shiftKey || e.ctrlKey || e.metaKey;
+                handlers.current.onSelectTopic(
+                  node.id,
+                  isMulti ? { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey } : undefined
+                );
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -1266,6 +1732,7 @@ export const MapView: React.FC<MapViewProps> = ({
               {/* Alone di selezione: anello esterno adiacente al bordo (3px, 24%) */}
               {isSelected && (
                 <rect
+                  data-print-hide
                   x={-2.25}
                   y={-2.25}
                   width={node.w + 4.5}
@@ -1279,6 +1746,8 @@ export const MapView: React.FC<MapViewProps> = ({
 
               {/* Rettangolo base della card del nodo */}
               <rect
+                data-node-rect
+                data-default-stroke={look.stroke}
                 className="transition-[filter] duration-150 group-hover:brightness-110"
                 width={node.w}
                 height={node.h}
@@ -1421,6 +1890,76 @@ export const MapView: React.FC<MapViewProps> = ({
                   )}
                 </g>
               )}
+              {/* Maniglia di ridimensionamento larghezza blocco (bordo destro, solo blocchi testo) */}
+              {node.id === selectedTopicId && !isPlainImage && !isEquation && editingRef.current?.id !== node.id && (
+                <g
+                  data-print-hide
+                  data-map-ui
+                  data-resize-handle="width"
+                  className="select-none"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={(e) => startResize(e, node, 'width')}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handlers.current.onResizeTopicWidth?.(node.id, null);
+                  }}
+                >
+                  {/* Area di tocco invisibile allargata per touch e mouse agevole */}
+                  <rect
+                    x={node.w - (isCoarse ? 12 : 8)}
+                    y={hasChildren && !node.childrenBelow ? 0 : Math.max(0, node.h / 2 - (isCoarse ? 20 : 16))}
+                    width={isCoarse ? 24 : 16}
+                    height={hasChildren && !node.childrenBelow ? Math.max(16, node.h / 2 - 4) : (isCoarse ? 40 : 32)}
+                    fill="transparent"
+                    style={{ cursor: 'ew-resize' }}
+                  />
+                  {/* Barra/pillola visiva */}
+                  <rect
+                    x={node.w - 2}
+                    y={hasChildren && !node.childrenBelow ? 4 : node.h / 2 - 10}
+                    width={4}
+                    height={hasChildren && !node.childrenBelow ? 12 : 20}
+                    rx={2}
+                    fill="var(--primary)"
+                    stroke="var(--background)"
+                    strokeWidth={1}
+                    style={{ cursor: 'ew-resize', pointerEvents: 'none' }}
+                  />
+                </g>
+              )}
+
+              {/* Maniglia d'angolo per ridimensionamento immagine (in basso a destra, mantiene proporzioni) */}
+              {node.id === selectedTopicId && isPlainImage && !isEquation && editingRef.current?.id !== node.id && (
+                <g
+                  data-print-hide
+                  data-map-ui
+                  data-resize-handle="image"
+                  className="select-none"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={(e) => startResize(e, node, 'image')}
+                >
+                  {/* Area di tocco invisibile allargata per touch */}
+                  <circle
+                    cx={node.w}
+                    cy={node.h}
+                    r={isCoarse ? 18 : 12}
+                    fill="transparent"
+                    style={{ cursor: 'nwse-resize' }}
+                  />
+                  {/* Maniglia d'angolo visiva */}
+                  <circle
+                    cx={node.w}
+                    cy={node.h}
+                    r={isCoarse ? 8 : 5.5}
+                    fill="var(--background)"
+                    stroke="var(--primary)"
+                    strokeWidth={2}
+                    style={{ cursor: 'nwse-resize', pointerEvents: 'none' }}
+                  />
+                </g>
+              )}
+
             </g>
           );
         })}
@@ -1429,8 +1968,8 @@ export const MapView: React.FC<MapViewProps> = ({
             sopra i blocchi. `data-map-ui` esclude il layer da pan e drag del contenitore. */}
         <g data-map-ui>
           <RelationshipLayer
-            relationships={layout.relationships}
-            nodes={layout.nodes}
+            relationships={l.relationships}
+            nodes={l.nodes}
             selectedRelationshipId={selectedRelationshipId}
             onSelectRelationship={setSelectedRelationshipId}
             onControlPointsChange={(relId, points) =>
@@ -1442,7 +1981,7 @@ export const MapView: React.FC<MapViewProps> = ({
         </g>
       </>
     );
-  }, [layout, selectedTopicId, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld]);
+  }, [effectiveLayout, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld, isCoarse, startResize]);
 
   // Fantasma del blocco trascinato e indicatore del bersaglio, sopra tutto il resto.
   const dragLayer = useMemo(() => {
@@ -1538,7 +2077,8 @@ export const MapView: React.FC<MapViewProps> = ({
       ref={containerRef}
       className={cn(
         'relative flex-1 h-full w-full overflow-clip bg-[var(--map-canvas)] select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150',
-        dragOverlay && '!cursor-grabbing'
+        dragOverlay && '!cursor-grabbing',
+        isConnectingRelationship && '!cursor-crosshair'
       )}
       onClick={(e) => {
         // Click sullo sfondo: deseleziona la relazione.
@@ -1546,6 +2086,34 @@ export const MapView: React.FC<MapViewProps> = ({
         if (t === e.currentTarget || t.tagName === 'svg' || t.id === 'map-bg') setSelectedRelationshipId(undefined);
       }}
     >
+      {/* Barra contestuale di selezione multipla */}
+      {selectedTopicIds && selectedTopicIds.length > 1 && (
+        <div
+          data-map-ui
+          onMouseDown={(e) => e.preventDefault()}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-1.5 p-1.5 surface-glass border rounded-xl shadow-composer max-w-[calc(100%-32px)]"
+        >
+          <span className="px-2 text-xs font-medium text-foreground whitespace-nowrap">
+            {selectedTopicIds.length} blocchi selezionati
+          </span>
+          {onAddSummary && (
+            <>
+              <Separator orientation="vertical" className="h-4 mx-0.5" />
+              <Button
+                variant={canAddSummary ? 'default' : 'ghost'}
+                size="sm"
+                className="px-2.5 text-xs"
+                icon={<Braces className="size-4" />}
+                onClick={onAddSummary}
+                title="Crea sommario sui blocchi selezionati (Ctrl+])"
+              >
+                Sommario
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Controlli zoom flottanti in basso a destra */}
       <div
         data-map-ui
@@ -1631,6 +2199,18 @@ export const MapView: React.FC<MapViewProps> = ({
               Fratello
             </Button>
           )}
+          {onAddSummary && canAddSummary && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2 sm:px-[9px] text-xs sm:text-sm"
+              icon={<Braces className="size-4" />}
+              onClick={onAddSummary}
+              title="Crea sommario (Ctrl+])"
+            >
+              Sommario
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -1673,8 +2253,9 @@ export const MapView: React.FC<MapViewProps> = ({
             h={editingNode.h}
             isRoot={editingNode.depth === 0}
             initialText={editing.mode === 'text' ? editing.text ?? '' : editingNode.title}
+            initialRuns={editing.mode === 'text' ? undefined : editingNode.titleRuns}
             selectAll={editing.mode === 'all'}
-            onCommit={(text, exit) => onCommitEdit(editing.id, text, exit)}
+            onCommit={(text, exit, runs) => onCommitEdit(editing.id, text, exit, runs)}
             onCancel={() => onCancelEdit?.()}
           />
         </div>
@@ -1686,12 +2267,33 @@ export const MapView: React.FC<MapViewProps> = ({
           La trasformazione è applicata imperativamente (applyView), non da React. */}
       <svg
         ref={svgRef}
+        data-map-canvas
         className="w-full h-full overflow-visible"
         style={{ transformOrigin: '0 0', willChange: 'transform', textRendering: 'geometricPrecision' }}
       >
-        {content}
+        <g data-map-content>
+          {content}
+        </g>
         {dragLayer}
       </svg>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={
+            contextMenu.target.type === 'node'
+              ? buildNodeMenuItems(contextMenu.target.topicId)
+              : buildBackgroundMenuItems()
+          }
+          onClose={() => setContextMenu(null)}
+          ariaLabel={
+            contextMenu.target.type === 'node'
+              ? 'Menu contestuale blocco'
+              : 'Menu contestuale mappa'
+          }
+        />
+      )}
     </div>
   );
 };

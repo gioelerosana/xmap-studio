@@ -19,6 +19,8 @@ Oggi sa:
 - **esportare** la mappa in **Markdown/OPML**, esportare l'**equazione in
   SVG/PNG**, **importarla** e **unire o dividere** file `.xmind`, oltre a un'
   **anteprima grafica**;
+- **stampare** la mappa su fogli **A4/A3** (una pagina, più pagine da
+  incollare o scala fissa) e, nell'app desktop, **salvarla in PDF**;
 - salvare in modo sicuro (scrittura atomica, backup nascosti, validazione) e
   non perdere nulla alla chiusura (prompt Salva/Non salvare/Annulla);
 - **aprire i `.xmind` dal file manager** (doppio clic / "Apri con…").
@@ -80,7 +82,7 @@ packages/core/src/
   state/         # workbook aperto, undo/redo, DTO verso la UI
   controller.ts  # API unica verso la UI
 apps/web/src/
-  components/    # Sidebar (albero), MapView, Inspector, modali
+  components/    # MapView (+ map/: editor, menu contestuale), Inspector, modali
   adapters/      # dialogo file web / Electron
 apps/desktop/src # main (finestra, IPC, scrittura atomica) + preload
 ```
@@ -211,7 +213,7 @@ Per aprire i `.xmind` dal file manager con la versione desktop, associa il MIME
 
 `Ctrl+O` apri · `Ctrl+S` salva · `Ctrl+Shift+S` salva con nome · `Ctrl+Z` annulla ·
 `Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+Shift+N` aggiungi
-sotto-blocco · `Ctrl+,` impostazioni.
+sotto-blocco · `Ctrl+P` stampa / PDF · `Ctrl+,` impostazioni.
 
 Sulla mappa, come in XMind: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello
 (`Maiusc+Invio` prima) · `F2`, `Spazio` o doppio clic per modificare il testo nel
@@ -227,7 +229,7 @@ un sotto-blocco, sui bordi superiore/inferiore si riordina tra i fratelli.
 L'ispettore a destra raccoglie l'editing del blocco selezionato: testo, equazione
 LaTeX con anteprima, note, etichette, link, marker, colore del ramo, task e
 struttura (relazioni, cornici, sommari). Il menu **⋮** in alto raccoglie
-salva-con-nome, export/import Markdown/OPML, export equazione SVG/PNG, allega
+salva-con-nome, stampa/PDF, export/import Markdown/OPML, export equazione SVG/PNG, allega
 file, unisci mappa, estrai ramo e informazioni.
 
 ---

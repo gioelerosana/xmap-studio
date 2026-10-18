@@ -1,5 +1,8 @@
-import React from 'react';
-import type { TextStyle, TitleRun } from '@xmap/core';
+import React, { useEffect, useState } from 'react';
+import { splitInlineMath, renderLatexToSvg, type TextStyle, type TitleRun } from '@xmap/core';
+
+/** Cache per le formule matematiche renderizzate per non ricalcolare MathJax */
+const inlineSvgCache = new Map<string, { svg: string; error: string | null }>();
 
 /** Luminanza relativa di un colore `#rgb`/`#rrggbb[aa]`; `null` se non è esadecimale. */
 export function hexLuminance(color: string): number | null {
@@ -48,6 +51,92 @@ export function textStyleCss(style?: TextStyle, textLight?: boolean): React.CSSP
   };
 }
 
+interface InlineMathProps {
+  math: string;
+  display?: boolean;
+  fontSizePx?: number;
+}
+
+/**
+ * Rende una singola formula MathJax in linea o display.
+ * Il rendering è memoizzato e asincrono se non già presente in cache.
+ */
+const InlineMath: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 }) => {
+  const cacheKey = `${math}::${fontSizePx}::${display ? 'd' : 'i'}`;
+
+  const [rendered, setRendered] = useState<{ svg: string; error: string | null } | null>(() => {
+    const cached = inlineSvgCache.get(cacheKey);
+    if (cached) return cached;
+    try {
+      // Se già presente nella cache sincrona del core (es. calcolata in EstimatedMetrics)
+      const res = renderLatexToSvg(math, fontSizePx, display ?? false);
+      const entry = { svg: res.svg, error: res.error };
+      inlineSvgCache.set(cacheKey, entry);
+      return entry;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (rendered) return;
+
+    let active = true;
+    const timer = setTimeout(() => {
+      try {
+        const res = renderLatexToSvg(math, fontSizePx, display ?? false);
+        const entry = { svg: res.svg, error: res.error };
+        inlineSvgCache.set(cacheKey, entry);
+        if (active) setRendered(entry);
+      } catch (err: any) {
+        const entry = { svg: '', error: err?.message || 'Errore LaTeX' };
+        inlineSvgCache.set(cacheKey, entry);
+        if (active) setRendered(entry);
+      }
+    }, 0);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [cacheKey, math, display, fontSizePx, rendered]);
+
+  const rawSource = display ? `$$${math}$$` : `$${math}$`;
+
+  if (!rendered) {
+    return <span className="opacity-60 text-[0.9em] font-mono">{rawSource}</span>;
+  }
+
+  if (rendered.error) {
+    return (
+      <span
+        className="text-red-500/80 dark:text-red-400/80 text-[0.85em] font-mono inline-block"
+        title={`Errore formula LaTeX: ${rendered.error}`}
+      >
+        {rawSource}
+      </span>
+    );
+  }
+
+  if (display) {
+    return (
+      <span
+        className="block my-0.5 text-center max-w-full overflow-hidden"
+        style={{ color: 'currentColor' }}
+        dangerouslySetInnerHTML={{ __html: rendered.svg }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="inline align-baseline max-w-full [&>svg]:inline"
+      style={{ color: 'currentColor' }}
+      dangerouslySetInnerHTML={{ __html: rendered.svg }}
+    />
+  );
+};
+
 interface RichTitleProps {
   text: string;
   runs?: TitleRun[];
@@ -55,18 +144,58 @@ interface RichTitleProps {
 }
 
 /**
- * Titolo di un blocco: testo semplice o frammenti con stile proprio
- * (`attributedTitle`). Lo stile del blocco intero lo applica il contenitore.
+ * Titolo di un blocco: testo semplice, frammenti con stile (`runs`),
+ * e formule matematiche inline ($...$) e display ($$...$$).
  */
 export const RichTitle: React.FC<RichTitleProps> = ({ text, runs, textLight }) => {
-  if (!runs || runs.length === 0) return <>{text}</>;
+  if (!runs || runs.length === 0) {
+    const segments = splitInlineMath(text);
+    if (segments.length === 0) return null;
+    if (segments.length === 1 && segments[0].kind === 'text') {
+      return <>{segments[0].value}</>;
+    }
+    return (
+      <>
+        {segments.map((seg, i) =>
+          seg.kind === 'text' ? (
+            <React.Fragment key={i}>{seg.value}</React.Fragment>
+          ) : (
+            <InlineMath key={i} math={seg.value} display={seg.display} fontSizePx={13} />
+          )
+        )}
+      </>
+    );
+  }
+
   return (
     <>
-      {runs.map((run, i) => (
-        <span key={i} style={textStyleCss(run, textLight)}>
-          {run.text}
-        </span>
-      ))}
+      {runs.map((run, i) => {
+        const style = textStyleCss(run, textLight);
+        const segments = splitInlineMath(run.text);
+        if (segments.length === 1 && segments[0].kind === 'text') {
+          return (
+            <span key={i} style={style}>
+              {segments[0].value}
+            </span>
+          );
+        }
+        return (
+          <span key={i} style={style}>
+            {segments.map((seg, j) =>
+              seg.kind === 'text' ? (
+                <React.Fragment key={j}>{seg.value}</React.Fragment>
+              ) : (
+                <InlineMath
+                  key={j}
+                  math={seg.value}
+                  display={seg.display}
+                  fontSizePx={run.fontSizePx ?? 13}
+                />
+              )
+            )}
+          </span>
+        );
+      })}
     </>
   );
 };

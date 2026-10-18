@@ -137,7 +137,7 @@ export const RelationshipLayer: React.FC<RelationshipLayerProps> = ({
                 const h = geo.handles[i];
                 const end = ends[i];
                 return (
-                  <g key={`h-${i}`}>
+                  <g key={`h-${i}`} data-print-hide>
                     <line
                       x1={end.x}
                       y1={end.y}

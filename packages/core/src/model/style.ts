@@ -94,6 +94,207 @@ export function readTitleRuns(topic: Topic): TitleRun[] | undefined {
   return styled ? runs : undefined;
 }
 
+function shallowEqualBags(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const k of keysA) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
+interface ParsedRunItem {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  color?: string;
+  fontSizePx?: number;
+  rawWeight?: unknown;
+  extra: Record<string, unknown>;
+}
+
+/**
+ * Imposta il titolo e la formattazione parziale (`attributedTitle`) del blocco.
+ * - Scrive `title` = concatenazione del testo dei frammenti.
+ * - `attributedTitle` = frammenti normalizzati (unisce frammenti adiacenti con stile identico;
+ *   se nessun frammento ha stile, rimuove `attributedTitle` e lascia solo `title`).
+ * - Preserva le chiavi sconosciute dei frammenti.
+ * - Rimuove `titleUnedited`.
+ */
+export function setTitleRuns(topic: Topic, runs: TitleRun[]): void {
+  delete topic.titleUnedited;
+
+  if (!Array.isArray(runs) || runs.length === 0) {
+    topic.title = '';
+    delete topic.attributedTitle;
+    return;
+  }
+
+  // Estrae e normalizza i frammenti in ingresso.
+  const parsedItems: ParsedRunItem[] = [];
+  for (const item of runs) {
+    if (!item) continue;
+    const text = typeof item.text === 'string' ? item.text : '';
+    if (text === '') continue;
+
+    const raw = item as unknown as Record<string, unknown>;
+    const bold =
+      item.bold !== undefined
+        ? item.bold
+          ? true
+          : undefined
+        : raw['fo:font-weight'] !== undefined
+        ? parseBold(raw['fo:font-weight'])
+        : undefined;
+
+    const italic =
+      item.italic !== undefined
+        ? item.italic
+          ? true
+          : undefined
+        : raw['fo:font-style'] !== undefined
+        ? parseItalic(raw['fo:font-style'])
+        : undefined;
+
+    const rawDeco =
+      raw['fo:text-decoration'] !== undefined ? parseDecoration(raw['fo:text-decoration']) : undefined;
+    const underline =
+      item.underline !== undefined
+        ? item.underline
+          ? true
+          : undefined
+        : rawDeco?.underline || undefined;
+
+    const strikethrough =
+      item.strikethrough !== undefined
+        ? item.strikethrough
+          ? true
+          : undefined
+        : rawDeco?.strikethrough || undefined;
+
+    let color: string | undefined = undefined;
+    if (typeof item.color === 'string' && COLOR_RE.test(item.color.trim())) {
+      color = item.color.trim();
+    } else if (typeof raw['fo:color'] === 'string' && COLOR_RE.test(raw['fo:color'].trim())) {
+      color = raw['fo:color'].trim();
+    }
+
+    let fontSizePx: number | undefined = undefined;
+    if (typeof item.fontSizePx === 'number' && item.fontSizePx > 0) {
+      fontSizePx = item.fontSizePx;
+    } else if (raw['fo:font-size'] !== undefined) {
+      fontSizePx = parseFontSizePx(raw['fo:font-size']);
+    }
+
+    const extra: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (
+        ![
+          'text',
+          'bold',
+          'italic',
+          'underline',
+          'strikethrough',
+          'color',
+          'fontSizePx',
+          'fo:font-weight',
+          'fo:font-style',
+          'fo:text-decoration',
+          'fo:color',
+          'fo:font-size',
+        ].includes(k)
+      ) {
+        extra[k] = v;
+      }
+    }
+
+    parsedItems.push({
+      text,
+      bold,
+      italic,
+      underline,
+      strikethrough,
+      color,
+      fontSizePx,
+      rawWeight: raw['fo:font-weight'],
+      extra,
+    });
+  }
+
+  // Unisce frammenti adiacenti con stile identico.
+  const merged: ParsedRunItem[] = [];
+  for (const cur of parsedItems) {
+    if (merged.length > 0) {
+      const prev = merged[merged.length - 1];
+      const sameStyle =
+        prev.bold === cur.bold &&
+        prev.italic === cur.italic &&
+        prev.underline === cur.underline &&
+        prev.strikethrough === cur.strikethrough &&
+        prev.color === cur.color &&
+        prev.fontSizePx === cur.fontSizePx &&
+        shallowEqualBags(prev.extra, cur.extra);
+
+      if (sameStyle) {
+        prev.text += cur.text;
+        continue;
+      }
+    }
+    merged.push(cur);
+  }
+
+  const title = merged.map((m) => m.text).join('');
+  topic.title = title;
+
+  const hasStyle = merged.some(
+    (m) =>
+      m.bold !== undefined ||
+      m.italic !== undefined ||
+      m.underline !== undefined ||
+      m.strikethrough !== undefined ||
+      m.color !== undefined ||
+      m.fontSizePx !== undefined ||
+      Object.keys(m.extra).length > 0
+  );
+
+  if (!hasStyle || merged.length === 0) {
+    delete topic.attributedTitle;
+    return;
+  }
+
+  const fragments = merged.map((item) => {
+    const frag: Record<string, unknown> = {
+      text: item.text,
+      ...item.extra,
+    };
+    if (item.bold) {
+      frag['fo:font-weight'] =
+        typeof item.rawWeight === 'string' && parseBold(item.rawWeight) ? item.rawWeight : 'bold';
+    }
+    if (item.italic) {
+      frag['fo:font-style'] = 'italic';
+    }
+    if (item.underline || item.strikethrough) {
+      const parts = [item.underline ? 'underline' : '', item.strikethrough ? 'line-through' : ''].filter(
+        Boolean
+      );
+      frag['fo:text-decoration'] = parts.join(' ');
+    }
+    if (item.color) {
+      frag['fo:color'] = item.color;
+    }
+    if (item.fontSizePx) {
+      frag['fo:font-size'] = `${Math.round(item.fontSizePx * 0.75 * 100) / 100}pt`;
+    }
+    return frag;
+  });
+
+  topic.attributedTitle = fragments;
+}
+
 /** Applica `patch` a `style.properties` conservando ogni altra chiave. */
 export function setTextStyle(topic: Topic, patch: TextStylePatch): void {
   if (!isBag(topic.style)) topic.style = { id: newTopicId() };
