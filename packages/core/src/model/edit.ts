@@ -653,10 +653,11 @@ export interface SiblingRange {
 }
 
 /**
- * Individua l'intervallo contiguo (da min a max indice) per un insieme di blocchi
- * fratelli (stesso genitore, gruppo 'attached', non radice e non detached/liberi).
- * Restituisce `null` se la selezione è vuota, se i blocchi non esistono, non
- * appartengono allo stesso genitore/foglio, o contengono la radice o blocchi liberi/sommari.
+ * Individua l'intervallo contiguo (da min a max indice) di figli 'attached' che racchiude
+ * un insieme di blocchi: fratelli diretti, oppure, con genitori diversi, i rami del primo
+ * antenato comune che li contengono.
+ * Restituisce `null` se la selezione è vuota, se i blocchi non esistono, sono su fogli
+ * diversi, o contengono la radice o blocchi liberi/sommari.
  */
 export function siblingRange(sheets: Sheet[], ids: string[]): SiblingRange | null {
   const uniqueIds = Array.from(new Set(ids.map((id) => id?.trim()).filter(Boolean)));
@@ -673,34 +674,31 @@ export function siblingRange(sheets: Sheet[], ids: string[]): SiblingRange | nul
   const sheet = sheets[sheetIdx!];
   if (!sheet?.rootTopic) return null;
 
-  let parentId: string | undefined;
-  let parentTopic: Topic | undefined;
-  const indices: number[] = [];
-
+  const paths: PathItem[][] = [];
   for (const id of uniqueIds) {
     if (sheet.rootTopic.id === id) return null;
-
     const path: PathItem[] = [];
     if (!findPath(sheet.rootTopic, id, path) || path.length === 0) return null;
-
-    const last = path[path.length - 1];
-    if (last.group !== 'attached') return null;
-
-    const parent = descend(sheet.rootTopic, path.slice(0, -1));
-    if (!parent.id) return null;
-
-    if (parentId === undefined) {
-      parentId = parent.id;
-      parentTopic = parent;
-    } else if (parentId !== parent.id) {
-      return null;
-    }
-
-    indices.push(last.index);
+    if (path.some((p) => p.group !== 'attached')) return null;
+    paths.push(path);
   }
 
-  if (!parentId || !parentTopic) return null;
+  // Primo antenato comune: se i blocchi hanno genitori diversi (o uno contiene l'altro)
+  // il sommario copre i rami figli di quell'antenato che contengono la selezione.
+  const minLen = Math.min(...paths.map((p) => p.length));
+  let depth = 0;
+  while (
+    depth < minLen - 1 &&
+    paths.every((p) => p[depth].index === paths[0][depth].index)
+  ) {
+    depth++;
+  }
 
+  const parentTopic = descend(sheet.rootTopic, paths[0].slice(0, depth));
+  const parentId = parentTopic.id;
+  if (!parentId) return null;
+
+  const indices = paths.map((p) => p[depth].index);
   const start = Math.min(...indices);
   const end = Math.max(...indices);
   const childCount = parentTopic.children?.attached?.length ?? 0;

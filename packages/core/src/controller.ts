@@ -780,7 +780,7 @@ export class AppController {
     const wb = this.ensureWorkbook();
     const range = siblingRange(wb.content, topicIds);
     if (!range) {
-      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati devono essere fratelli per creare un sommario.');
+      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati non sono validi per creare un sommario.');
     }
     return this.addTopicSummary(range.parentId, range.start, range.end, title);
   }

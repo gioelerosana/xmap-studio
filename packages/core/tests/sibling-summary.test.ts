@@ -81,10 +81,12 @@ describe('siblingRange', () => {
     expect(siblingRange(s, ['sum-existing'])).toBeNull();
   });
 
-  it('restituisce null se i blocchi appartengono a genitori diversi', () => {
+  it('con genitori diversi risale al primo antenato comune', () => {
     const s = makeSheets();
-    // c0 è figlio di root-1, sub0 è figlio di c0
-    expect(siblingRange(s, ['c0', 'sub0'])).toBeNull();
+    // sub0 è figlio di c0: il sommario copre il ramo c0 della radice
+    expect(siblingRange(s, ['c0', 'sub0'])).toEqual({ parentId: 'root-1', start: 0, end: 0 });
+    // cugini: sub1 (sotto c0) e c2 → rami 0..2 della radice
+    expect(siblingRange(s, ['sub1', 'c2'])).toEqual({ parentId: 'root-1', start: 0, end: 2 });
   });
 
   it('restituisce null se i blocchi appartengono a fogli diversi', () => {
@@ -161,6 +163,6 @@ describe('controller: creazione sommario tra fratelli e cronologia', () => {
   it('addSummaryForSiblings lancia un errore se i blocchi non sono fratelli', async () => {
     const c = new AppController();
     await c.open(await minimalXmind());
-    expect(() => c.addSummaryForSiblings(['r', 'a'])).toThrow(/fratelli/);
+    expect(() => c.addSummaryForSiblings(['r', 'a'])).toThrow(/sommario/);
   });
 });

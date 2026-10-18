@@ -643,7 +643,7 @@ export const App: React.FC = () => {
 
     const range = controller.siblingRange(ids);
     if (!range) {
-      addToast('warning', 'I blocchi selezionati devono essere fratelli (stesso genitore) per creare un sommario.');
+      addToast('warning', 'Impossibile creare un sommario con questa selezione (radice, blocchi liberi o fogli diversi).');
       return;
     }
 
