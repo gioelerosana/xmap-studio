@@ -11,8 +11,9 @@ pkgname=$_pkgname-git
 pkgver=0.1.0.r126.g67abef1
 pkgrel=1
 pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato (development build)'
+url='https://github.com/JoelShepard/xmap-studio'
 arch=('x86_64')
-license=('custom')
+license=('MIT')
 provides=("$_pkgname")
 conflicts=("$_pkgname")
 _electron=electron43
@@ -63,4 +64,5 @@ package() {
     "$pkgdir/usr/share/icons/hicolor/256x256/apps/org.joel.xmap_studio.png"
   install -Dm644 assets/icon-512.png \
     "$pkgdir/usr/share/icons/hicolor/512x512/apps/org.joel.xmap_studio.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

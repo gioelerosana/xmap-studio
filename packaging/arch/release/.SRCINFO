@@ -2,14 +2,15 @@ pkgbase = xmap-studio
 	pkgdesc = Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato
 	pkgver = 0.1.0
 	pkgrel = 1
+	url = https://github.com/JoelShepard/xmap-studio
 	arch = x86_64
-	license = custom
+	license = MIT
 	makedepends = git
 	makedepends = nodejs
 	depends = electron43
 	options = !strip
 	options = !debug
-	source = xmap-studio::git+ssh://git@gitlab.com/JoelShepard/xmap-studio.git#tag=v0.1.0
+	source = xmap-studio::git+https://github.com/JoelShepard/xmap-studio.git#tag=v0.1.0
 	source = xmap-studio.sh
 	source = org.joel.xmap_studio.desktop
 	sha256sums = SKIP

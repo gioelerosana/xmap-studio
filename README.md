@@ -290,3 +290,7 @@ nativo con il LaTeX corretto.
   worker.
 - La build web segnala un bundle JavaScript principale sopra 500 kB e moduli
   Node esternalizzati. La build riesce; resta lavoro di packaging/performance.
+
+## Licenza
+
+[MIT](LICENSE).

@@ -11,16 +11,16 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato'
 arch=('x86_64')
-license=('custom')
+license=('MIT')
 _electron=electron43
 depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
-# Repository privato: richiede credenziali SSH configurate.
+url='https://github.com/JoelShepard/xmap-studio'
 # Per test locale senza rete:
 # source=("$pkgname::git+file://$(realpath "$startdir/../../..")#tag=v${pkgver}"
-source=("$pkgname::git+ssh://git@gitlab.com/JoelShepard/xmap-studio.git#tag=v${pkgver}"
+source=("$pkgname::git+$url.git#tag=v${pkgver}"
         'xmap-studio.sh'
         'org.joel.xmap_studio.desktop')
 sha256sums=('SKIP'
@@ -58,4 +58,5 @@ package() {
     "$pkgdir/usr/share/icons/hicolor/256x256/apps/org.joel.xmap_studio.png"
   install -Dm644 assets/icon-512.png \
     "$pkgdir/usr/share/icons/hicolor/512x512/apps/org.joel.xmap_studio.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

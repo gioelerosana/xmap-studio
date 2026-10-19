@@ -1,6 +1,7 @@
 {
   "name": "@xmap/desktop",
   "version": "0.1.0",
+  "license": "MIT",
   "productName": "XMap Studio",
   "desktopName": "org.joel.xmap_studio.desktop",
   "private": true,
