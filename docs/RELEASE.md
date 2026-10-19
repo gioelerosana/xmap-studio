@@ -83,6 +83,21 @@ docker run --rm -v "$PWD":/project -w /project electronuserland/builder:wine \
   bash -c 'npm i -g pnpm@12.9.1 && pnpm install --frozen-lockfile && pnpm dist:win'
 ```
 
+Le icone dei pacchetti in `apps/desktop/build/` (`icon.svg`, `icon.png`,
+`icon.ico`, `icons/<n>x<n>.png`) sono copie derivate da `assets/icon.svg`:
+quando cambia l'icona vanno rigenerate, altrimenti AppImage ed exe escono con
+quella vecchia:
+
+```bash
+B=apps/desktop/build
+cp assets/icon.svg $B/icon.svg
+rsvg-convert -w 512 -h 512 assets/icon.svg -o $B/icon.png
+for s in 16 32 48 64 128 256 512; do
+  rsvg-convert -w $s -h $s assets/icon.svg -o $B/icons/${s}x${s}.png
+done
+magick $B/icons/{16x16,32x32,48x48,64x64,128x128,256x256}.png $B/icon.ico
+```
+
 L'AppImage richiede FUSE 2 sull'host (limite di AppImage); altrimenti si avvia
 con `--appimage-extract-and-run`. Il lancio aggiunge da sé `--no-sandbox` dove
 i user namespace non privilegiati non sono disponibili.
