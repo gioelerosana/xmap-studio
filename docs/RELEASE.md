@@ -13,7 +13,7 @@ allineati a ogni release.
    `packages/core`, `packages/ui-kit`, `apps/web`, `apps/desktop`).
 2. Allinea il pacchetto Arch: `packaging/arch/bump-pkgver.sh` (legge la versione
    da `apps/desktop/package.json`, azzera `pkgrel` e rigenera `.SRCINFO`).
-3. Aggiorna il `README.md` se cambiano stack, architettura o limiti noti.
+3. Aggiorna `README.md` (cosa fa l'app) e `docs/OVERVIEW.md` (stack, architettura, limiti noti) se cambiano.
 4. `pnpm install --frozen-lockfile`.
 5. `pnpm build` — core, ui-kit, web ed Electron devono compilare senza errori.
 6. `pnpm test` — tutti verdi.

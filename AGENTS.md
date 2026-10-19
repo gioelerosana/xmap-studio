@@ -296,7 +296,7 @@ xmap-studio/
 ├── .github/workflows/release.yml # workflow di release (solo sui tag vX.Y.Z)
 ├── LICENSE                       # MIT
 ├── TODO.md                       # backlog dell'utente: la direzione del lavoro
-├── README.md                     # documentazione utente
+├── README.md                     # presentazione per l'utente (breve)
 ├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata
 ├── docs/                         # documentazione tecnica

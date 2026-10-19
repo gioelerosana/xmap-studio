@@ -5,6 +5,7 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 
 | Documento | Contenuto |
 |---|---|
+| [`OVERVIEW.md`](OVERVIEW.md) | Panoramica tecnica: stack, architettura, formato, scorciatoie, limiti |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Monorepo TypeScript e flusso dati |
 | [`XMIND-FORMAT.md`](XMIND-FORMAT.md) | Struttura `.xmind`, schema MathJax verificato e trappole |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Prerequisiti, build e avvio del monorepo TypeScript |
