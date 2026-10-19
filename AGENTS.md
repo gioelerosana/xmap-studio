@@ -48,8 +48,8 @@ matrice di parità con lo stato di ogni voce è in
 - Repository: pubblico su GitHub
   ([`gioelerosana/xmap-studio`](https://github.com/gioelerosana/xmap-studio)),
   licenza [MIT](LICENSE). GitLab (`gitlab.com/JoelShepard/xmap-studio`) è solo un
-  mirror di sicurezza in sola lettura, aggiornato a ogni push da
-  `.github/workflows/mirror.yml`: non si pusha lì.
+  mirror di sicurezza in sola lettura del solo `main`, aggiornato a ogni push su
+  `main` da `.github/workflows/mirror.yml`: non si pusha lì.
 
 ## `TODO.md`: la direzione del lavoro
 
@@ -296,7 +296,7 @@ xmap-studio/
 ├── package.json / pnpm-workspace.yaml / pnpm-lock.yaml
 ├── AGENTS.md                     # questo file
 ├── .github/workflows/release.yml # workflow di release (solo sui tag vX.Y.Z)
-├── .github/workflows/mirror.yml  # copia di ogni push su GitLab (mirror)
+├── .github/workflows/mirror.yml  # copia di `main` su GitLab (mirror)
 ├── LICENSE                       # MIT
 ├── TODO.md                       # backlog dell'utente: la direzione del lavoro
 ├── README.md                     # presentazione per l'utente (breve)
@@ -344,8 +344,9 @@ aggiungere file di build o cache al repository.
 - Repository remoto: `github.com/gioelerosana/xmap-studio` (`origin`),
   **pubblico**: non committare dati personali, segreti o file di prova privati.
 - Mirror: `gitlab.com/JoelShepard/xmap-studio` (remote `gitlab`, se presente),
-  aggiornato da GitHub Actions con una deploy key (secret
-  `GITLAB_MIRROR_SSH_KEY`); il suo `main` rifiuta ogni altro push.
+  riceve solo `main`, da GitHub Actions con una deploy key (secret
+  `GITLAB_MIRROR_SSH_KEY`); il suo `main` rifiuta ogni altro push. Gli altri
+  branch e i tag restano solo su GitHub.
 - Branch principale: **`main`**.
 - Commit: [Conventional Commits](https://www.conventionalcommits.org/) con tipo
   in inglese e descrizione in italiano:
