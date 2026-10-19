@@ -7,7 +7,7 @@
 #   ../bump-pkgver.sh [X.Y.Z]
 
 pkgname=xmap-studio
-pkgver=0.1.0
+pkgver=0.0.1
 pkgrel=1
 pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato'
 arch=('x86_64')
