@@ -1,0 +1,100 @@
+# Workflow di release: gira quando si pusha un tag di versione (vX.Y.Z) e
+# quando lo si lancia a mano da GitHub (Actions › Release › Run workflow, su
+# qualunque branch o tag). Nessun workflow per push su branch o pull request.
+#
+#   git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
+#
+# Nei lanci manuali su un branch non c'è un tag da confrontare: il controllo
+# tag/versione si salta, build e test girano comunque.
+#
+# Produce due artefatti standalone, allegati alla GitHub Release del tag (nei
+# lanci manuali restano scaricabili dalla pagina del run):
+#   - XMap-Studio-<versione>-portable-x64.exe   Windows, eseguibile portable
+#   - XMap-Studio-<versione>-x86_64.AppImage    Linux, AppImage
+# Il pacchetto Arch non si compila qui: vedi packaging/arch/README.md.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Versione di pnpm con cui è stato generato pnpm-lock.yaml.
+  PNPM_VERSION: '12.9.1'
+  # Il binario di Electron serve solo agli script di sviluppo: electron-builder
+  # scarica da sé quello della piattaforma di destinazione.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # Immagine con Node, Wine (per icona e metadati dell'exe, cross-build da
+    # Linux) e le librerie di electron-builder. Il tag `wine` è quello con cui
+    # la build è stata provata (Node 24, Wine 11); se un aggiornamento
+    # dell'immagine rompe la build, fissa un tag o un digest preciso.
+    container: electronuserland/builder:wine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Controllo tag/versione
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            node scripts/check-release-version.mjs "$GITHUB_REF_NAME"
+          else
+            echo "Lancio manuale senza tag: controllo tag/versione saltato."
+          fi
+      - run: pnpm build
+      - run: pnpm test
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    container: electronuserland/builder:wine
+    strategy:
+      matrix:
+        include:
+          - target: windows
+            script: dist:win
+            pattern: XMap-Studio-*-portable-x64.exe
+          - target: linux
+            script: dist:linux
+            pattern: XMap-Studio-*-x86_64.AppImage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm ${{ matrix.script }}
+      - name: Checksum
+        working-directory: apps/desktop/release
+        run: sha256sum ${{ matrix.pattern }} > SHA256SUMS-${{ matrix.target }}.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xmap-studio-${{ matrix.target }}
+          path: |
+            apps/desktop/release/${{ matrix.pattern }}
+            apps/desktop/release/SHA256SUMS-${{ matrix.target }}.txt
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "XMap Studio $GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
