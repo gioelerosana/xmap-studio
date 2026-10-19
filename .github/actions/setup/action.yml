@@ -9,7 +9,7 @@ runs:
       run: |
         npm install --global "pnpm@$PNPM_VERSION"
         pnpm config set store-dir "$GITHUB_WORKSPACE/.pnpm-store"
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       with:
         path: .pnpm-store
         key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}

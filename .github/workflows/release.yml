@@ -38,7 +38,7 @@ jobs:
     # dell'immagine rompe la build, fissa un tag o un digest preciso.
     container: electronuserland/builder:wine
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - name: Controllo tag/versione
         run: |
@@ -64,13 +64,13 @@ jobs:
             script: dist:linux
             pattern: XMap-Studio-*-x86_64.AppImage
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: pnpm ${{ matrix.script }}
       - name: Checksum
         working-directory: apps/desktop/release
         run: sha256sum ${{ matrix.pattern }} > SHA256SUMS-${{ matrix.target }}.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: xmap-studio-${{ matrix.target }}
           path: |
@@ -85,7 +85,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
