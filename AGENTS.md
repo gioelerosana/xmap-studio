@@ -160,12 +160,7 @@ delega a **Sonnet** e **Haiku**, mai ad altre istanze di Opus.
 | Modello | Quando usarlo |
 |---|---|
 | **Haiku** (preferito, costa meno) | lavoro meccanico e ben specificato: rinomini, restyle, migrazioni ripetitive, aggiornamento di import/doc, test su pattern esistenti, ricerche nella codebase |
-| **Sonnet** | lavoro che richiede giudizio: componenti fondanti, logica nuova in `packages/core`, formato `.xmind`, debugging non banale, refactoring trasversali |
 | Modello principale | **solo** orchestrazione: piano, contratti condivisi, revisione e integrazione finale |
-
-Parti da Haiku; sali a Sonnet solo se il compito lo richiede davvero o se Haiku
-ha fallito. Non delegare compiti banali (una modifica di poche righe): falli
-direttamente, uno spawn costa più del lavoro.
 
 #### Override temporaneo: Antigravity Sec (periodo di prova)
 
