@@ -45,7 +45,9 @@ matrice di parità con lo stato di ogni voce è in
   - `apps/desktop` — shell Electron (main process + preload).
 - Documentazione: [`README.md`](README.md) (utente), [`docs/`](docs/README.md)
   (tecnica).
-- Repository: privato su GitLab (`gitlab.com`).
+- Repository: pubblico su GitHub
+  ([`JoelShepard/xmap-studio`](https://github.com/JoelShepard/xmap-studio)),
+  licenza [MIT](LICENSE).
 
 ## `TODO.md`: la direzione del lavoro
 
@@ -209,9 +211,9 @@ Dà buona qualità se ben orchestrato, quindi:
 - Ogni sotto-agente lavora su un branch proprio
   (`feat/<slug>-<parte>`); l'orchestratore integra i branch nel branch di
   lavoro e risolve i conflitti.
-- Nessun sotto-agente aggiunge dipendenze, fa commit su `main`, push o apre MR:
+- Nessun sotto-agente aggiunge dipendenze, fa commit su `main`, push o apre PR:
   sono decisioni dell'orchestratore. Commit e push del branch di lavoro li fa
-  l'orchestratore a fine task (vedi §"Chiusura di ogni task"); la MR resta una
+  l'orchestratore a fine task (vedi §"Chiusura di ogni task"); la PR resta una
   decisione dell'utente.
 - I sotto-agenti rispettano le regole non negoziabili sotto: nel prompt di
   delega richiamale esplicitamente quando il compito tocca salvataggio,
@@ -255,12 +257,12 @@ Ogni task si chiude **sempre** così, senza aspettare che l'utente lo chieda:
 
 1. se sei su `main`, crea prima un branch di lavoro (`feat/<slug>`, `fix/<slug>`, …);
 2. committa **tutte** le modifiche del working tree (Conventional Commits, vedi
-   §"Git e GitLab"), divise in più commit se toccano argomenti distinti;
+   §"Git e GitHub"), divise in più commit se toccano argomenti distinti;
 3. `git push -u origin <branch>`;
 4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato e lo
    stato di `TODO.md` (voci chiuse, voci ancora aperte).
 
-Non si fa push su `main` né force-push; la Merge Request la apre l'utente o la
+Non si fa push su `main` né force-push; la Pull Request la apre l'utente o la
 si apre solo su sua richiesta.
 
 ### Mobile e PWA
@@ -291,7 +293,8 @@ Per provarla su un dispositivo: `pnpm build`, poi `cd apps/web && npx vite previ
 xmap-studio/
 ├── package.json / pnpm-workspace.yaml / pnpm-lock.yaml
 ├── AGENTS.md                     # questo file
-├── .gitlab-ci.yml                # pipeline di release (solo sui tag vX.Y.Z)
+├── .github/workflows/release.yml # workflow di release (solo sui tag vX.Y.Z)
+├── LICENSE                       # MIT
 ├── TODO.md                       # backlog dell'utente: la direzione del lavoro
 ├── README.md                     # documentazione utente
 ├── assets/                       # icona e metadati desktop
@@ -333,9 +336,10 @@ Mappa dei moduli e flusso dati: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 `pnpm-lock.yaml` è **versionato** (è un'applicazione, non una libreria). Non
 aggiungere file di build o cache al repository.
 
-## Git e GitLab
+## Git e GitHub
 
-- Repository remoto: `gitlab.com`, **privato**.
+- Repository remoto: `github.com/JoelShepard/xmap-studio`, **pubblico**: non
+  committare dati personali, segreti o file di prova privati.
 - Branch principale: **`main`**.
 - Commit: [Conventional Commits](https://www.conventionalcommits.org/) con tipo
   in inglese e descrizione in italiano:
@@ -347,16 +351,16 @@ aggiungere file di build o cache al repository.
   ```
 
 - Branch di lavoro: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `refactor/<slug>`.
-- Apri una Merge Request verso `main`; non fare push diretto su `main` per
+- Apri una Pull Request verso `main`; non fare push diretto su `main` per
   cambiamenti non banali.
 - Non riscrivere la storia di `main`, non fare force-push su `main`.
 
 ### Comandi utili
 
 ```bash
-glab auth status                       # verifica login GitLab
-glab repo view --web                   # apri il repo nel browser
-glab mr create --fill --target-branch main
+gh auth status                         # verifica login GitHub
+gh repo view --web                     # apri il repo nel browser
+gh pr create --fill --base main
 ```
 
 ## Ricette rapide

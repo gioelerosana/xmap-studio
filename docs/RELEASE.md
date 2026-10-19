@@ -19,7 +19,7 @@ allineati a ogni release.
 6. `pnpm test` — tutti verdi.
 7. Collauda l'app con `pnpm dev:desktop` e apri in XMind un file generato
    (vedi [`TESTING.md`](TESTING.md)).
-8. Commit, tag annotato e push. **Il push del tag avvia la pipeline di release**:
+8. Commit, tag annotato e push. **Il push del tag avvia il workflow di release**:
 
    ```bash
    git add -A
@@ -29,31 +29,40 @@ allineati a ogni release.
    git push origin v<versione>
    ```
 
-9. Attendi la pipeline del tag su GitLab (vedi sotto) e scarica gli artefatti.
+9. Attendi il workflow del tag su GitHub Actions (vedi sotto): a fine run gli
+   artefatti sono allegati alla GitHub Release del tag.
 
-## Pipeline di release (GitLab CI)
+## Workflow di release (GitHub Actions)
 
-[`.gitlab-ci.yml`](../.gitlab-ci.yml) gira sui tag `vX.Y.Z` (SemVer puro) e
-**a mano** da GitLab (Build › Pipelines › Run pipeline, scegliendo branch o
-tag); niente pipeline per i push su branch o per le merge request. Tre job:
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) gira sui tag
+`vX.Y.Z` (SemVer puro) e **a mano** da GitHub (Actions › Release › Run workflow,
+scegliendo branch o tag); niente workflow per i push su branch o per le pull
+request. I passi comuni (pnpm, cache dello store, `pnpm install`) sono
+nell'azione locale [`.github/actions/setup`](../.github/actions/setup/action.yml).
+Job:
 
 | Job | Stage | Cosa fa |
 |---|---|---|
 | `verify` | verify | `scripts/check-release-version.mjs`: il tag deve coincidere con la `version` di tutti i `package.json` e con `pkgver` del PKGBUILD di release; poi `pnpm build` e `pnpm test` |
-| `build:windows` | build | `pnpm dist:win` → `XMap-Studio-<versione>-portable-x64.exe` (+ `SHA256SUMS-windows.txt`) |
-| `build:linux-appimage` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage` (+ `SHA256SUMS-linux.txt`) |
+| `build (windows)` | build | `pnpm dist:win` → `XMap-Studio-<versione>-portable-x64.exe` (+ `SHA256SUMS-windows.txt`) |
+| `build (linux)` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage` (+ `SHA256SUMS-linux.txt`) |
+| `release` | release | solo sui tag: crea la GitHub Release del tag (note generate dai commit) e allega i due artefatti e i checksum |
 
 In un lancio manuale su un branch non c'è un tag: il controllo tag/versione si
 salta, build e test girano comunque (su un tag viene eseguito normalmente). I
-due build partono solo se `verify` è verde. Tutti usano l'immagine
-`electronuserland/builder:wine` (Node, Wine per icona e metadati dell'exe,
-cross-build da Linux) e la versione di pnpm fissata nella variabile `PNPM_VERSION`
-del `.gitlab-ci.yml` (da tenere allineata a quella che genera `pnpm-lock.yaml`). Gli artefatti (`expire_in: never`) si scaricano dalla
-pipeline del tag. Non c'è firma del codice: Windows SmartScreen può mostrare un
+due build partono solo se `verify` è verde. `verify` e i build girano nel
+container `electronuserland/builder:wine` (Node, Wine per icona e metadati
+dell'exe, cross-build da Linux) con la versione di pnpm fissata nella variabile
+`PNPM_VERSION` del workflow (da tenere allineata a quella che genera
+`pnpm-lock.yaml`). Gli artefatti restano per sempre nella GitHub Release del
+tag; nei lanci manuali si scaricano dalla pagina del run (scadono dopo 90
+giorni). Non c'è firma del codice: Windows SmartScreen può mostrare un
 avviso al primo avvio.
 
 Se `verify` fallisce per versioni disallineate, correggi, poi sposta il tag:
-`git tag -d v<v> && git push origin :refs/tags/v<v>` e ripeti dal punto 8.
+`git tag -d v<v> && git push origin :refs/tags/v<v>` e ripeti dal punto 8. Se
+la Release del tag era già stata creata, cancellala prima
+(`gh release delete v<v>`).
 
 ### Build in locale
 
@@ -84,8 +93,8 @@ i user namespace non privilegiati non sono disponibili.
 |---|---|---|
 | Web app (build Vite) | `apps/web/dist/` | no (inclusa nei pacchetti) |
 | Processo Electron compilato | `apps/desktop/dist/` | no |
-| AppImage Linux | `apps/desktop/release/` | sì (pipeline del tag) |
-| Exe portable Windows | `apps/desktop/release/` | sì (pipeline del tag) |
+| AppImage Linux | `apps/desktop/release/` | sì (GitHub Release del tag) |
+| Exe portable Windows | `apps/desktop/release/` | sì (GitHub Release del tag) |
 | Pacchetto Arch | `packaging/arch/` | no (si compila in locale) |
 
 ## Pacchetto Arch Linux
@@ -101,5 +110,5 @@ Due PKGBUILD, con regole di manutenzione in
 Usano l'Electron di sistema (`electron43`) e installano l'app in
 `/usr/lib/xmap-studio`, il comando `xmap-studio`, la voce di menu, le icone
 `hicolor` e il tipo MIME `application/xmind`. Il PKGBUILD di release non è
-compilato dalla pipeline: l'allineamento di `pkgver` è però verificato da
+compilato dal workflow: l'allineamento di `pkgver` è però verificato da
 `verify`. `dist/` e `release/` degli artefatti sono in `.gitignore`.

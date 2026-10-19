@@ -27,7 +27,7 @@ webview. La promessa è **offline, nativa, sicura, gratuita**.
 | Elemento | Da | A |
 |---|---|---|
 | Nome prodotto | XMind Equation Studio | **XMap Studio** |
-| Repo / cartella | `xmind-LaTeX` | repo GitLab rinominato in `xmap-studio`; cartella locale invariata |
+| Repo / cartella | `xmind-LaTeX` | repo `xmap-studio`, pubblico su GitHub (prima privato su GitLab); cartella locale invariata |
 | `APP_ID` | `org.joel.xmind_equation_studio` | `org.joel.xmap_studio` |
 | Pacchetti | — | workspace `@xmap/*` |
 | Cartella backup | `.xmind-equation-studio/` | `.xmap-studio/` |
@@ -167,7 +167,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 ## 4. Roadmap proposta
 
 Criterio di ordinamento: **valore per l'utente ÷ (rischio × sforzo × nuove
-dipendenze)**. Ogni fase è spedibile da sola, su branch dedicato, MR verso
+dipendenze)**. Ogni fase è spedibile da sola, su branch dedicato, PR verso
 `main`, con verifica in XMind prima dell'unione.
 
 | Fase | Obiettivo | Valore | Sforzo | Rischio formato | Dipendenze nuove |
@@ -374,8 +374,9 @@ l'arrivo di nuove feature:
 ## 7. Decisioni prese
 
 1. **Nome**: `XMap Studio`.
-2. **Repo**: rinominato su GitLab in `xmap-studio`; cartella locale `xmind-LaTeX`
-   invariata.
+2. **Repo**: rinominato in `xmap-studio`; cartella locale `xmind-LaTeX`
+   invariata. Ottobre 2026: spostato da GitLab (privato) a GitHub (pubblico),
+   licenza MIT.
 3. **Icona**: ritocco della palette, simbolo attuale invariato.
 4. **Roadmap**: ordine Fase 1 → 5 come in §4. Export/import promosso a Fase 2
    (nessuno schema, massimo distacco da Free). Notes/Labels/Markers/Href restano
@@ -404,5 +405,5 @@ l'arrivo di nuove feature:
 10. **Fase 8 — feature parity**: in corso, matrice in §4 Fase 8. Primo
     blocco fatto: drag & drop sulla mappa, stile del testo, relazioni in stile
     XMind con punti di controllo.
-11. **Ogni fase**: branch dedicato (`feat/<slug>`), MR verso `main`, test e
+11. **Ogni fase**: branch dedicato (`feat/<slug>`), PR verso `main`, test e
     verifica in XMind prima dell'unione.

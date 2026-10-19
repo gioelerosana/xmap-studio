@@ -19,7 +19,7 @@ makepkg -si
 *(Nota: le modifiche nel working tree non committate non vengono incluse nella build).*
 
 ### Build di release (`xmap-studio`)
-Compila il tag di versione ufficiale (es. `v0.1.0`) dal remote GitLab:
+Compila il tag di versione ufficiale (es. `v0.1.0`) dal repository pubblico su GitHub (HTTPS, senza credenziali):
 ```bash
 cd packaging/arch/release
 makepkg -si
@@ -85,7 +85,7 @@ makepkg --printsrcinfo > .SRCINFO
 ## 5. Checklist per eventuale pubblicazione futura su AUR
 
 Qualora si decida in futuro di rendere pubblico il pacchetto su AUR (`xmap-studio` o `xmap-studio-git`):
-- [ ] **Accessibilità sorgenti**: AUR richiede sorgenti pubblicamente accessibili senza credenziali SSH (es. tarball release `https://.../archive/v${pkgver}.tar.gz` o repo git pubblico su HTTPS). Sostituire `git+ssh://...` con l'URL pubblico.
+- [x] **Accessibilità sorgenti**: AUR richiede sorgenti pubblicamente accessibili senza credenziali. Il PKGBUILD di release scarica già il tag dal repo pubblico `git+https://github.com/JoelShepard/xmap-studio.git`.
 - [ ] **Checksum reali**: Nel pacchetto release con tarball sorgente, sostituire `'SKIP'` con gli hash SHA256 effettivi (`sha256sums=('...')` o tramite `updpkgsums`).
 - [ ] **Autosufficienza directory**: AUR non ammette riferimenti esterni o symlink a directory genitore. Copiare fisicamente `xmap-studio.sh` e `org.joel.xmap_studio.desktop` nel repository del pacchetto AUR.
 - [ ] **Verifica con namcap**: Eseguire `namcap PKGBUILD` e `namcap xmap-studio-*.pkg.tar.zst` per accertarsi dell'assenza di warning su permessi, dipendenze mancanti o file non standard.
