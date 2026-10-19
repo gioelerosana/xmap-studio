@@ -30,12 +30,12 @@ Apri un file `.xmind`, modificalo direttamente sulla mappa e salvalo:
 ## Installa
 
 Scarica l'**AppImage** (Linux) o l'**exe portable** (Windows) dalle
-[Release](https://github.com/JoelShepard/xmap-studio/releases).
+[Release](https://github.com/gioelerosana/xmap-studio/releases).
 
 Su Arch Linux:
 
 ```bash
-git clone https://github.com/JoelShepard/xmap-studio.git
+git clone https://github.com/gioelerosana/xmap-studio.git
 cd xmap-studio/packaging/arch/release && makepkg -si
 ```
 

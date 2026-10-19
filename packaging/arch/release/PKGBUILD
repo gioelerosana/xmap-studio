@@ -17,7 +17,7 @@ depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
-url='https://github.com/JoelShepard/xmap-studio'
+url='https://github.com/gioelerosana/xmap-studio'
 # Per test locale senza rete:
 # source=("$pkgname::git+file://$(realpath "$startdir/../../..")#tag=v${pkgver}"
 source=("$pkgname::git+$url.git#tag=v${pkgver}"

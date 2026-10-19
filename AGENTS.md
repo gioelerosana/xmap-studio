@@ -46,7 +46,7 @@ matrice di parità con lo stato di ogni voce è in
 - Documentazione: [`README.md`](README.md) (utente), [`docs/`](docs/README.md)
   (tecnica).
 - Repository: pubblico su GitHub
-  ([`JoelShepard/xmap-studio`](https://github.com/JoelShepard/xmap-studio)),
+  ([`gioelerosana/xmap-studio`](https://github.com/gioelerosana/xmap-studio)),
   licenza [MIT](LICENSE).
 
 ## `TODO.md`: la direzione del lavoro
@@ -338,7 +338,7 @@ aggiungere file di build o cache al repository.
 
 ## Git e GitHub
 
-- Repository remoto: `github.com/JoelShepard/xmap-studio`, **pubblico**: non
+- Repository remoto: `github.com/gioelerosana/xmap-studio`, **pubblico**: non
   committare dati personali, segreti o file di prova privati.
 - Branch principale: **`main`**.
 - Commit: [Conventional Commits](https://www.conventionalcommits.org/) con tipo
