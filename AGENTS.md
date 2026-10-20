@@ -290,8 +290,25 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
   bottom sheet, toast). Dopo modifiche al config verifica che la CSS generata
   le contenga.
 
-Per provarla su un dispositivo: `pnpm build`, poi `cd apps/web && npx vite preview`
-(porta 4173, host `.ts.net` ammessi in `vite.config.ts`).
+Per provarla su un dispositivo si serve **sempre via Tailscale**, da qualunque
+PC si lavori: `pnpm serve:tailnet` (`scripts/serve-tailnet.mjs`) compila, avvia
+`vite preview` sulla porta 4173 e lo espone in HTTPS con `tailscale serve`.
+L'HTTPS è indispensabile: Safari registra il service worker (e quindi la PWA
+funziona offline) solo in un contesto sicuro, non su `http://IP-LAN`. Niente
+certificati locali: si usa quello `*.ts.net` di Tailscale. Il dispositivo deve
+essere nella tailnet (app Tailscale, stesso account).
+
+- Indirizzo stabile: con il Tailscale Service `svc:xmap` configurato è
+  `https://xmap.<tailnet>.ts.net`, uguale da ogni PC che lo serve. Setup una
+  tantum nella console admin: tag (es. `tag:xmap`) con `tagOwners` nella policy,
+  PC che servono taggati (i service host devono essere nodi taggati), servizio
+  `svc:xmap` con porta `tcp:443` e host approvati (o `autoApprovers`).
+- Senza il servizio lo script ripiega sul nome della macchina
+  (`https://<pc>.<tailnet>.ts.net`).
+- Un nome fuori da `*.ts.net` (es. `xmap.net`) non è possibile con i certificati
+  di Tailscale.
+- Per spegnere: `tailscale serve --service=svc:xmap off` oppure
+  `tailscale serve --https=443 off`.
 
 ## Struttura del repository
 
