@@ -1,0 +1,50 @@
+import { useEffect } from 'react';
+import type { MapEditing, MapHandlers } from './types.js';
+
+const INTERACTIVE = 'input, textarea, select, button, [contenteditable="true"]';
+
+/** Scorciatoie da tastiera della mappa (Ctrl/Cmd + lettera o parentesi) sul blocco selezionato. */
+export function useMapShortcuts({
+  selectedTopicId,
+  editing,
+  handlers,
+}: {
+  selectedTopicId?: string;
+  editing: MapEditing | null;
+  handlers: { readonly current: MapHandlers };
+}) {
+  // Scorciatoie da tastiera della mappa su desktop:
+  // - Ctrl+I / Cmd+I: apre il pannello dettagli sul blocco selezionato.
+  // - Ctrl+Maiusc+L / Cmd+Maiusc+L: apre l'editor della formula LaTeX.
+  // Usiamo Ctrl/Cmd anziché lettere semplici (D, L) perché la digitazione
+  // di lettere su un blocco di testo selezionato avvia l'editing in place del titolo.
+  useEffect(() => {
+    if (!selectedTopicId || editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return;
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrMeta || e.altKey) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+
+      const key = e.key.toLowerCase();
+      if (!e.shiftKey && key === 'i') {
+        e.preventDefault();
+        handlers.current.onOpenDetails(selectedTopicId);
+      } else if (e.shiftKey && key === 'l') {
+        if (handlers.current.onOpenLatex) {
+          e.preventDefault();
+          handlers.current.onOpenLatex(selectedTopicId);
+        }
+      } else if (key === ']' || e.code === 'BracketRight') {
+        if (handlers.current.onAddSummary) {
+          e.preventDefault();
+          handlers.current.onAddSummary();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedTopicId, editing]);
+
+}
