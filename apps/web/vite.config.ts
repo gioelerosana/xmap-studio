@@ -2,7 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
 // Inietta in dist/sw.js l'elenco completo dei file della build e un'impronta
 // del loro contenuto: il service worker li mette tutti in cache
@@ -33,6 +33,14 @@ function precacheManifest(): Plugin {
   };
 }
 
+// HTTPS in `vite preview` se in `.certs/` (root del repo, non versionata) ci sono
+// cert.pem e key.pem: Safari su iPad registra il service worker, e quindi fa
+// funzionare la PWA offline, solo in un contesto sicuro, non su http://IP-LAN.
+const certDir = path.resolve(__dirname, '../../.certs');
+const previewHttps = existsSync(path.join(certDir, 'cert.pem')) && existsSync(path.join(certDir, 'key.pem'))
+  ? { cert: readFileSync(path.join(certDir, 'cert.pem')), key: readFileSync(path.join(certDir, 'key.pem')) }
+  : undefined;
+
 export default defineConfig({
   // Percorsi relativi: in Electron la UI compilata si carica da file://.
   base: './',
@@ -55,6 +63,7 @@ export default defineConfig({
   // Build di produzione servita per i test su dispositivo (PWA, service worker).
   preview: {
     port: 4173,
+    https: previewHttps,
     host: true,
     allowedHosts: ['.ts.net'],
   },
