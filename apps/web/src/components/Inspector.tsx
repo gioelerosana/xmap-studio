@@ -1,74 +1,26 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AppController,
-  GROUPS,
   RelationshipShape,
   RelationshipView,
   TaskData,
   TextStyle,
-  TitleMode,
   TopicView,
-  markerDisplayName,
 } from '@xmap/core';
-import {
-  Plus,
-  Trash2,
-  Sigma,
-  FileText,
-  Tag,
-  Flag,
-  Link2,
-  Palette,
-  ListChecks,
-  GitBranch,
-  Boxes,
-  ChevronDown,
-  ChevronRight,
-  X,
-  AlertCircle,
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-} from 'lucide-react';
-import {
-  Banner,
-  Button,
-  Field,
-  IconButton,
-  Input,
-  SegmentedControl,
-  Select,
-  Textarea,
-  cn,
-} from '@xmap/ui-kit';
+import { Plus, Trash2, X } from 'lucide-react';
+import { IconButton } from '@xmap/ui-kit';
 
 import { ResizeHandle } from './ResizeHandle.js';
 import { INSPECTOR_PANEL, panelStyle } from './usePanelWidth.js';
-
-// I valori di colore sono dati salvati nel file XMind (compatibilità col formato), non stile.
-const BRANCH_COLORS = ['#E65D5D', '#E9863F', '#C99A12', '#79A83B', '#1599B5', '#7953A9', '#4E5D6C'];
-const INK_COLORS = ['#000000', '#ffffff', '#3b6cf6', '#e5484d', '#2f9e63', '#7953a9'];
-const TEMPLATES = [
-  { label: 'Frazione', latex: '\\frac{a}{b}' },
-  { label: 'Integrale', latex: '\\int_{a}^{b} f(x)\\,dx' },
-  { label: 'Sommatoria', latex: '\\sum_{i=1}^{n} x_i' },
-  { label: 'Radice', latex: '\\sqrt{x^2+y^2}' },
-  { label: 'Limite', latex: '\\lim_{x\\to\\infty}\\frac{1}{x}=0' },
-  { label: 'Matrice', latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}' },
-];
-const TITLE_MODE_ITEMS: { id: 'formula_only' | 'keep_title' | 'custom'; label: string }[] = [
-  { id: 'formula_only', label: 'Solo formula' },
-  { id: 'keep_title', label: 'Mantieni' },
-  { id: 'custom', label: 'Custom' },
-];
-const RELATIONSHIP_SHAPES: { id: RelationshipShape; label: string }[] = [
-  { id: 'curved', label: 'Curva' },
-  { id: 'straight', label: 'Dritta' },
-  { id: 'angled', label: 'Ad angolo' },
-  { id: 'zigzag', label: 'Zig-zag' },
-];
-type TextStylePatch = Parameters<AppController['setTopicTextStyle']>[1];
+import { BranchColorSection } from './inspector/BranchColorSection.js';
+import { EquationSection } from './inspector/EquationSection.js';
+import { LabelsSection } from './inspector/LabelsSection.js';
+import { MarkersSection } from './inspector/MarkersSection.js';
+import { NotesSection } from './inspector/NotesSection.js';
+import { StructureSection } from './inspector/StructureSection.js';
+import { TaskSection } from './inspector/TaskSection.js';
+import { TextSection, type TextStylePatch } from './inspector/TextSection.js';
+import { useEquationDraft } from './inspector/useEquationDraft.js';
 
 export interface InspectorProps {
   topic: TopicView | null;
@@ -89,189 +41,6 @@ export interface InspectorProps {
   /** Indica se i blocchi selezionati sono fratelli validi. */
   canAddSummary?: boolean;
 }
-
-// Anello di focus dei bottoni ui-kit, riusato dai controlli che non sono `Button`.
-const FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
-
-const chipClass = (active: boolean) =>
-  cn(
-    'rounded-sm border px-1.5 py-0.5 text-2xs transition-colors',
-    FOCUS_RING,
-    active
-      ? 'border-primary bg-primary/8 text-primary dark:bg-primary/16'
-      : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-  );
-
-// Il bordo hairline tiene visibili bianco e nero in entrambi i temi; il selezionato usa l'anello primario.
-const swatchHairline = 'ring-1 ring-inset ring-foreground/10';
-const swatchSelected = 'ring-2 ring-primary ring-offset-2 ring-offset-background';
-
-// Stato aperto/chiuso delle sezioni, ricordato tra una selezione e l'altra
-// (in memoria e in localStorage); il default vale solo finché l'utente non sceglie.
-const SECTIONS_STORAGE_KEY = 'xmap-studio.inspector-sections';
-let sectionState: Record<string, boolean> | null = null;
-
-function loadSectionState(): Record<string, boolean> {
-  if (sectionState) return sectionState;
-  const state: Record<string, boolean> = {};
-  sectionState = state;
-  try {
-    const raw = window.localStorage.getItem(SECTIONS_STORAGE_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : null;
-    if (parsed && typeof parsed === 'object') {
-      for (const [k, v] of Object.entries(parsed)) if (typeof v === 'boolean') state[k] = v;
-    }
-  } catch {
-    // localStorage non disponibile o contenuto corrotto: si riparte dai default.
-  }
-  return state;
-}
-
-function saveSectionState(key: string, open: boolean) {
-  const state = loadSectionState();
-  state[key] = open;
-  try {
-    window.localStorage.setItem(SECTIONS_STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Salvataggio best-effort: lo stato in memoria resta valido.
-  }
-}
-
-// Sezione richiudibile: il disclosure è comportamento locale, quindi non usa `Section` di ui-kit.
-const InspectorSection: React.FC<{
-  id: string;
-  title: string;
-  icon: React.ReactNode;
-  defaultOpen?: boolean;
-  /** Riassunto breve mostrato a destra dell'intestazione quando la sezione è chiusa. */
-  summary?: React.ReactNode;
-  children: React.ReactNode;
-}> = ({ id, title, icon, defaultOpen = false, summary, children }) => {
-  const [open, setOpen] = useState(() => loadSectionState()[id] ?? defaultOpen);
-  const toggle = () => {
-    saveSectionState(id, !open);
-    setOpen(!open);
-  };
-  return (
-    <section className="border-b">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={toggle}
-        className="flex h-8 w-full items-center gap-2 px-3 text-left text-xs font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        <span className="flex items-center text-muted-foreground">{icon}</span>
-        <span className="flex-1">{title}</span>
-        {!open && summary != null && (
-          <span className="flex items-center text-2xs font-normal text-muted-foreground">{summary}</span>
-        )}
-        {open ? (
-          <ChevronDown className="size-3.5 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="size-3.5 text-muted-foreground" />
-        )}
-      </button>
-      {open && <div className="flex flex-col gap-2 px-3 pb-3 pt-1">{children}</div>}
-    </section>
-  );
-};
-
-// Selettore colore compatto: pulsante con il pallino del colore corrente che apre una griglia.
-const ColorPopover: React.FC<{
-  label: string;
-  value: string | null;
-  colors: string[];
-  noneLabel: string;
-  onSelect: (value: string | null) => void;
-}> = ({ label, value, colors, noneLabel, onSelect }) => {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [open]);
-
-  const pick = (c: string | null) => {
-    onSelect(c);
-    setOpen(false);
-    triggerRef.current?.focus();
-  };
-
-  return (
-    <div ref={rootRef} className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="true"
-        aria-expanded={open}
-        aria-label={`${label}: ${value ?? noneLabel}`}
-        title={label}
-        onClick={() => setOpen((v) => !v)}
-        className={cn('flex h-7 items-center gap-1 rounded-sm border px-1.5 hover:bg-accent', FOCUS_RING)}
-      >
-        <span
-          className={cn('size-4 rounded-full', swatchHairline, !value && 'bg-foreground/80')}
-          style={value ? { backgroundColor: value } : undefined}
-        />
-        <ChevronDown className="size-3 text-muted-foreground" />
-      </button>
-      {open && (
-        <div
-          role="group"
-          aria-label={label}
-          className="absolute right-0 top-full z-20 mt-1 flex w-44 flex-col gap-2 rounded-md border bg-background p-2 shadow-dialog"
-        >
-          <button
-            type="button"
-            aria-pressed={!value}
-            onClick={() => pick(null)}
-            className={cn(chipClass(!value), 'flex h-6 items-center justify-center px-2')}
-          >
-            {noneLabel}
-          </button>
-          <div className="flex flex-wrap gap-2">
-            {colors.map((c) => (
-              <button
-                key={c}
-                type="button"
-                aria-label={`${label} ${c}`}
-                aria-pressed={value?.toLowerCase() === c.toLowerCase()}
-                onClick={() => pick(c)}
-                className={cn(
-                  'size-5 rounded-full',
-                  FOCUS_RING,
-                  value?.toLowerCase() === c.toLowerCase() ? swatchSelected : swatchHairline
-                )}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const GroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="text-xs font-medium">{children}</div>
-);
 
 export const Inspector: React.FC<InspectorProps> = ({
   topic,
@@ -336,12 +105,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
   const [href, setHref] = useState(t.href || '');
   const [color, setColor] = useState<string | null>(t.fillColor || null);
 
-  const [latex, setLatex] = useState(t.latex || '');
-  const [titleMode, setTitleMode] = useState<'formula_only' | 'keep_title' | 'custom'>('formula_only');
-  const [customTitle, setCustomTitle] = useState(t.title);
-  const [inkColor, setInkColor] = useState('#000000');
-  const [preview, setPreview] = useState<{ svg: string; error: string | null } | null>(null);
-  const [applying, setApplying] = useState(false);
+  const equation = useEquationDraft({ topic: t, controller, darkMode, onChanged, onToast });
 
   const [relTarget, setRelTarget] = useState('');
   const [relTitle, setRelTitle] = useState('');
@@ -358,43 +122,7 @@ const InspectorBody: React.FC<InspectorProps> = ({
   useEffect(() => setLabelsStr(labelsKey), [labelsKey]);
   useEffect(() => setHref(t.href || ''), [t.href]);
   useEffect(() => setColor(t.fillColor || null), [t.fillColor]);
-  useEffect(() => setLatex(t.latex || ''), [t.latex]);
   useEffect(() => setTask(t.task || {}), [taskKey]);
-
-  // L'inchiostro salvato resta nero (compatibilità XMind); in tema scuro
-  // l'anteprima usa il colore del testo solo per la visualizzazione.
-  const previewInk = inkColor === '#000000' && darkMode ? '#ffffff' : inkColor;
-
-  // Anteprima LaTeX con debounce.
-  const previewTimer = useRef<number | null>(null);
-  useEffect(() => {
-    if (previewTimer.current) window.clearTimeout(previewTimer.current);
-    const trimmed = latex.trim();
-    if (!trimmed) {
-      setPreview(null);
-      return;
-    }
-    previewTimer.current = window.setTimeout(() => {
-      try {
-        const res = controller.preview(trimmed, 28);
-        if (res.error) {
-          setPreview({ svg: '', error: res.error });
-        } else {
-          setPreview({ svg: res.svg.replaceAll('currentColor', previewInk), error: null });
-        }
-      } catch (err: any) {
-        setPreview({ svg: '', error: err?.message || 'Errore di sintassi' });
-      }
-    }, 220);
-    return () => {
-      if (previewTimer.current) window.clearTimeout(previewTimer.current);
-    };
-  }, [latex, inkColor, darkMode, controller]);
-
-  const rels = useMemo(
-    () => relationships.filter((r) => r.end1Id === t.id || r.end2Id === t.id),
-    [relationships, t.id]
-  );
 
   // Ctrl/Cmd+B e Ctrl/Cmd+I: attivi solo con questo ispettore montato (blocco selezionato)
   // e fuori da campi di testo, così non interferiscono con la digitazione.
@@ -416,9 +144,6 @@ const InspectorBody: React.FC<InspectorProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [t.kind, t.id, ts.bold, ts.italic, controller]);
-
-  const otherTopics = useMemo(() => allTopics.filter((x) => x.id !== t.id), [allTopics, t.id]);
-  const hasChildren = t.childCount > 0;
 
   const commitTitle = () => {
     if (title === t.title) return;
@@ -502,55 +227,10 @@ const InspectorBody: React.FC<InspectorProps> = ({
     }
   };
 
-  const textStyleItems: { label: string; icon: React.ReactNode; active: boolean; patch: TextStylePatch }[] = [
-    { label: 'Grassetto', icon: <Bold className="size-4" />, active: !!ts.bold, patch: { bold: !ts.bold } },
-    { label: 'Corsivo', icon: <Italic className="size-4" />, active: !!ts.italic, patch: { italic: !ts.italic } },
-    {
-      label: 'Sottolineato',
-      icon: <Underline className="size-4" />,
-      active: !!ts.underline,
-      patch: { underline: !ts.underline },
-    },
-    {
-      label: 'Barrato',
-      icon: <Strikethrough className="size-4" />,
-      active: !!ts.strikethrough,
-      patch: { strikethrough: !ts.strikethrough },
-    },
-  ];
-
   const toggleMarker = (markerId: string) => {
     try {
       controller.toggleTopicMarker(t.id, markerId);
       onChanged();
-    } catch (err: any) {
-      onToast('error', err.message);
-    }
-  };
-
-  const handleApplyEquation = async () => {
-    if (!latex.trim() || preview?.error) return;
-    setApplying(true);
-    try {
-      let mode: TitleMode;
-      if (titleMode === 'keep_title') mode = { kind: 'keep_title' };
-      else if (titleMode === 'custom') mode = { kind: 'custom', title: customTitle };
-      else mode = { kind: 'formula_only' };
-      await controller.apply(t.id, latex.trim(), { titleMode: mode, color: inkColor });
-      onChanged();
-      onToast('success', 'Equazione applicata');
-    } catch (err: any) {
-      onToast('error', `Errore: ${err.message}`);
-    } finally {
-      setApplying(false);
-    }
-  };
-
-  const handleRemoveEquation = () => {
-    try {
-      controller.removeEquation(t.id);
-      onChanged();
-      onToast('info', 'Equazione rimossa');
     } catch (err: any) {
       onToast('error', err.message);
     }
@@ -583,6 +263,11 @@ const InspectorBody: React.FC<InspectorProps> = ({
     }
   };
 
+  const removeRelationship = (relationshipId: string) => {
+    controller.removeTopicRelationship(relationshipId);
+    onChanged();
+  };
+
   const addBoundary = () => {
     try {
       controller.addTopicBoundary(t.id);
@@ -593,6 +278,11 @@ const InspectorBody: React.FC<InspectorProps> = ({
     }
   };
 
+  const removeBoundary = () => {
+    controller.removeTopicBoundary(t.id, t.boundaries[0].id);
+    onChanged();
+  };
+
   const addSummary = () => {
     try {
       controller.addTopicSummary(t.id);
@@ -601,6 +291,11 @@ const InspectorBody: React.FC<InspectorProps> = ({
     } catch (err: any) {
       onToast('error', err.message);
     }
+  };
+
+  const removeSummary = () => {
+    controller.removeTopicSummary(t.id, t.summaries[0].id);
+    onChanged();
   };
 
   const handleDelete = () => {
@@ -664,508 +359,54 @@ const InspectorBody: React.FC<InspectorProps> = ({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
-        {/* Testo del blocco: titolo, stile e colore su due righe */}
-        <InspectorSection id="text" title="Testo" icon={<FileText className="size-3.5" />} defaultOpen>
-          <Input
-            size="sm"
-            aria-label="Titolo del blocco"
-            value={title}
-            placeholder="Titolo…"
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          />
-          {t.kind === 'text' && (
-            <>
-              <div className="flex items-center gap-1">
-                {textStyleItems.map((item) => (
-                  <IconButton
-                    key={item.label}
-                    size="sm"
-                    variant="outline"
-                    label={item.label}
-                    aria-pressed={item.active}
-                    active={item.active}
-                    onClick={() => applyTextStyle(item.patch)}
-                  >
-                    {item.icon}
-                  </IconButton>
-                ))}
-                <div className="ml-auto">
-                  <ColorPopover
-                    label="Colore testo"
-                    value={ts.color ?? null}
-                    colors={BRANCH_COLORS}
-                    noneLabel="Predefinito"
-                    onSelect={(c) => applyTextStyle({ color: c })}
-                  />
-                </div>
-              </div>
-              {t.titleRuns && t.titleRuns.length > 0 && (
-                <div className="text-2xs text-muted-foreground">
-                  Il titolo contiene formattazione parziale da XMind.
-                </div>
-              )}
-            </>
-          )}
-        </InspectorSection>
-
-        {/* Equazione: aperta di default solo se il blocco è già un'equazione */}
-        <InspectorSection
-          // Stato ricordato separato per equazioni e testo; la key rimonta la sezione al cambio di tipo.
-          key={t.latex ? 'equation:eq' : 'equation:text'}
-          id={t.latex ? 'equation:eq' : 'equation:text'}
-          title="Equazione LaTeX"
-          icon={<Sigma className="size-3.5" />}
-          defaultOpen={!!t.latex}
-          summary={t.latex ? <Sigma className="size-3" /> : undefined}
-        >
-          <div className="eq-preview">
-            {preview?.error ? (
-              <Banner variant="error" className="w-full" icon={<AlertCircle className="size-4" />}>
-                {preview.error}
-              </Banner>
-            ) : preview?.svg ? (
-              <div className="max-w-full overflow-x-auto" dangerouslySetInnerHTML={{ __html: preview.svg }} />
-            ) : (
-              <span className="text-2xs italic text-muted-foreground">Anteprima formula</span>
-            )}
-          </div>
-
-          <Textarea
-            mono
-            rows={2}
-            aria-label="Formula LaTeX"
-            value={latex}
-            placeholder="\\int_{0}^{1} x^2\\,dx"
-            onChange={(e) => setLatex(e.target.value)}
-          />
-
-          <div
-            role="group"
-            aria-label="Inserisci modello"
-            className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
-          >
-            {TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.label}
-                type="button"
-                className={cn(chipClass(false), 'shrink-0')}
-                onClick={() => setLatex((prev) => (prev ? `${prev} ${tpl.latex}` : tpl.latex))}
-              >
-                {tpl.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <SegmentedControl
-              size="sm"
-              className="grid flex-1 grid-cols-3"
-              items={TITLE_MODE_ITEMS}
-              activeId={titleMode}
-              onChange={(id) => setTitleMode(id)}
-            />
-            <div className="flex items-center gap-1" role="group" aria-label="Colore inchiostro">
-              {INK_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`Inchiostro ${c}`}
-                  aria-pressed={inkColor === c}
-                  onClick={() => setInkColor(c)}
-                  className={cn(
-                    'size-4 shrink-0 rounded-full',
-                    FOCUS_RING,
-                    inkColor === c ? swatchSelected : swatchHairline
-                  )}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {titleMode === 'custom' && (
-            <Input
-              size="sm"
-              aria-label="Titolo mostrato"
-              value={customTitle}
-              placeholder="Titolo mostrato"
-              onChange={(e) => setCustomTitle(e.target.value)}
-            />
-          )}
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="default"
-              size="sm"
-              className="flex-1"
-              disabled={!latex.trim() || !!preview?.error || applying}
-              onClick={handleApplyEquation}
-            >
-              {applying ? 'Rendering…' : t.latex ? 'Aggiorna equazione' : 'Applica equazione'}
-            </Button>
-            {t.latex && (
-              <Button variant="ghost" size="sm" onClick={handleRemoveEquation}>
-                Rimuovi
-              </Button>
-            )}
-          </div>
-        </InspectorSection>
-
-        {/* Note */}
-        <InspectorSection
-          id="notes"
-          title="Note"
-          icon={<FileText className="size-3.5" />}
-          summary={t.notes ? '•' : undefined}
-        >
-          <Textarea
-            rows={3}
-            value={notes}
-            placeholder="Appunti estesi del blocco…"
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={commitNotes}
-          />
-          <Field label="Visualizzazione in XMind">
-            <Select
-              size="sm"
-              value={notesDisplay}
-              onChange={(e) => commitNotesDisplay(e.target.value as 'icon' | 'block' | '')}
-            >
-              <option value="">Predefinita (icona)</option>
-              <option value="icon">Icona</option>
-              <option value="block">Riquadro espanso</option>
-            </Select>
-          </Field>
-        </InspectorSection>
-
-        {/* Etichette e link */}
-        <InspectorSection
-          id="labels"
-          title="Etichette e link"
-          icon={<Tag className="size-3.5" />}
-          summary={
-            t.labels.length > 0 || t.href ? (
-              <span className="flex items-center gap-1">
-                {t.labels.length > 0 && <span>{t.labels.length}</span>}
-                {t.href && <Link2 className="size-3" />}
-              </span>
-            ) : undefined
-          }
-        >
-          <Field label="Etichette (separate da virgola)">
-            <Input
-              value={labelsStr}
-              placeholder="Importante, Revisione"
-              onChange={(e) => setLabelsStr(e.target.value)}
-              onBlur={commitLabels}
-              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            />
-          </Field>
-          <Field label="Link (URL, mailto:, file: o #id)">
-            <Input
-              value={href}
-              placeholder="https://…"
-              onChange={(e) => setHref(e.target.value)}
-              onBlur={commitHref}
-              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            />
-          </Field>
-        </InspectorSection>
-
-        {/* Marker */}
-        <InspectorSection
-          id="markers"
-          title="Marker"
-          icon={<Flag className="size-3.5" />}
-          summary={t.markers.length > 0 ? t.markers.length : undefined}
-        >
-          {t.markers.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {t.markers.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => toggleMarker(m)}
-                  title="Rimuovi marker"
-                  className={cn(
-                    'flex items-center gap-1 rounded-sm bg-primary/8 px-1.5 py-0.5 text-2xs text-primary dark:bg-primary/16',
-                    FOCUS_RING
-                  )}
-                >
-                  {markerDisplayName(m)}
-                  <X className="size-3.5" />
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex max-h-52 flex-col gap-2 overflow-y-auto pr-1">
-            {GROUPS.map((group) => (
-              <div key={group.id}>
-                <div className="mb-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {group.label}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {group.markers.map((m) => {
-                    const active = t.markers.includes(m.id);
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => toggleMarker(m.id)}
-                        aria-pressed={active}
-                        title={m.name}
-                        className={chipClass(active)}
-                      >
-                        {m.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </InspectorSection>
-
-        {/* Colore ramo */}
-        <InspectorSection
-          id="branch-color"
-          title="Colore del ramo"
-          icon={<Palette className="size-3.5" />}
-          summary={
-            color ? (
-              <span className={cn('size-3 rounded-full', swatchHairline)} style={{ backgroundColor: color }} />
-            ) : undefined
-          }
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              aria-pressed={!color}
-              onClick={() => applyColor(null)}
-              className={cn(chipClass(!color), 'flex h-6 items-center px-2')}
-            >
-              Nessuno
-            </button>
-            {BRANCH_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                aria-label={`Colore ${c}`}
-                aria-pressed={color === c}
-                onClick={() => applyColor(c)}
-                className={cn(
-                  'size-5 rounded-full',
-                  FOCUS_RING,
-                  color === c ? swatchSelected : swatchHairline
-                )}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-        </InspectorSection>
-
-        {/* Task */}
-        <InspectorSection
-          id="task"
-          title="Task"
-          icon={<ListChecks className="size-3.5" />}
-          summary={
-            task.progress != null
-              ? `${task.progress}%`
-              : task.priority || task.startDate || task.dueDate
-                ? '•'
-                : undefined
-          }
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Priorità">
-              <Select
-                value={task.priority ?? ''}
-                onChange={(e) =>
-                  commitTask({ ...task, priority: e.target.value ? Number(e.target.value) : undefined })
-                }
-              >
-                <option value="">—</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Avanzamento %">
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={task.progress ?? ''}
-                onChange={(e) =>
-                  commitTask({ ...task, progress: e.target.value ? Number(e.target.value) : undefined })
-                }
-              />
-            </Field>
-            <Field label="Inizio">
-              <Input
-                type="date"
-                value={toDateInput(task.startDate)}
-                onChange={(e) => commitTask({ ...task, startDate: fromDateInput(e.target.value) })}
-              />
-            </Field>
-            <Field label="Scadenza">
-              <Input
-                type="date"
-                value={toDateInput(task.dueDate)}
-                onChange={(e) => commitTask({ ...task, dueDate: fromDateInput(e.target.value) })}
-              />
-            </Field>
-          </div>
-          {(task.priority || task.progress || task.startDate || task.dueDate) && (
-            <Button variant="ghost" size="sm" onClick={() => commitTask({})}>
-              Azzera task
-            </Button>
-          )}
-        </InspectorSection>
-
-        {/* Struttura */}
-        <InspectorSection
-          id="structure"
-          title="Struttura"
-          icon={<GitBranch className="size-3.5" />}
-          summary={
-            rels.length + t.boundaries.length + t.summaries.length > 0
-              ? rels.length + t.boundaries.length + t.summaries.length
-              : undefined
-          }
-        >
-          <div className="flex flex-col gap-1.5">
-            <GroupLabel>Relazioni</GroupLabel>
-            {rels.length === 0 && <div className="text-2xs text-muted-foreground">Nessuna relazione.</div>}
-            {rels.map((r) => {
-              const otherId = r.end1Id === t.id ? r.end2Id : r.end1Id;
-              const other = allTopics.find((x) => x.id === otherId);
-              return (
-                <div key={r.id} className="flex items-center gap-1.5 text-2xs">
-                  <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="flex-1 truncate">
-                    {r.end1Id === t.id ? '→' : '←'} {other?.displayTitle || otherId}
-                    {r.title ? ` · ${r.title}` : ''}
-                  </span>
-                  <Select
-                    size="sm"
-                    aria-label="Forma della relazione"
-                    className="w-28 shrink-0"
-                    value={r.style.shape}
-                    onChange={(e) => applyRelationshipShape(r.id, e.target.value as RelationshipShape)}
-                  >
-                    {RELATIONSHIP_SHAPES.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </Select>
-                  <button
-                    type="button"
-                    aria-label="Rimuovi relazione"
-                    onClick={() => {
-                      controller.removeTopicRelationship(r.id);
-                      onChanged();
-                    }}
-                    className={cn('rounded-sm text-muted-foreground hover:text-error-foreground', FOCUS_RING)}
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              );
-            })}
-            <div className="flex items-center gap-1.5">
-              <Select value={relTarget} onChange={(e) => setRelTarget(e.target.value)}>
-                <option value="">Collega a…</option>
-                {otherTopics.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.displayTitle || o.id}
-                  </option>
-                ))}
-              </Select>
-              <Button size="sm" variant="ghost" disabled={!relTarget} onClick={addRelationship}>
-                Aggiungi
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5 pt-1">
-            <GroupLabel>Sotto-blocchi</GroupLabel>
-            {!hasChildren && (
-              <div className="text-2xs text-muted-foreground">
-                Aggiungi almeno un sotto-blocco per cornice o sommario.
-              </div>
-            )}
-            {hasChildren && (
-              <div className="flex items-center gap-1.5">
-                {t.boundaries.length === 0 ? (
-                  <Button size="sm" variant="ghost" icon={<Boxes className="size-4" />} onClick={addBoundary}>
-                    Cornice
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      controller.removeTopicBoundary(t.id, t.boundaries[0].id);
-                      onChanged();
-                    }}
-                  >
-                    Rimuovi cornice
-                  </Button>
-                )}
-                {t.summaries.length === 0 ? (
-                  <Button size="sm" variant="ghost" icon={<Boxes className="size-4" />} onClick={addSummary}>
-                    Sommario
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      controller.removeTopicSummary(t.id, t.summaries[0].id);
-                      onChanged();
-                    }}
-                  >
-                    Rimuovi sommario
-                  </Button>
-                )}
-              </div>
-            )}
-            {selectedTopicIds && selectedTopicIds.length > 1 && onAddSummaryForSiblings && (
-              <div className="flex flex-col gap-1.5 pt-2 border-t mt-1">
-                <GroupLabel>Selezione multipla ({selectedTopicIds.length} blocchi)</GroupLabel>
-                <Button
-                  size="sm"
-                  variant={canAddSummary ? 'secondary' : 'ghost'}
-                  icon={<Boxes className="size-4" />}
-                  onClick={onAddSummaryForSiblings}
-                  title="Crea sommario sui blocchi fratelli selezionati (Ctrl+])"
-                >
-                  Crea sommario (Ctrl+])
-                </Button>
-              </div>
-            )}
-          </div>
-        </InspectorSection>
+        <TextSection
+          topic={t}
+          title={title}
+          onTitleChange={setTitle}
+          onTitleCommit={commitTitle}
+          textStyle={ts}
+          onTextStyle={applyTextStyle}
+        />
+        <EquationSection hasEquation={!!t.latex} draft={equation} />
+        <NotesSection
+          notes={notes}
+          hasNotes={!!t.notes}
+          onNotesChange={setNotes}
+          onNotesCommit={commitNotes}
+          notesDisplay={notesDisplay}
+          onNotesDisplayChange={commitNotesDisplay}
+        />
+        <LabelsSection
+          labelCount={t.labels.length}
+          labelsStr={labelsStr}
+          onLabelsChange={setLabelsStr}
+          onLabelsCommit={commitLabels}
+          hasHref={!!t.href}
+          href={href}
+          onHrefChange={setHref}
+          onHrefCommit={commitHref}
+        />
+        <MarkersSection markers={t.markers} onToggle={toggleMarker} />
+        <BranchColorSection color={color} onColorChange={applyColor} />
+        <TaskSection task={task} onTaskChange={commitTask} />
+        <StructureSection
+          topic={t}
+          allTopics={allTopics}
+          relationships={relationships}
+          relTarget={relTarget}
+          onRelTargetChange={setRelTarget}
+          onAddRelationship={addRelationship}
+          onRemoveRelationship={removeRelationship}
+          onRelationshipShapeChange={applyRelationshipShape}
+          onAddBoundary={addBoundary}
+          onRemoveBoundary={removeBoundary}
+          onAddSummary={addSummary}
+          onRemoveSummary={removeSummary}
+          selectedTopicIds={selectedTopicIds}
+          onAddSummaryForSiblings={onAddSummaryForSiblings}
+          canAddSummary={canAddSummary}
+        />
       </div>
     </aside>
   );
 };
-
-function toDateInput(value?: string): string {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-}
-
-function fromDateInput(value: string): string | undefined {
-  if (!value) return undefined;
-  return new Date(`${value}T00:00:00.000Z`).toISOString();
-}
