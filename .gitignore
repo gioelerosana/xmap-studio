@@ -34,6 +34,3 @@ packaging/arch/release/src/
 packaging/arch/release/pkg/
 packaging/arch/release/xmap-studio/
 packaging/arch/release/*.pkg.tar.*
-
-# certificati HTTPS locali per provare la PWA sul tablet (vite preview)
-.certs/
