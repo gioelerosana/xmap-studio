@@ -985,6 +985,22 @@ const handleMoveFloating = useCallback(
     }
   };
 
+  const handleRemoveTopicKeepChildren = (topicId: string) => {
+    const fallback = currentLayout ? selectionAfterDelete(currentLayout, topicId) : undefined;
+    try {
+      const { childIds } = controller.removeTopicKeepChildren(topicId);
+      const next = childIds[0] ?? fallback;
+      setSelectedTopicId(next);
+      setSelectedTopicIds(next ? [next] : []);
+      setEditing(null);
+      refreshState();
+      addToast('info', 'Blocco rimosso, figli ricollegati — Ctrl+Z per annullare');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast('error', msg);
+    }
+  };
+
   const handleCopyTopic = useCallback(
     (topicId?: string) => {
       const id = topicId ?? selectedTopic?.id;
@@ -1631,6 +1647,7 @@ const handleMoveFloating = useCallback(
                 onAddChild={(id) => createTopic(id, 'child')}
                 onAddSibling={(id, where) => createTopic(id, where ?? 'after')}
                 onDeleteTopic={handleDeleteSelected}
+                onRemoveTopicKeepChildren={handleRemoveTopicKeepChildren}
                 editing={editing}
                 onStartEdit={startEdit}
                 onCommitEdit={handleCommitEdit}
