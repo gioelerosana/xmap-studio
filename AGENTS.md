@@ -166,24 +166,11 @@ delega a **Sonnet** e **Haiku**, mai ad altre istanze di Opus.
 | **Haiku** (preferito, costa meno) | lavoro meccanico e ben specificato: rinomini, restyle, migrazioni ripetitive, aggiornamento di import/doc, test su pattern esistenti, ricerche nella codebase |
 | Modello principale | **solo** orchestrazione: piano, contratti condivisi, revisione e integrazione finale |
 
-#### Override temporaneo: Antigravity Sec (periodo di prova)
-
-Finché l'utente ha attiva la prova di Google Antigravity, i sotto-agenti si
-lanciano **su Antigravity Sec** invece che su Haiku/Sonnet: provider
-`antigravity_sec`, modello **`gemini-3.8-flash-high`** (Gemini 3.8 Flash, High).
-Dà buona qualità se ben orchestrato, quindi:
-
-- si delega con `delegate_task` (T3 Code) con
-  `target: {"providerInstanceId": "antigravity_sec", "model": "gemini-3.8-flash-high"}`;
-  gli ID vivi si leggono da `orchestrator_capabilities`. Se `antigravity_sec`
-  non compare o non è utilizzabile, si torna alla tabella sopra (Haiku/Sonnet);
-- i prompt devono essere ancora più autosufficienti e precisi del solito: file
-  ammessi, comportamento atteso, cosa NON toccare, comando di verifica
-  (`pnpm build` e `pnpm test`) e richiesta di un riepilogo breve;
-- niente commit/push da parte del sotto-agente; la verifica a freddo e il
-  commit restano all'orchestratore (vedi sotto);
-- l'override vale finché l'utente non dice che la prova è finita: a quel punto
-  si rimuove questa sezione.
+I sotto-agenti usano **solo modelli Claude** (Haiku, o Sonnet per lavoro non
+meccanico se l'orchestratore è Opus); altri provider (Antigravity, Codex, …) solo
+se l'utente lo indica esplicitamente. Niente commit/push da parte del
+sotto-agente: la verifica a freddo e il commit restano all'orchestratore (vedi
+sotto).
 
 ### Responsabilità dell'orchestratore
 
