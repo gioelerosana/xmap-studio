@@ -54,7 +54,7 @@ export default defineConfig({
   },
   // Build di produzione servita per i test su dispositivo (PWA, service worker).
   preview: {
-    port: 4173,
+    port: 60417,
     host: true,
     allowedHosts: ['.ts.net'],
   },

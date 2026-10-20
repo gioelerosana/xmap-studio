@@ -292,7 +292,8 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
 
 Per provarla su un dispositivo si serve **sempre via Tailscale**, da qualunque
 PC si lavori: `pnpm serve:tailnet` (`scripts/serve-tailnet.mjs`) compila, avvia
-`vite preview` sulla porta 4173 e lo espone in HTTPS con `tailscale serve`.
+`vite preview` sulla porta dedicata 60417 e lo espone in HTTPS con `tailscale serve`. Quella porta è riservata allo script:
+all'avvio ferma chiunque la occupi e le vecchie istanze di `serve:tailnet`/`vite preview`.
 L'HTTPS è indispensabile: Safari registra il service worker (e quindi la PWA
 funziona offline) solo in un contesto sicuro, non su `http://IP-LAN`. Niente
 certificati locali: si usa quello `*.ts.net` di Tailscale. Il dispositivo deve
