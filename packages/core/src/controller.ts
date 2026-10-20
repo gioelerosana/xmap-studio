@@ -210,6 +210,14 @@ export class AppController {
     return this.currentWorkbook;
   }
 
+  /** Registra i byte nell'archivio e nel manifest; restituisce il nome canonico della risorsa. */
+  private storeImageResource(wb: OpenWorkbook, bytes: Uint8Array, mimeType: string): string {
+    const resourceName = computeImageResourceName(bytes, mimeType);
+    wb.archive.resources.set(resourceName, bytes);
+    refreshManifest(wb.manifest, [resourceName], false);
+    return resourceName;
+  }
+
   public async apply(
     topicId: string,
     latex: string,
@@ -785,6 +793,37 @@ export class AppController {
     return this.addTopicSummary(range.parentId, range.start, range.end, title);
   }
 
+  /**
+   * Crea un sommario sui blocchi fratelli selezionati e ne fa il topic di sommario un'immagine,
+   * come un blocco-immagine. Un solo passo di undo. Lancia un errore se la selezione non è valida.
+   */
+  public addSummaryImageForSiblings(
+    topicIds: string[],
+    bytes: Uint8Array,
+    mimeType: string,
+    size: { width: number; height: number }
+  ): { dto: WorkbookDto; summaryTopicId: string } {
+    const wb = this.ensureWorkbook();
+    const range = siblingRange(wb.content, topicIds);
+    if (!range) {
+      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati non sono validi per creare un sommario.');
+    }
+    if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
+
+    const parent = findTopic(wb.content, range.parentId);
+    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${range.parentId} non trovato`);
+
+    const resourceName = this.storeImageResource(wb, bytes, mimeType);
+    const summaryTopicId = addSummary(parent, range.start, range.end, '');
+    const summaryTopic = parent.children?.summary?.find((t) => t.id === summaryTopicId);
+    if (!summaryTopic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Summary ${summaryTopicId} non trovato`);
+    setTopicImage(summaryTopic, resourceName, size);
+
+    wb.pushHistory();
+    this.lastCreated = { id: summaryTopicId, wb, pos: wb.pos };
+    return { dto: wb.toDto(), summaryTopicId };
+  }
+
   public removeTopicSummary(topicId: string, summaryTopicId: string): WorkbookDto {
     const wb = this.ensureWorkbook();
     const topic = findTopic(wb.content, topicId);
@@ -859,9 +898,7 @@ export class AppController {
     if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
     if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
 
-    const resourceName = computeImageResourceName(bytes, mimeType);
-    wb.archive.resources.set(resourceName, bytes);
-    refreshManifest(wb.manifest, [resourceName], false);
+    const resourceName = this.storeImageResource(wb, bytes, mimeType);
 
     const { newId } = addImageChild(parent, resourceName, size, opts);
     wb.pushHistory();
@@ -884,9 +921,7 @@ export class AppController {
     if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
     if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
 
-    const resourceName = computeImageResourceName(bytes, mimeType);
-    wb.archive.resources.set(resourceName, bytes);
-    refreshManifest(wb.manifest, [resourceName], false);
+    const resourceName = this.storeImageResource(wb, bytes, mimeType);
 
     setTopicImage(topic, resourceName, size);
     wb.pushHistory();

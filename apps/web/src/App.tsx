@@ -802,6 +802,24 @@ export const App: React.FC = () => {
     [controller, selectedTopic, allTopics, refreshState, addToast]
   );
 
+  // Ctrl+V con più blocchi fratelli selezionati: l'immagine diventa il sommario di quella selezione.
+  const handlePasteImageAsSummary = useCallback(
+    async (file: Blob, ids: string[]) => {
+      try {
+        const { bytes, width, height, mimeType } = await readImageBlob(file);
+        const { summaryTopicId } = controller.addSummaryImageForSiblings(ids, bytes, mimeType, { width, height });
+        setSelectedTopicId(summaryTopicId);
+        setSelectedTopicIds([summaryTopicId]);
+        refreshState();
+        addToast('success', 'Immagine incollata come sommario');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Impossibile creare il sommario con l'immagine: ${msg}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
 
 
 
@@ -1137,7 +1155,11 @@ const handleMoveFloating = useCallback(
             const file = item.getAsFile();
             if (file) {
               e.preventDefault();
-              void handleAddImage(file, 'paste');
+              if (selectedTopicIds.length > 1 && controller.siblingRange(selectedTopicIds)) {
+                void handlePasteImageAsSummary(file, selectedTopicIds);
+              } else {
+                void handleAddImage(file, 'paste');
+              }
               return;
             }
           }
@@ -1252,7 +1274,7 @@ const handleMoveFloating = useCallback(
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [editing, handleAddImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic]);
+  }, [editing, handleAddImage, handlePasteImageAsSummary, selectedTopicIds, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic]);
 
   // Nuovo blocco da tastiera o dalla mappa: si seleziona ed entra subito in editing in place.
   const createTopic = useCallback(
