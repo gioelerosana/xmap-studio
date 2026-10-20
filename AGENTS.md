@@ -271,7 +271,11 @@ si apre solo su sua richiesta.
 
 La web app è usabile su smartphone e tablet e installabile come PWA
 (`apps/web/public/manifest.webmanifest`, `sw.js`, registrato in `main.tsx` solo
-nella build di produzione). Per una modifica alla UI controlla anche:
+nella build di produzione). Il service worker mette in cache **tutta** la build
+all'installazione: l'elenco dei file e la versione li inietta `vite build`
+(plugin `precacheManifest` in `apps/web/vite.config.ts`) al posto dei
+segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
+`vite preview`, poi spegnilo e ricarica. Per una modifica alla UI controlla anche:
 
 - larghezze strette (≈360–430 px) e testo di sistema ingrandito: l'header non
   usa breakpoint fissi ma misura l'overflow e sposta le azioni nel menu ⋮

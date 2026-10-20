@@ -1,11 +1,42 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+
+// Inietta in dist/sw.js l'elenco completo dei file della build e un'impronta
+// del loro contenuto: il service worker li mette tutti in cache
+// all'installazione (uso offline) e cambia a ogni build, così il browser
+// installa la versione nuova.
+function precacheManifest(): Plugin {
+  let outDir = '';
+  return {
+    name: 'xmap-precache-manifest',
+    apply: 'build',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      const swPath = path.join(outDir, 'sw.js');
+      const files = readdirSync(outDir, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => path.relative(outDir, path.join(entry.parentPath, entry.name)).split(path.sep).join('/'))
+        .filter((file) => file !== 'sw.js' && !file.endsWith('.map'))
+        .sort();
+      const hash = createHash('sha256');
+      for (const file of files) hash.update(file).update(readFileSync(path.join(outDir, file)));
+      const sw = readFileSync(swPath, 'utf8')
+        .replace('__XMAP_BUILD__', hash.digest('hex').slice(0, 12))
+        .replace('__XMAP_PRECACHE__', JSON.stringify(files));
+      writeFileSync(swPath, sw);
+    },
+  };
+}
 
 export default defineConfig({
   // Percorsi relativi: in Electron la UI compilata si carica da file://.
   base: './',
-  plugins: [react()],
+  plugins: [react(), precacheManifest()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
