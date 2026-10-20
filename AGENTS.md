@@ -303,6 +303,11 @@ essere nella tailnet (app Tailscale, stesso account).
   tantum nella console admin: tag (es. `tag:xmap`) con `tagOwners` nella policy,
   PC che servono taggati (i service host devono essere nodi taggati), servizio
   `svc:xmap` con porta `tcp:443` e host approvati (o `autoApprovers`).
+- Il servizio va **creato** nella pagina Services (`autoApprovers` approva solo
+  gli host di un servizio esistente). Se l'host risulta "non connesso" dopo
+  averlo creato: `tailscale serve drain svc:xmap`, poi di nuovo
+  `pnpm serve:tailnet`. L'indirizzo del servizio non è raggiungibile dal PC che
+  lo ospita: si prova da un altro dispositivo.
 - Senza il servizio lo script ripiega sul nome della macchina
   (`https://<pc>.<tailnet>.ts.net`).
 - Un nome fuori da `*.ts.net` (es. `xmap.net`) non è possibile con i certificati
