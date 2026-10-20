@@ -70,7 +70,6 @@ import {
   sheetIndexOf,
   topicLatex,
   topicTitle,
-  walkTopic,
 } from './model/utils.js';
 import { applyEquation, removeEquation, TitleMode } from './latex/equation.js';
 import { renderLatexToSvg } from './latex/mathjax.js';

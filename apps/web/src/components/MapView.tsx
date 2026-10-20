@@ -59,7 +59,6 @@ const TREE_CORNER_R = 8;
 const TAP_SLOP_PX = { mouse: 3, touch: 8 }; // oltre questa distanza il gesto è un pan, non un tap
 const DOUBLE_TAP_MS = 320;
 const DOUBLE_TAP_ZOOM = 1.6;
-const LONG_PRESS_MS = 400; // touch: pressione prolungata su un blocco = inizia il trascinamento
 const DRAG_EDGE_ZONE = 48; // px dal bordo del canvas in cui il trascinamento fa scorrere la vista
 const DRAG_EDGE_SPEED = 16; // px per frame al bordo estremo
 const DRAG_DIM_OPACITY = '0.25';
@@ -1538,7 +1537,7 @@ export const MapView: React.FC<MapViewProps> = ({
         }
       };
 
-      const onUp = (pe: PointerEvent) => {
+      const onUp = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         window.removeEventListener('pointercancel', onUp);

@@ -1,4 +1,4 @@
-import { Sheet, Topic } from './types.js';
+import { Topic } from './types.js';
 import { newTopicId, walkTopic } from './utils.js';
 
 export const XMAP_CLIPBOARD_VERSION = 1;

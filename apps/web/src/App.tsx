@@ -16,7 +16,6 @@ import {
   AppController,
   Layout,
   Point,
-  TopicView,
   WorkbookDto,
   buildArchiveBytes,
   sha256HexAsync,
@@ -50,7 +49,6 @@ import {
   pickAnyFile,
   saveBytes,
   confirmForceSave,
-  downloadBlob,
 } from './adapters/fileSystem.js';
 import { MapView, type MapEditing } from './components/MapView.js';
 import type { EditExit } from './components/map/NodeEditor.js';
@@ -125,7 +123,6 @@ function sanitizeName(name: string): string {
 }
 
 const COMPACT_QUERY = '(max-width: 639px)';
-const WIDE_QUERY = '(min-width: 1024px)';
 /** Livelli di compattazione dell'header: da questo livello in poi l'elemento va nel menu. */
 const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, max: 5 } as const;
 

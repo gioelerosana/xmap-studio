@@ -6,11 +6,9 @@ import { parseRange } from '../model/utils.js';
 import {
   BRANCH_COLORS,
   Layout,
-  LayoutEdge,
   LayoutOpts,
   LayoutSummary,
   EdgeKind,
-  LayoutRelationship,
   MapNode,
   MapSummary,
   NodeMetrics,
