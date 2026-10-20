@@ -13,6 +13,7 @@ import {
   CornerDownLeft,
   Braces,
   Copy,
+  Eraser,
   Scissors,
   ClipboardPaste,
   CopyPlus,
@@ -185,6 +186,8 @@ export interface MapViewProps {
   /** Crea un fratello dopo o prima del blocco, come Invio / Maiusc+Invio. */
   onAddSibling?: (topicId: string, where?: 'after' | 'before') => void;
   onDeleteTopic?: (topicId: string) => void;
+  /** Rimuove solo il blocco e ricollega i suoi figli al genitore. */
+  onRemoveTopicKeepChildren?: (topicId: string) => void;
   onCopyTopic?: (topicId: string) => void;
   onCutTopic?: (topicId: string) => void;
   onPasteTopic?: (targetTopicId?: string) => void;
@@ -227,6 +230,7 @@ export const MapView: React.FC<MapViewProps> = ({
   onAddChild,
   onAddSibling,
   onDeleteTopic,
+  onRemoveTopicKeepChildren,
   onToggleCollapse,
   resourceResolver,
   darkMode = true,
@@ -287,6 +291,7 @@ export const MapView: React.FC<MapViewProps> = ({
     onAddChild,
     onAddSibling,
     onDeleteTopic,
+    onRemoveTopicKeepChildren,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
@@ -310,6 +315,7 @@ export const MapView: React.FC<MapViewProps> = ({
     onAddChild,
     onAddSibling,
     onDeleteTopic,
+    onRemoveTopicKeepChildren,
     onToggleCollapse,
     onMoveTopic,
     onMoveFloatingTopic,
@@ -442,6 +448,14 @@ export const MapView: React.FC<MapViewProps> = ({
         icon: <Braces className="size-4" />,
         disabled: !canAddSummary,
         onSelect: () => handlers.current.onAddSummary?.(),
+      },
+      {
+        id: 'remove-keep-children',
+        label: 'Rimuovi solo questo blocco',
+        separatorBefore: true,
+        icon: <Eraser className="size-4" />,
+        disabled: isRoot,
+        onSelect: () => handlers.current.onRemoveTopicKeepChildren?.(node.id),
       },
       {
         id: 'delete',

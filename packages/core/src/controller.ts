@@ -41,6 +41,7 @@ import {
   removeRelationship,
   removeSummary,
   removeTopic,
+  removeTopicKeepChildren,
   setHref,
   setLabels,
   setNotes,
@@ -630,6 +631,20 @@ export class AppController {
     }
     wb.pushHistory();
     return wb.toDto();
+  }
+
+  /**
+   * Rimuove solo il blocco e ricollega i suoi figli al genitore, nella sua posizione.
+   * Un unico passo di cronologia undo. Restituisce gli id dei figli ricollegati.
+   */
+  public removeTopicKeepChildren(topicId: string): { dto: WorkbookDto; childIds: string[] } {
+    const wb = this.ensureWorkbook();
+    const childIds = removeTopicKeepChildren(wb.content, topicId);
+    if (!childIds) {
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Impossibile rimuovere il topic ${topicId} (o è la radice)`);
+    }
+    wb.pushHistory();
+    return { dto: wb.toDto(), childIds };
   }
 
   public moveTopic(topicId: string, targetId: string, placement: MovePlacement): WorkbookDto {

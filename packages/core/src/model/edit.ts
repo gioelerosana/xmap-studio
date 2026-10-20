@@ -387,22 +387,129 @@ export function removeTopic(sheets: Sheet[], id: string): Topic | undefined {
       if (t.id) removedIds.add(t.id);
     });
 
-    // Rimuove relazioni collegate a uno dei nodi eliminati
-    if (sheet.relationships) {
-      sheet.relationships = sheet.relationships.filter(
-        (r) =>
-          (!r.end1Id || !removedIds.has(r.end1Id)) &&
-          (!r.end2Id || !removedIds.has(r.end2Id))
-      );
-      if (sheet.relationships.length === 0) {
-        delete sheet.relationships;
-      }
-    }
+    pruneRelationships(sheet, removedIds);
 
     if (sheet.rootTopic) {
       removeOrphanSummaryRefs(sheet.rootTopic, removedIds);
     }
     return removed;
+  }
+  return undefined;
+}
+
+/** Rimuove le relazioni che hanno un estremo tra gli ID dati. */
+function pruneRelationships(sheet: Sheet, removedIds: Set<string>): void {
+  if (!sheet.relationships) return;
+  sheet.relationships = sheet.relationships.filter(
+    (r) =>
+      (!r.end1Id || !removedIds.has(r.end1Id)) &&
+      (!r.end2Id || !removedIds.has(r.end2Id))
+  );
+  if (sheet.relationships.length === 0) {
+    delete sheet.relationships;
+  }
+}
+
+/**
+ * Ricalcola i range di bordi e sommari del genitore quando il figlio in `index` è sostituito
+ * da `count` figli (count ≥ 1): un range che lo copriva si estende a coprire i nuovi figli.
+ */
+function shiftRangesOnReplace(parent: Topic, index: number, count: number): void {
+  const shift = (range: string | undefined): string | undefined => {
+    if (range === undefined) return undefined;
+    const parsed = parseRange(range);
+    if (!parsed) return range;
+    const [start, end] = parsed;
+    const delta = count - 1;
+    if (end < index) return range;
+    if (start > index) return formatRange(start + delta, end + delta);
+    return formatRange(start, end + delta);
+  };
+  for (const b of parent.boundaries ?? []) {
+    const next = shift(b.range);
+    if (next !== undefined) b.range = next;
+  }
+  for (const s of parent.summaries ?? []) {
+    const next = shift(s.range);
+    if (next !== undefined) s.range = next;
+  }
+}
+
+/** Porta un range relativo ai figli di un blocco alla posizione `offset` del genitore. Range non numerici restano invariati. */
+function offsetRange(item: Boundary | Summary, offset: number): void {
+  const parsed = parseRange(item.range);
+  if (parsed) item.range = formatRange(parsed[0] + offset, parsed[1] + offset);
+}
+
+/**
+ * Elimina il solo blocco `id` e ricollega i suoi figli al genitore, nella posizione che il blocco
+ * occupava e nello stesso ordine. I figli liberi (`detached`) e gli altri gruppi passano al genitore
+ * senza cambiare posizione; sommari e bordi del blocco si spostano con i figli, con i range ricalcolati.
+ * Restituisce gli id dei figli ricollegati (vuoto se il blocco non ha figli), o `undefined` se il blocco
+ * non esiste o è la radice. Un blocco libero o un sommario con figli non si può rimuovere così.
+ */
+export function removeTopicKeepChildren(sheets: Sheet[], id: string): string[] | undefined {
+  for (const sheet of sheets) {
+    if (!sheet.rootTopic || sheet.rootTopic.id === id) {
+      continue;
+    }
+    const path: PathItem[] = [];
+    if (!findPath(sheet.rootTopic, id, path)) {
+      continue;
+    }
+    const last = path[path.length - 1];
+    const parent = descend(sheet.rootTopic, path.slice(0, -1));
+    const list = parent.children?.[last.group];
+    const removed = list?.[last.index];
+    if (!list || !removed) {
+      return undefined;
+    }
+
+    const hasChildren = CHILD_GROUPS.some((g) => (removed.children?.[g]?.length ?? 0) > 0);
+    if (!hasChildren) {
+      return removeTopic(sheets, id) ? [] : undefined;
+    }
+    if (last.group !== 'attached') {
+      throw new XmapError(
+        CODE_MOVE,
+        'Un blocco libero o un sommario con figli non si rimuove lasciando i figli: usa Elimina.'
+      );
+    }
+
+    const index = last.index;
+    const children = removed.children?.attached ?? [];
+    if (children.length === 0) {
+      adjustParentRanges(parent, 'attached', index);
+    } else {
+      shiftRangesOnReplace(parent, index, children.length);
+    }
+    list.splice(index, 1, ...children);
+    if (list.length === 0) {
+      delete parent.children?.[last.group];
+    }
+
+    for (const group of CHILD_GROUPS) {
+      if (group === 'attached') continue;
+      const moved = removed.children?.[group];
+      if (!moved || moved.length === 0) continue;
+      if (!parent.children) parent.children = {};
+      parent.children[group] = [...(parent.children[group] ?? []), ...moved];
+    }
+
+    // Bordi e sommari del blocco coprivano i suoi figli: ora coprono la stessa porzione del genitore.
+    // Un bordo 'master' racchiudeva il blocco stesso: sparisce con lui, non passa al genitore.
+    const movedBoundaries = (removed.boundaries ?? []).filter((b) => parseRange(b.range));
+    for (const b of movedBoundaries) offsetRange(b, index);
+    for (const s of removed.summaries ?? []) offsetRange(s, index);
+    if (movedBoundaries.length) {
+      parent.boundaries = [...(parent.boundaries ?? []), ...movedBoundaries];
+    }
+    if (removed.summaries?.length) {
+      parent.summaries = [...(parent.summaries ?? []), ...removed.summaries];
+    }
+
+    pruneRelationships(sheet, new Set([id]));
+    return children.flatMap((c) => (c.id ? [c.id] : []));
   }
   return undefined;
 }
