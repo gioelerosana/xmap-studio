@@ -182,6 +182,7 @@ blocco (o inizia a scrivere) · `Canc` elimina (si annulla con `Ctrl+Z`) · frec
 spostarsi · `Ctrl+I` dettagli del blocco (barra destra, chiusa di base; anche il
 pulsante in alto) · `Ctrl+Maiusc+L` formula · `Esc` chiude i dettagli, poi deseleziona.
 La barra flottante sul blocco compare solo su touch. I blocchi liberi si trascinano dove vuoi.
+Su touch un blocco si sposta solo se è già selezionato (tocco breve, poi trascina); trascinando un blocco non selezionato si sposta la mappa.
 
 Nell'albero a sinistra puoi **cercare**, filtrare per tipo (**Testo/Formule/
 Immagini**) e **trascinare un blocco** su un altro: rilasciando al centro diventa

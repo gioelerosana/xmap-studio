@@ -277,6 +277,8 @@ export const MapView: React.FC<MapViewProps> = ({
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
   const selectedTopicIdsRef = useRef(selectedTopicIds);
   selectedTopicIdsRef.current = selectedTopicIds;
+  const selectedTopicIdRef = useRef(selectedTopicId);
+  selectedTopicIdRef.current = selectedTopicId;
 
   const handlers = useRef({
     onSelectTopic,
@@ -882,6 +884,8 @@ export const MapView: React.FC<MapViewProps> = ({
     // Trascinamento di un blocco: `pressedNode` è il blocco premuto in attesa di capire
     // se il gesto è un click, un pan (touch che si muove subito) o un drag.
     let pressedNode = -1;
+    // Con touch/penna si trascina un blocco solo se era già selezionato; altrimenti il gesto è un pan.
+    let pressedDraggable = true;
     let longPressTimer = 0;
     interface ActiveDrag {
       src: number;
@@ -1120,10 +1124,13 @@ export const MapView: React.FC<MapViewProps> = ({
         const slopPress = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < slopPress) return;
         window.clearTimeout(longPressTimer);
-        beginDrag();
-        return;
-      }
-      if (mode === 'pinch' && pointers.size >= 2) {
+        if (pressedDraggable) {
+          beginDrag();
+          return;
+        }
+        pressedNode = -1;
+        beginPan(start);
+      } else if (mode === 'pinch' && pointers.size >= 2) {
         const [a, b] = [...pointers.values()];
         const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
         const sv = pinch.view;
@@ -1243,6 +1250,11 @@ export const MapView: React.FC<MapViewProps> = ({
       } else if (nodeIdx >= 0) {
         mode = 'nodepress';
         pressedNode = nodeIdx;
+        const pressedId = layoutRef.current?.nodes[nodeIdx]?.id;
+        pressedDraggable =
+          e.pointerType === 'mouse' ||
+          (pressedId !== undefined &&
+            (pressedId === selectedTopicIdRef.current || (selectedTopicIdsRef.current ?? []).includes(pressedId)));
         last = { x: e.clientX, y: e.clientY };
         samples = [];
         // Touch: pressione lunga (~500 ms senza movimento) apre il menu contestuale
