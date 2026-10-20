@@ -305,6 +305,7 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Modifica del titolo direttamente nel blocco (doppio clic / F2 / Spazio / digitando) | ✅ | `map/NodeEditor.tsx`; creazione + rinomina = un solo undo |
 | | Tab = figlio, Invio = fratello, Canc = elimina sulla mappa | ✅ | anche Maiusc+Invio (fratello prima), frecce, Esc; eliminazione senza conferma |
 | | Copia/incolla e duplica di sottoalberi | ✅ | `model/clone.ts` rigenera gli id; le risorse immagine viaggiano negli appunti; menu contestuale |
+| | Rimuovi solo questo blocco (i figli risalgono al genitore) | ✅ | menu contestuale; `removeTopicKeepChildren` in `model/edit.ts`, un solo undo; sommari/bordi del blocco seguono i figli, bordo `master` scartato; figli liberi e sommari con figli non ammessi (usa Elimina) |
 | | Selezione multipla e spostamento di gruppo | 🟡 | selezione con Maiusc/Ctrl+clic (usata dal sommario); spostamento di gruppo da fare |
 | | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | trascinabili, `position` = centro relativo alla radice (dal codice di XMind); round-trip in XMind da verificare |
 | Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | ispettore |
@@ -314,7 +315,7 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Punti di controllo trascinabili (`controlPoints`) | ✅ | maniglie sulla relazione selezionata |
 | | Creazione di una relazione trascinando dalla mappa | 🟡 | dal menu contestuale ("Collega con freccia…" + clic sul bersaglio); trascinamento da fare |
 | | Titolo della relazione modificabile in place | ⬜ | |
-| Struttura | Sommari (graffa + topic) e boundary | 🟡 | sommari resi e creabili su più fratelli (Ctrl+]); boundary da disegnare |
+| Struttura | Sommari (graffa + topic) e boundary | 🟡 | sommari resi e creabili su più fratelli (Ctrl+]), anche incollando un'immagine (Ctrl+V) con più fratelli selezionati; boundary da disegnare; round-trip in XMind dell'immagine su sommario da verificare |
 | | Logic Chart, Tree Chart | ✅ | |
 | | Mind map bilanciata, org chart, fishbone, timeline, matrice | ⬜ | oggi rese come Logic Chart |
 | Stile | Tema del foglio (colori, forme dei blocchi, linee dei rami) | 🟡 | colori dei rami; forme/linee dal tema da fare |
