@@ -14,6 +14,7 @@
     "build:core": "pnpm --filter @xmap/core build",
     "build:ui": "pnpm --filter @xmap/ui-kit build",
     "test": "pnpm --filter @xmap/core test",
+    "serve:tailnet": "node scripts/serve-tailnet.mjs",
     "dist:linux": "node apps/desktop/scripts/dist.mjs linux",
     "dist:win": "node apps/desktop/scripts/dist.mjs win",
     "build": "pnpm --filter @xmap/core build && pnpm --filter @xmap/ui-kit build && pnpm --filter @xmap/web build && pnpm --filter @xmap/desktop build"

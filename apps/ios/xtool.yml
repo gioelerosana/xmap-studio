@@ -1,0 +1,7 @@
+version: 1
+bundleID: com.gioelerosana.xmapstudio
+iconPath: icon.png
+infoPath: Info.plist
+# La build web (apps/web/dist) copiata da scripts/prepare-web.sh.
+resources:
+  - web

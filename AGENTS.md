@@ -271,7 +271,11 @@ si apre solo su sua richiesta.
 
 La web app è usabile su smartphone e tablet e installabile come PWA
 (`apps/web/public/manifest.webmanifest`, `sw.js`, registrato in `main.tsx` solo
-nella build di produzione). Per una modifica alla UI controlla anche:
+nella build di produzione). Il service worker mette in cache **tutta** la build
+all'installazione: l'elenco dei file e la versione li inietta `vite build`
+(plugin `precacheManifest` in `apps/web/vite.config.ts`) al posto dei
+segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
+`vite preview`, poi spegnilo e ricarica. Per una modifica alla UI controlla anche:
 
 - larghezze strette (≈360–430 px) e testo di sistema ingrandito: l'header non
   usa breakpoint fissi ma misura l'overflow e sposta le azioni nel menu ⋮
@@ -286,8 +290,31 @@ nella build di produzione). Per una modifica alla UI controlla anche:
   bottom sheet, toast). Dopo modifiche al config verifica che la CSS generata
   le contenga.
 
-Per provarla su un dispositivo: `pnpm build`, poi `cd apps/web && npx vite preview`
-(porta 4173, host `.ts.net` ammessi in `vite.config.ts`).
+Per provarla su un dispositivo si serve **sempre via Tailscale**, da qualunque
+PC si lavori: `pnpm serve:tailnet` (`scripts/serve-tailnet.mjs`) compila, avvia
+`vite preview` sulla porta dedicata 60417 e lo espone in HTTPS con `tailscale serve`. Quella porta è riservata allo script:
+all'avvio ferma chiunque la occupi e le vecchie istanze di `serve:tailnet`/`vite preview`.
+L'HTTPS è indispensabile: Safari registra il service worker (e quindi la PWA
+funziona offline) solo in un contesto sicuro, non su `http://IP-LAN`. Niente
+certificati locali: si usa quello `*.ts.net` di Tailscale. Il dispositivo deve
+essere nella tailnet (app Tailscale, stesso account).
+
+- Indirizzo stabile: con il Tailscale Service `svc:xmap` configurato è
+  `https://xmap.<tailnet>.ts.net`, uguale da ogni PC che lo serve. Setup una
+  tantum nella console admin: tag (es. `tag:xmap`) con `tagOwners` nella policy,
+  PC che servono taggati (i service host devono essere nodi taggati), servizio
+  `svc:xmap` con porta `tcp:443` e host approvati (o `autoApprovers`).
+- Il servizio va **creato** nella pagina Services (`autoApprovers` approva solo
+  gli host di un servizio esistente). Se l'host risulta "non connesso" dopo
+  averlo creato: `tailscale serve drain svc:xmap`, poi di nuovo
+  `pnpm serve:tailnet`. L'indirizzo del servizio non è raggiungibile dal PC che
+  lo ospita: si prova da un altro dispositivo.
+- Senza il servizio lo script ripiega sul nome della macchina
+  (`https://<pc>.<tailnet>.ts.net`).
+- Un nome fuori da `*.ts.net` (es. `xmap.net`) non è possibile con i certificati
+  di Tailscale.
+- Per spegnere: `tailscale serve --service=svc:xmap off` oppure
+  `tailscale serve --https=443 off`.
 
 ## Struttura del repository
 

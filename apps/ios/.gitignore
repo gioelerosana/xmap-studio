@@ -1,0 +1,12 @@
+.DS_Store
+/.build
+/Packages
+/xtool
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# Build web copiata nel bundle da scripts/prepare-web.sh
+/web
