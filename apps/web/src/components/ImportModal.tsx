@@ -19,16 +19,22 @@ const FORMAT_ITEMS: { id: ImportFormat; label: string }[] = [
 export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onImport }) => {
   const [format, setFormat] = useState<ImportFormat>('markdown');
   const [text, setText] = useState('');
+  const [fileError, setFileError] = useState<string>();
   const [asNewSheet, setAsNewSheet] = useState(true);
 
   if (!isOpen) return null;
 
   const handleFile = async () => {
-    const picked = await pickAnyFile({ description: 'Markdown o OPML', extensions: ['md', 'markdown', 'txt', 'opml', 'xml'] });
-    if (!picked) return;
-    setText(new TextDecoder().decode(picked.bytes));
-    if (picked.name.endsWith('.opml') || picked.name.endsWith('.xml')) setFormat('opml');
-    else setFormat('markdown');
+    setFileError(undefined);
+    try {
+      const picked = await pickAnyFile({ description: 'Markdown o OPML', extensions: ['md', 'markdown', 'txt', 'opml', 'xml'] });
+      if (!picked) return;
+      setText(new TextDecoder().decode(picked.bytes));
+      if (picked.name.endsWith('.opml') || picked.name.endsWith('.xml')) setFormat('opml');
+      else setFormat('markdown');
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleSubmit = () => {
@@ -65,6 +71,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onImp
             Carica file…
           </Button>
         </div>
+
+        {fileError && (
+          <p role="alert" className="text-xs text-error-foreground">
+            {fileError}
+          </p>
+        )}
 
         <Field label="Contenuto">
           <Textarea

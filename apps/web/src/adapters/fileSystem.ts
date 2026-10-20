@@ -9,6 +9,67 @@ function isIOS(): boolean {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+/**
+ * Legge un File scelto dal selettore. Con i provider di file remoti di iOS
+ * (Nextcloud, …) il file può essere un segnaposto da scaricare: `arrayBuffer()`
+ * può fallire dove `FileReader` riesce, quindi si prova prima l'uno poi l'altro.
+ */
+async function readPickedFile(file: File): Promise<Uint8Array> {
+  try {
+    return new Uint8Array(await file.arrayBuffer());
+  } catch {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+      reader.onerror = () =>
+        reject(
+          new Error(
+            `Impossibile leggere "${file.name}". Se il file è su Nextcloud o un altro cloud, ` +
+              'aprilo prima dall\'app File (per scaricarlo sul dispositivo) e riprova.'
+          )
+        );
+      reader.readAsArrayBuffer(file);
+    });
+  }
+}
+
+/**
+ * Apre il selettore file nativo del browser. L'input viene agganciato al DOM
+ * finché il selettore è aperto: su iOS un input staccato può essere raccolto dal
+ * garbage collector e `change` non arriva mai. Gli errori di lettura vengono
+ * rifiutati (e quindi mostrati dal chiamante) invece di restare silenziosi.
+ */
+function pickFileViaInput(accept?: string): Promise<{ name: string; bytes: Uint8Array } | null> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    if (accept) input.accept = accept;
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    const cleanup = () => input.remove();
+    input.addEventListener('change', async () => {
+      try {
+        const file = input.files?.[0];
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        resolve({ name: file.name, bytes: await readPickedFile(file) });
+      } catch (err) {
+        reject(err);
+      } finally {
+        cleanup();
+      }
+    });
+    input.addEventListener('cancel', () => {
+      cleanup();
+      resolve(null);
+    });
+    input.click();
+  });
+}
+
 export async function openLocalXmindFile(): Promise<{
   name: string;
   data: Uint8Array;
@@ -44,25 +105,9 @@ export async function openLocalXmindFile(): Promise<{
   }
 
   // 2. Fallback input file standard
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    // iOS non associa `.xmind` a un tipo noto e disabiliterebbe il file nel selettore.
-    if (!isIOS()) input.accept = '.xmind';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) {
-        resolve(null);
-        return;
-      }
-      const buffer = await file.arrayBuffer();
-      resolve({
-        name: file.name,
-        data: new Uint8Array(buffer),
-      });
-    };
-    input.click();
-  });
+  // iOS non associa `.xmind` a un tipo noto e disabiliterebbe il file nel selettore.
+  const picked = await pickFileViaInput(isIOS() ? undefined : '.xmind');
+  return picked ? { name: picked.name, data: picked.bytes } : null;
 }
 
 export async function saveLocalXmindFile(
@@ -144,22 +189,9 @@ export async function pickAnyFile(options?: {
     return { name: res.name, path: res.path, bytes: new Uint8Array(res.bytes) };
   }
 
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    if (options?.extensions?.length && !isIOS()) {
-      input.accept = options.extensions.map((e) => `.${e}`).join(',');
-    }
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) {
-        resolve(null);
-        return;
-      }
-      resolve({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
-    };
-    input.click();
-  });
+  const accept =
+    options?.extensions?.length && !isIOS() ? options.extensions.map((e) => `.${e}`).join(',') : undefined;
+  return pickFileViaInput(accept);
 }
 
 /**
