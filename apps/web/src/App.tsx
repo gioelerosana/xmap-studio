@@ -700,7 +700,7 @@ export const App: React.FC = () => {
         else if (allTopics[0]) handleAddChild(allTopics[0].id);
       } else if (key === ',') {
         e.preventDefault();
-        setSettingsOpen(true);
+        setSettingsOpen((open) => !open);
       } else if (key === ']' || e.code === 'BracketRight') {
         if (inField) return;
         e.preventDefault();
@@ -1322,6 +1322,7 @@ const handleMoveFloating = useCallback(
     !exportModalOpen &&
     !importModalOpen &&
     !aboutOpen &&
+    !settingsOpen &&
     !replacePrompt &&
     !closePrompt &&
     !busy;
@@ -1419,6 +1420,12 @@ const handleMoveFloating = useCallback(
       : []),
   ];
 
+  // Con il pulsante tema già in header la voce nel menu ⋮ sarebbe un doppione.
+  const themeItem = (separatorBefore: boolean): MenuItem[] =>
+    inlineRedo
+      ? []
+      : [{ id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore, onSelect: toggleDarkMode }];
+
   const menuItems: MenuItem[] = workbook
     ? [
         ...overflowItems,
@@ -1453,14 +1460,12 @@ const handleMoveFloating = useCallback(
           disabled: !selectedTopic || selectedTopic.depth === 0,
           onSelect: handleDeleteSelected,
         },
-        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: true, onSelect: toggleDarkMode },
-        { id: 'settings', label: 'Impostazioni…', icon: <Settings className="size-4" />, shortcut: 'Ctrl+,', onSelect: () => setSettingsOpen(true) },
+        ...themeItem(true),
         { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ]
     : [
         ...overflowItems,
-        { id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore: overflowItems.length > 0, onSelect: toggleDarkMode },
-        { id: 'settings', label: 'Impostazioni…', icon: <Settings className="size-4" />, shortcut: 'Ctrl+,', onSelect: () => setSettingsOpen(true) },
+        ...themeItem(overflowItems.length > 0),
         { id: 'about', label: 'Informazioni', icon: <Info className="size-4" />, onSelect: () => setAboutOpen(true) },
       ];
 
@@ -1519,6 +1524,14 @@ const handleMoveFloating = useCallback(
                 <PanelRight className="size-4" />
               </IconButton>
             )}
+            <IconButton
+              size="sm"
+              active={settingsOpen}
+              onClick={() => setSettingsOpen((open) => !open)}
+              label="Impostazioni (Ctrl+,)"
+            >
+              <Settings className="size-4" />
+            </IconButton>
             <Menu items={menuItems} widthClass="w-72" trigger={
               <IconButton size="sm" label="Menu">
                 <MoreVertical className="size-4" />
@@ -1540,6 +1553,14 @@ const handleMoveFloating = useCallback(
       />
 
       <main className="relative flex flex-1 overflow-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+        {settingsOpen && (
+          <SettingsPage
+            onClose={() => setSettingsOpen(false)}
+            settings={settings}
+            onUpdate={updateSettings}
+            onReset={resetSettings}
+          />
+        )}
         {!workbook ? (
           <EmptyState
             onOpenFile={handleOpenLocalFile}
@@ -1685,14 +1706,6 @@ const handleMoveFloating = useCallback(
             addToast('error', `Import non riuscito: ${err.message}`);
           }
         }}
-      />
-
-      <SettingsPage
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        settings={settings}
-        onUpdate={updateSettings}
-        onReset={resetSettings}
       />
 
       <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title={APP_NAME} size="sm">
