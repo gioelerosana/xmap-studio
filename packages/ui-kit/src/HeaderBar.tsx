@@ -39,7 +39,7 @@ export function HeaderBar({
     <header
       ref={headerRef}
       className={cn(
-        'app-drag-region app-header sticky top-0 flex h-[calc(var(--topbar-height)+env(safe-area-inset-top))] shrink-0 select-none items-center gap-2 overflow-x-clip border-b bg-background pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)] text-foreground',
+        'app-drag-region app-header sticky top-0 z-40 flex h-[calc(var(--topbar-height)+env(safe-area-inset-top))] shrink-0 select-none items-center gap-2 overflow-x-clip border-b bg-background pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)] text-foreground',
         className,
       )}
     >
