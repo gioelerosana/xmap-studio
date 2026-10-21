@@ -1,8 +1,10 @@
 import React from 'react';
-import { Bold, Italic, Strikethrough, Underline } from 'lucide-react';
+import { Baseline, Bold, Italic, Strikethrough, Underline } from 'lucide-react';
 import type { TopicView } from '@xmap/core';
 import { cn } from '@xmap/ui-kit';
 
+import { COMPACT_QUERY } from '../../app/constants.js';
+import { useMediaQuery } from '../../app/useMediaQuery.js';
 import type { TopicActions } from '../../app/useTopicActions.js';
 import type { InlineToggleStyle } from '../map/editorBridge.js';
 import { ColorPopover, sameColor } from './ColorPopover.js';
@@ -67,6 +69,8 @@ export const TextStyleControls: React.FC<TextStyleControlsProps> = ({ topic, isE
   // Durante la modifica in place lo stato della selezione parziale non è noto: nessun pulsante risulta attivo.
   const style = isEditingText ? undefined : topic?.textStyle;
   const color = style?.color ?? null;
+  // Sugli schermi stretti i pallini rapidi lasciano posto a un solo pulsante con il colore attuale.
+  const compact = useMediaQuery(COMPACT_QUERY);
 
   return (
     <>
@@ -82,29 +86,34 @@ export const TextStyleControls: React.FC<TextStyleControlsProps> = ({ topic, isE
         </ToolbarButton>
       ))}
       <div role="group" aria-label="Colore del testo" className="ml-1 flex items-center">
-        <Swatch
-          label="Colore del testo predefinito"
-          color={null}
-          selected={enabled && !isEditingText && color === null}
-          disabled={!enabled}
-          onPick={() => setTextColor(target, null)}
-        />
-        {QUICK_TEXT_COLORS.map((c) => (
-          <Swatch
-            key={c}
-            label={`Colore del testo ${c}`}
-            color={c}
-            selected={sameColor(color, c)}
-            disabled={!enabled}
-            onPick={() => setTextColor(target, c)}
-          />
-        ))}
+        {!compact && (
+          <>
+            <Swatch
+              label="Colore del testo predefinito"
+              color={null}
+              selected={enabled && !isEditingText && color === null}
+              disabled={!enabled}
+              onPick={() => setTextColor(target, null)}
+            />
+            {QUICK_TEXT_COLORS.map((c) => (
+              <Swatch
+                key={c}
+                label={`Colore del testo ${c}`}
+                color={c}
+                selected={sameColor(color, c)}
+                disabled={!enabled}
+                onPick={() => setTextColor(target, c)}
+              />
+            ))}
+          </>
+        )}
         <ColorPopover
           label="Colore del testo"
           value={color}
           colors={BRANCH_COLORS}
           noneLabel="Predefinito"
           disabled={!enabled}
+          icon={compact ? <Baseline className="size-4" /> : undefined}
           onSelect={(c) => setTextColor(target, c)}
         />
       </div>
