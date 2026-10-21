@@ -1,5 +1,6 @@
 // Compila e serve la web app in HTTPS sulla tailnet, per provarla (anche
-// offline, come PWA) su tablet e telefoni. Safari registra il service worker
+// offline, come PWA) su tablet e telefoni. Con `--dev` non compila: espone il
+// server di sviluppo Vite (HMR), per vedere le modifiche mentre si lavora. Safari registra il service worker
 // solo in un contesto sicuro: l'HTTPS lo dà `tailscale serve` con un
 // certificato *.ts.net valido, senza certificati locali.
 //
@@ -19,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 // Porta dedicata, alta apposta per non collidere con altri servizi.
 const PORT = 60417;
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../apps/web');
+const DEV = process.argv.includes('--dev');
 const SERVICE = process.argv.includes('--no-service') ? '' : (process.env.XMAP_TS_SERVICE ?? 'svc:xmap');
 const target = `http://127.0.0.1:${PORT}`;
 
@@ -134,7 +136,8 @@ function stopAdvertising() {
   }
 }
 
-execFileSync('pnpm', ['build'], { stdio: 'inherit' });
+// In sviluppo Vite legge i sorgenti (alias in vite.config.ts): niente build.
+if (!DEV) execFileSync('pnpm', ['build'], { stdio: 'inherit' });
 
 const machineUrl = `https://${status.Self.DNSName.replace(/\.$/, '')}/`;
 let url = machineUrl;
@@ -153,12 +156,13 @@ if (SERVICE) {
 // macchina serve a provare l'app da qui.
 tailscale(['serve', '--https=443', '--bg', target]);
 
-console.log(`\nXMap Studio sulla tailnet: ${url}`);
+console.log(`\nXMap Studio ${DEV ? '(sviluppo, HMR) ' : ''}sulla tailnet: ${url}`);
 if (url !== machineUrl) {
   console.log(`Il dominio del Service non è raggiungibile da questo PC: provalo da un altro dispositivo.\nDa questo PC: ${machineUrl}`);
 }
 console.log();
-const preview = spawn('pnpm', ['--filter', '@xmap/web', 'exec', 'vite', 'preview', '--port', String(PORT), '--strictPort'], {
+const viteArgs = DEV ? ['--port', String(PORT), '--strictPort'] : ['preview', '--port', String(PORT), '--strictPort'];
+const preview = spawn('pnpm', ['--filter', '@xmap/web', 'exec', 'vite', ...viteArgs], {
   stdio: 'inherit',
 });
 preview.on('exit', (code) => process.exit(code ?? 0));

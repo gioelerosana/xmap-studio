@@ -222,6 +222,7 @@ pnpm install
 ```bash
 pnpm dev:web        # UI nel browser (Vite)
 pnpm dev:desktop    # app Electron (avvia da solo il server web)
+pnpm dev:tailnet    # server di sviluppo (HMR) su https://xmap.<tailnet>.ts.net
 pnpm build          # core → ui-kit → web → desktop
 pnpm test           # test di packages/core (Vitest)
 ```
@@ -278,9 +279,22 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
   le contenga.
 
 Per provarla su un dispositivo si serve **sempre via Tailscale**, da qualunque
-PC si lavori: `pnpm serve:tailnet` (`scripts/serve-tailnet.mjs`) compila, avvia
-`vite preview` sulla porta dedicata 60417 e lo espone in HTTPS con `tailscale serve`. Quella porta è riservata allo script:
-all'avvio ferma chiunque la occupi e le vecchie istanze di `serve:tailnet`/`vite preview`.
+PC si lavori, con `scripts/serve-tailnet.mjs` sulla porta dedicata 60417,
+esposta in HTTPS con `tailscale serve`:
+
+- `pnpm dev:tailnet` espone il **server di sviluppo** Vite: niente build, le
+  modifiche arrivano subito sul dispositivo (HMR, via `wss` sullo stesso
+  indirizzo). È il modo normale di provare l'app mentre la si sviluppa. Niente
+  service worker: in sviluppo non si registra.
+- `pnpm serve:tailnet` compila e avvia `vite preview` sulla build di
+  produzione: serve per provare PWA, installazione e uso offline.
+
+**A inizio sessione** che tocca la UI, sul PC che ospita `svc:xmap`
+controlla che l'app risponda (`curl -sI http://127.0.0.1:60417/`); se non
+risponde, avvia `pnpm dev:tailnet` staccato dalla sessione, così non si ferma
+con lei: `setsid nohup pnpm dev:tailnet > /tmp/serve-tailnet.log 2>&1 < /dev/null &`.
+I due comandi si escludono: la porta è riservata allo script, che all'avvio
+ferma chiunque la occupi e le vecchie istanze di `serve:tailnet`/`vite preview`.
 L'HTTPS è indispensabile: Safari registra il service worker (e quindi la PWA
 funziona offline) solo in un contesto sicuro, non su `http://IP-LAN`. Niente
 certificati locali: si usa quello `*.ts.net` di Tailscale. Il dispositivo deve
