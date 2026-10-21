@@ -1,6 +1,7 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { cn } from '@xmap/ui-kit';
 import type { TextStyle, TitleRun } from '@xmap/core';
+import { registerInlineEditor, type InlineToggleStyle } from './editorBridge.js';
 
 export type EditExit = 'enter' | 'tab' | 'blur';
 
@@ -372,32 +373,62 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
     onCommit(text, exit, hasStyle ? runs : undefined);
   };
 
-  const toggleStyle = (styleKey: 'bold' | 'italic' | 'underline') => {
+  // Applica `mutate` ai caratteri selezionati; senza selezione a tutto il testo (comandi dalla barra).
+  const restyle = (
+    mutate: (selected: StyledChar[]) => void,
+    { wholeIfCollapsed }: { wholeIfCollapsed: boolean }
+  ) => {
     const el = ref.current;
     if (!el) return;
-    const offsets = getSelectionOffsets(el);
-    if (!offsets || offsets.start === offsets.end) return;
-
     const chars = getStyledChars(el);
     if (chars.length === 0) return;
-
-    const start = Math.max(0, Math.min(offsets.start, chars.length));
-    const end = Math.max(0, Math.min(offsets.end, chars.length));
-    if (start >= end) return;
-
-    const selChars = chars.slice(start, end);
-    const allHaveStyle = selChars.every((c) => Boolean(c.style[styleKey]));
-    const nextVal = !allHaveStyle;
-
-    for (let i = start; i < end; i++) {
-      chars[i].style[styleKey] = nextVal;
+    const offsets = getSelectionOffsets(el);
+    let start = Math.max(0, Math.min(offsets?.start ?? 0, chars.length));
+    let end = Math.max(0, Math.min(offsets?.end ?? 0, chars.length));
+    const collapsed = start >= end;
+    if (collapsed && !wholeIfCollapsed) return;
+    if (collapsed) {
+      start = 0;
+      end = chars.length;
     }
+
+    mutate(chars.slice(start, end));
 
     const runs = charsToRuns(chars);
     renderRunsToElement(el, runs);
-    setSelectionOffsets(el, start, end);
+    if (collapsed && offsets) setSelectionOffsets(el, offsets.start, offsets.end);
+    else setSelectionOffsets(el, start, end);
     fit();
   };
+
+  const toggleStyle = (styleKey: InlineToggleStyle, wholeIfCollapsed = false) =>
+    restyle(
+      (selected) => {
+        const nextVal = !selected.every((c) => Boolean(c.style[styleKey]));
+        for (const c of selected) c.style[styleKey] = nextVal;
+      },
+      { wholeIfCollapsed }
+    );
+
+  useEffect(
+    () =>
+      registerInlineEditor({
+        toggleStyle: (style) => toggleStyle(style, true),
+        setColor: (color) =>
+          restyle(
+            (selected) => {
+              for (const c of selected) {
+                if (color) c.style.color = color;
+                else delete c.style.color;
+              }
+            },
+            { wholeIfCollapsed: true }
+          ),
+      }),
+    // Le funzioni leggono solo il DOM tramite `ref`: basta registrarle una volta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   const handleShiftEnter = () => {
     const el = ref.current;

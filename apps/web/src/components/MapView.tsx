@@ -8,7 +8,7 @@ import { RelationshipLayer } from './map/RelationshipLayer.js';
 import { buildDragIndex } from './map/dragTarget.js';
 import { backgroundMenuItems, nodeMenuItems } from './map/menus.js';
 import { MapEdges } from './map/MapEdges.js';
-import { MultiSelectBar, ZoomControls } from './map/MapControls.js';
+import { ZoomControls } from './map/MapControls.js';
 import { NodeCard } from './map/NodeCard.js';
 import { TopicDragOverlay } from './map/TopicDragOverlay.js';
 import { buildFormulaSvgCache, buildResourceUrls } from './map/assets.js';
@@ -31,7 +31,6 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedTopicIds,
   onSelectTopic,
   onClearSelection,
-  onOpenDetails,
   onOpenLatex,
   onAddChild,
   onAddSibling,
@@ -42,7 +41,6 @@ export const MapView: React.FC<MapViewProps> = ({
   darkMode = true,
   structure,
   onStructureChange,
-  detailsOpen = false,
   onMoveTopic,
   onMoveFloatingTopic,
   onRelationshipControlPointsChange,
@@ -85,7 +83,6 @@ export const MapView: React.FC<MapViewProps> = ({
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
   const handlersValue: MapHandlers = {
     onSelectTopic,
-    onOpenDetails,
     onOpenLatex,
     onAddChild,
     onAddSibling,
@@ -137,7 +134,7 @@ export const MapView: React.FC<MapViewProps> = ({
     return effectiveLayout.nodes.find((n) => n.id === editing.id) || null;
   }, [effectiveLayout, editing]);
 
-  useRevealNode({ viewport, editing, editingNode, selectedNode, detailsOpen });
+  useRevealNode({ viewport, editing, editingNode });
   useMapShortcuts({ selectedTopicId, editing, handlers });
 
   const menuContext = { handlers, canPaste, canAddSummary };
@@ -173,12 +170,12 @@ export const MapView: React.FC<MapViewProps> = ({
     };
     const activateNode = (node: LayoutNode, e: React.MouseEvent<SVGGElement>) => {
       e.stopPropagation();
-      // I blocchi di testo si modificano in place (anche su touch); formule e immagini aprono i dettagli.
+      // I blocchi di testo si modificano in place (anche su touch), le formule nell'editor LaTeX.
       if (editingRef.current?.id === node.id) return;
       if (node.kind === 'text' && handlers.current.onStartEdit) {
         handlers.current.onStartEdit(node.id);
-      } else {
-        handlers.current.onOpenDetails(node.id);
+      } else if (node.kind === 'equation') {
+        handlers.current.onOpenLatex(node.id);
       }
     };
 
@@ -279,10 +276,6 @@ export const MapView: React.FC<MapViewProps> = ({
         onClearSelection?.();
       }}
     >
-      {selectedTopicIds && selectedTopicIds.length > 1 && (
-        <MultiSelectBar count={selectedTopicIds.length} onAddSummary={onAddSummary} canAddSummary={canAddSummary} />
-      )}
-
       {/* Controlli zoom flottanti in basso a destra */}
       <ZoomControls
         structure={structure}
@@ -339,16 +332,22 @@ export const MapView: React.FC<MapViewProps> = ({
               Sommario
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="px-2 sm:px-[9px] text-xs sm:text-sm"
-            icon={<Edit3 className="size-4" />}
-            onClick={() => onOpenDetails(selectedNode.id)}
-            title="Modifica il blocco (testo, formula, stile)"
-          >
-            Modifica
-          </Button>
+          {selectedNode.kind !== 'image' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2 sm:px-[9px] text-xs sm:text-sm"
+              icon={<Edit3 className="size-4" />}
+              onClick={() =>
+                selectedNode.kind === 'text' && onStartEdit
+                  ? onStartEdit(selectedNode.id)
+                  : onOpenLatex(selectedNode.id)
+              }
+              title={selectedNode.kind === 'text' ? 'Modifica il testo' : 'Modifica la formula'}
+            >
+              Modifica
+            </Button>
+          )}
           {selectedNode.depth > 0 && onDeleteTopic && (
             <>
               <Separator orientation="vertical" className="h-4 mx-0.5" />

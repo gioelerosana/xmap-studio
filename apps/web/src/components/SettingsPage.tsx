@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, FileLock2, Info, Keyboard, LayoutPanelLeft, Network, Palette } from 'lucide-react';
+import { ArrowLeft, FileLock2, Info, Keyboard, Network, Palette } from 'lucide-react';
 import {
   Button,
   IconButton,
@@ -50,12 +50,11 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 
-type SectionId = 'appearance' | 'map' | 'interface' | 'files' | 'shortcuts' | 'about';
+type SectionId = 'appearance' | 'map' | 'files' | 'shortcuts' | 'about';
 
 const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode }[] = [
   { id: 'appearance', label: 'Aspetto', icon: <Palette className="size-4" /> },
   { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
-  { id: 'interface', label: 'Interfaccia', icon: <LayoutPanelLeft className="size-4" /> },
   { id: 'files', label: 'File e sicurezza', icon: <FileLock2 className="size-4" /> },
   { id: 'shortcuts', label: 'Scorciatoie', icon: <Keyboard className="size-4" /> },
   { id: 'about', label: 'Informazioni', icon: <Info className="size-4" /> },
@@ -181,21 +180,6 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsP
                   items={STRUCTURE_ITEMS}
                   activeId={settings.mapStructure}
                   onChange={(mapStructure) => onUpdate({ mapStructure })}
-                />
-              </SettingRow>
-            </SettingsSection>
-          )}
-
-          {active === 'interface' && (
-            <SettingsSection title="Interfaccia">
-              <SettingRow
-                label="Apri i dettagli alla selezione"
-                hint="Su desktop. Di base i dettagli si aprono solo su richiesta (pulsante, scorciatoia o doppio clic)."
-              >
-                <Switch
-                  aria-label="Apri i dettagli alla selezione"
-                  checked={settings.detailsOnSelect}
-                  onCheckedChange={(detailsOnSelect) => onUpdate({ detailsOnSelect })}
                 />
               </SettingRow>
             </SettingsSection>

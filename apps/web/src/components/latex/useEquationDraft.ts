@@ -11,7 +11,7 @@ interface EquationDraftOptions {
   onToast: (type: 'info' | 'success' | 'warning' | 'error', message: string) => void;
 }
 
-// Bozza dell'equazione: vive nel corpo dell'ispettore, non nella sezione, così sopravvive alla chiusura della sezione.
+// Bozza dell'equazione dell'editor LaTeX: anteprima con debounce, applicazione e rimozione.
 export function useEquationDraft({ topic: t, controller, darkMode, onChanged, onToast }: EquationDraftOptions) {
   const [latex, setLatex] = useState(t.latex || '');
   const [titleMode, setTitleMode] = useState<TitleModeId>('formula_only');
@@ -20,7 +20,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
   const [preview, setPreview] = useState<{ svg: string; error: string | null } | null>(null);
   const [applying, setApplying] = useState(false);
 
-  // Undo/redo (o modifiche da altre viste) cambiano il topic mentre il pannello è aperto:
+  // Undo/redo (o modifiche da altre viste) cambiano il topic mentre l'editor è aperto:
   // il campo LaTeX si riallinea al valore del modello.
   useEffect(() => setLatex(t.latex || ''), [t.latex]);
 

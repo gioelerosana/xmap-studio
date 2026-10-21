@@ -1,7 +1,7 @@
 import type { Ref } from 'react';
 import type { WorkbookDto } from '@xmap/core';
 import { Button, HeaderBar, IconButton, Menu, Separator, cn, type MenuItem } from '@xmap/ui-kit';
-import { FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, PanelRight, Settings } from 'lucide-react';
+import { FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 
 interface AppHeaderProps {
@@ -12,8 +12,6 @@ interface AppHeaderProps {
   workbook: WorkbookDto | null;
   busy: boolean;
   darkMode: boolean;
-  inspectorVisible: boolean;
-  hasSelection: boolean;
   settingsOpen: boolean;
   isElectron: boolean;
   isWindowMaximized: boolean;
@@ -23,7 +21,6 @@ interface AppHeaderProps {
   onUndo: () => void;
   onRedo: () => void;
   onToggleTheme: () => void;
-  onToggleDetails: () => void;
   onToggleSettings: () => void;
 }
 
@@ -34,8 +31,6 @@ export function AppHeader({
   workbook,
   busy,
   darkMode,
-  inspectorVisible,
-  hasSelection,
   settingsOpen,
   isElectron,
   isWindowMaximized,
@@ -45,7 +40,6 @@ export function AppHeader({
   onUndo,
   onRedo,
   onToggleTheme,
-  onToggleDetails,
   onToggleSettings,
 }: AppHeaderProps) {
   return (
@@ -88,18 +82,6 @@ export function AppHeader({
           {layout.inlineRedo && (
             <IconButton size="sm" onClick={onToggleTheme} label="Cambia tema">
               {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </IconButton>
-          )}
-          {workbook && layout.inlineDetails && (
-            <IconButton
-              size="sm"
-              active={inspectorVisible}
-              disabled={!hasSelection}
-              onClick={onToggleDetails}
-              title="Dettagli blocco"
-              label="Dettagli blocco"
-            >
-              <PanelRight className="size-4" />
             </IconButton>
           )}
           <IconButton

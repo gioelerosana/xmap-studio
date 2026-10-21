@@ -17,8 +17,6 @@ export interface Settings {
   theme: ThemePreference;
   /** Struttura predefinita della mappa; il selettore nella mappa scrive qui. */
   mapStructure: MapStructureSetting;
-  /** Su desktop, selezionare un blocco apre il pannello dettagli. */
-  detailsOnSelect: boolean;
   /** Azzera transizioni e animazioni (classe `reduce-motion` su `<html>`). */
   reduceMotion: boolean;
 }
@@ -39,7 +37,6 @@ export function defaultSettings(): Settings {
   return {
     theme: 'system',
     mapStructure: 'tree',
-    detailsOnSelect: false,
     reduceMotion: systemPrefers(REDUCE_MOTION_QUERY),
   };
 }
@@ -58,8 +55,6 @@ export function sanitizeSettings(value: unknown, base: Settings): Settings {
   return {
     theme: pickOneOf(record.theme, THEMES, base.theme),
     mapStructure: pickOneOf(record.mapStructure, STRUCTURES, base.mapStructure),
-    detailsOnSelect:
-      typeof record.detailsOnSelect === 'boolean' ? record.detailsOnSelect : base.detailsOnSelect,
     reduceMotion: typeof record.reduceMotion === 'boolean' ? record.reduceMotion : base.reduceMotion,
   };
 }
