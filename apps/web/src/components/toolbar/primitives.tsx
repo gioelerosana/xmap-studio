@@ -58,8 +58,14 @@ export const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(f
   );
 });
 
-/** Separatore verticale tra gruppi di comandi. */
-export const ToolbarSeparator: React.FC = () => <div role="separator" aria-orientation="vertical" className="mx-0.5 h-4 w-px shrink-0 bg-border" />;
+/** Separatore tra gruppi di comandi: verticale nella barra orizzontale, orizzontale in quella a colonna. */
+export const ToolbarSeparator: React.FC = () => {
+  const orientation = useToolbarOrientation();
+  if (orientation === 'vertical') {
+    return <div role="separator" aria-orientation="horizontal" className="my-0.5 h-px w-4 shrink-0 bg-border" />;
+  }
+  return <div role="separator" aria-orientation="vertical" className="mx-0.5 h-4 w-px shrink-0 bg-border" />;
+};
 
 export interface ToolbarSwatchProps {
   label: string;
@@ -103,7 +109,7 @@ export interface ToolbarPopoverProps {
   children: (close: () => void) => React.ReactNode;
   /** Classi del pannello (larghezza, padding). */
   panelClassName?: string;
-  /** Allineamento orizzontale del pannello rispetto al trigger. */
+  /** Allineamento orizzontale del pannello rispetto al trigger (solo barra in alto/in basso; ignorato sui lati). */
   align?: 'start' | 'center' | 'end';
   /** Se il pannello contiene campi di testo deve poter prendere il focus (default false). */
   focusable?: boolean;
@@ -127,9 +133,28 @@ const alignedLeft = (align: 'start' | 'center' | 'end', anchor: DOMRect, width: 
   return anchor.left + (anchor.width - width) * HALF;
 };
 
+/** Ascissa di un pannello di larghezza `size` tenuta dentro la finestra con il margine minimo. */
+const clampToViewport = (value: number, size: number, viewportSize: number): number =>
+  Math.max(VIEWPORT_MARGIN, Math.min(value, viewportSize - size - VIEWPORT_MARGIN));
+
+/**
+ * Ascissa del pannello quando la barra è agganciata a un lato: `left` lo mette a destra del trigger,
+ * `right` a sinistra. Se il lato preferito non ha spazio si passa all'altro, se c'è.
+ */
+const sideLeft = (dock: 'left' | 'right', anchor: DOMRect, width: number): number => {
+  const rightOfTrigger = anchor.right + PANEL_GAP;
+  const leftOfTrigger = anchor.left - PANEL_GAP - width;
+  const preferred = dock === 'left' ? rightOfTrigger : leftOfTrigger;
+  const other = dock === 'left' ? leftOfTrigger : rightOfTrigger;
+  const fits = (left: number): boolean => left >= VIEWPORT_MARGIN && left + width <= window.innerWidth - VIEWPORT_MARGIN;
+  return fits(preferred) || !fits(other) ? preferred : other;
+};
+
 /**
  * Pannello ancorato a un bottone della barra: si apre sotto il trigger (sopra quando la barra
- * è agganciata in basso, `data-dock="bottom"` sul contenitore), si chiude con clic fuori o Esc.
+ * è agganciata in basso, `data-dock="bottom"` sul contenitore). Agganciata a un lato
+ * (`data-dock="left"` o `"right"`) si apre accanto al trigger, con il bordo superiore allineato
+ * a quello del trigger. Si chiude con clic fuori o Esc.
  * Il pannello è reso in un portale con posizione `fixed` calcolata dal trigger: così l'`overflow`
  * della barra (scorrimento orizzontale su schermi stretti) non lo taglia.
  */
@@ -179,13 +204,20 @@ export const ToolbarPopover: React.FC<ToolbarPopoverProps> = ({
     const anchor = root.getBoundingClientRect();
     const width = panel.offsetWidth;
     const height = panel.offsetHeight;
+    const dock = root.closest<HTMLElement>('[data-dock]')?.dataset.dock;
+    if (dock === 'left' || dock === 'right') {
+      setPlacement({
+        left: sideLeft(dock, anchor, width),
+        top: clampToViewport(anchor.top, height, window.innerHeight),
+      });
+      return;
+    }
     const roomBelow = window.innerHeight - anchor.bottom - PANEL_GAP - VIEWPORT_MARGIN;
     const roomAbove = anchor.top - PANEL_GAP - VIEWPORT_MARGIN;
-    const docked = root.closest<HTMLElement>('[data-dock]')?.dataset.dock === 'bottom';
+    const docked = dock === 'bottom';
     // Lato preferito dall'ancoraggio della barra; si inverte solo se non c'è spazio e l'altro lato ne ha di più.
     const up = docked ? roomAbove >= height || roomAbove > roomBelow : roomBelow < height && roomAbove > roomBelow;
-    const idealLeft = alignedLeft(align, anchor, width);
-    const left = Math.max(VIEWPORT_MARGIN, Math.min(idealLeft, window.innerWidth - width - VIEWPORT_MARGIN));
+    const left = clampToViewport(alignedLeft(align, anchor, width), width, window.innerWidth);
     setPlacement(
       up ? { left, bottom: window.innerHeight - anchor.top + PANEL_GAP } : { left, top: anchor.bottom + PANEL_GAP },
     );

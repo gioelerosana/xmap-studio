@@ -8,7 +8,7 @@ import type { InlineToggleStyle } from '../map/editorBridge.js';
 import { sameColor } from './ColorPopover.js';
 import { FOCUS_RING, chipClass, swatchHairline, swatchSelected } from './classes.js';
 import { BRANCH_COLORS } from './constants.js';
-import { ToolbarButton, ToolbarPopover } from './primitives.js';
+import { ToolbarButton, ToolbarPopover, useToolbarOrientation } from './primitives.js';
 import { setTextColor, toggleTextStyle } from './useTextStyleShortcuts.js';
 
 // Stili nel pannello "Altri stili": il grassetto resta sempre visibile sulla barra.
@@ -28,6 +28,8 @@ interface TextStyleControlsProps {
 // dell'editor in place mentre si scrive (vedi map/editorBridge.ts).
 export const TextStyleControls: React.FC<TextStyleControlsProps> = ({ topic, isEditingText, actions }) => {
   const enabled = topic?.kind === 'text';
+  const orientation = useToolbarOrientation();
+  const chevronClass = orientation === 'vertical' ? 'h-5 w-8 coarse:h-6 coarse:w-10' : 'w-5 coarse:w-6';
   const target = { topic, isEditingText, actions };
   // Durante la modifica in place lo stato della selezione parziale non è noto: nessun pulsante risulta attivo.
   const style = isEditingText ? undefined : topic?.textStyle;
@@ -56,7 +58,7 @@ export const TextStyleControls: React.FC<TextStyleControlsProps> = ({ topic, isE
             aria-haspopup="dialog"
             aria-expanded={open}
             onClick={toggle}
-            className="w-5 coarse:w-6"
+            className={chevronClass}
           >
             <ChevronDown className="size-3.5" />
           </ToolbarButton>
