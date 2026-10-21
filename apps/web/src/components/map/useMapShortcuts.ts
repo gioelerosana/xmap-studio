@@ -14,7 +14,6 @@ export function useMapShortcuts({
   handlers: { readonly current: MapHandlers };
 }) {
   // Scorciatoie da tastiera della mappa su desktop:
-  // - Ctrl+I / Cmd+I: apre il pannello dettagli sul blocco selezionato.
   // - Ctrl+Maiusc+L / Cmd+Maiusc+L: apre l'editor della formula LaTeX.
   // Usiamo Ctrl/Cmd anziché lettere semplici (D, L) perché la digitazione
   // di lettere su un blocco di testo selezionato avvia l'editing in place del titolo.
@@ -28,14 +27,9 @@ export function useMapShortcuts({
       if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
 
       const key = e.key.toLowerCase();
-      if (!e.shiftKey && key === 'i') {
+      if (e.shiftKey && key === 'l') {
         e.preventDefault();
-        handlers.current.onOpenDetails(selectedTopicId);
-      } else if (e.shiftKey && key === 'l') {
-        if (handlers.current.onOpenLatex) {
-          e.preventDefault();
-          handlers.current.onOpenLatex(selectedTopicId);
-        }
+        handlers.current.onOpenLatex(selectedTopicId);
       } else if (key === ']' || e.code === 'BracketRight') {
         if (handlers.current.onAddSummary) {
           e.preventDefault();

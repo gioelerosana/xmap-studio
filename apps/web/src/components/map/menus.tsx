@@ -8,7 +8,6 @@ import {
   CornerDownLeft,
   Edit3,
   Eraser,
-  Info,
   ListTree,
   Maximize2,
   Network,
@@ -59,33 +58,23 @@ export function nodeMenuItems(node: LayoutNode, { handlers, canPaste, canAddSumm
       label: 'Modifica testo',
       shortcut: 'F2',
       separatorBefore: true,
+      disabled: node.kind === 'image',
       icon: <Edit3 className="size-4" />,
       onSelect: () => {
         if (isText && handlers.current.onStartEdit) {
           handlers.current.onStartEdit(node.id);
         } else {
-          handlers.current.onOpenDetails(node.id);
+          handlers.current.onOpenLatex(node.id);
         }
       },
     },
     {
-      id: 'details',
-      label: 'Dettagli',
-      shortcut: 'Ctrl+I',
-      icon: <Info className="size-4" />,
-      onSelect: () => handlers.current.onOpenDetails(node.id),
+      id: 'latex',
+      label: 'Formula LaTeX',
+      shortcut: 'Ctrl+Maiusc+L',
+      icon: <Sigma className="size-4" />,
+      onSelect: () => handlers.current.onOpenLatex(node.id),
     },
-    ...(handlers.current.onOpenLatex
-      ? [
-          {
-            id: 'latex',
-            label: 'Formula LaTeX',
-            shortcut: 'Ctrl+Maiusc+L',
-            icon: <Sigma className="size-4" />,
-            onSelect: () => handlers.current.onOpenLatex?.(node.id),
-          },
-        ]
-      : []),
     {
       id: 'connect-arrow',
       label: 'Collega con freccia…',

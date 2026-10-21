@@ -19,8 +19,8 @@ interface TopicEditingOptions {
   editing: MapEditing | null;
   setEditing: Dispatch<SetStateAction<MapEditing | null>>;
   setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
-  openDetails: (id: string) => void;
-  showDetails: () => void;
+  /** Apre l'editor LaTeX del blocco (blocchi equazione, che non hanno un titolo modificabile in place). */
+  openLatex: (id: string) => void;
 }
 
 /** Modifiche ai blocchi: creazione, testo, spostamento, dimensioni, eliminazione, sommari, undo/redo. */
@@ -36,8 +36,7 @@ export function useTopicEditing({
   editing,
   setEditing,
   setCollapsedIds,
-  openDetails,
-  showDetails,
+  openLatex,
 }: TopicEditingOptions) {
   const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
 
@@ -76,13 +75,12 @@ export function useTopicEditing({
           return next;
         });
         selectSingle(newId);
-        showDetails();
         refreshState();
       } catch (err: any) {
         addToast('error', err.message);
       }
     },
-    [controller, refreshState, addToast, selectSingle, setCollapsedIds, showDetails]
+    [controller, refreshState, addToast, selectSingle, setCollapsedIds]
   );
 
   const handleToggleCollapse = useCallback((topicId: string) => {
@@ -240,8 +238,8 @@ export function useTopicEditing({
   const startEdit = (id: string) => {
     const t = allTopics.find((x) => x.id === id);
     if (!t) return;
-    if (t.kind !== 'text') openDetails(id);
-    else setEditing({ id, mode: 'all' });
+    if (t.kind === 'equation') openLatex(id);
+    else if (t.kind === 'text') setEditing({ id, mode: 'all' });
   };
 
   return {

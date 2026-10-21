@@ -5,7 +5,6 @@ const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, m
 
 export interface HeaderLayout {
   showLabels: boolean;
-  inlineDetails: boolean;
   inlineRedo: boolean;
   inlineUndo: boolean;
   inlineOpen: boolean;
@@ -50,7 +49,6 @@ export function useAdaptiveHeader(hasWorkbook: boolean) {
 
   const layout: HeaderLayout = {
     showLabels: headerLevel < HEADER_LEVEL.iconsOnly,
-    inlineDetails: headerLevel < HEADER_LEVEL.redoTheme,
     inlineRedo: headerLevel < HEADER_LEVEL.redoTheme,
     inlineUndo: headerLevel < HEADER_LEVEL.undo,
     inlineOpen: headerLevel < HEADER_LEVEL.open,

@@ -17,7 +17,7 @@ export function useAutoFit({
   selectedTopicId?: string;
   viewport: Viewport;
 }) {
-  const { viewRef, containerRef, applyView, setView, fitToView } = viewport;
+  const { viewRef, containerRef, commitView, setView, fitToView } = viewport;
   const hasAutoFitted = useRef(false);
   const lastLayoutRef = useRef<Layout | null>(null);
   const lastViewKeyRef = useRef<string | undefined>(undefined);
@@ -67,7 +67,7 @@ export function useAutoFit({
         }
         if (x !== v.x || y !== v.y) {
           viewRef.current = { ...v, x, y };
-          applyView();
+          commitView();
           setView({ ...viewRef.current });
         }
       }

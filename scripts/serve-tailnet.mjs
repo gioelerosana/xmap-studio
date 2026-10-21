@@ -1,11 +1,17 @@
 // Compila e serve la web app in HTTPS sulla tailnet, per provarla (anche
-// offline, come PWA) su tablet e telefoni. Safari registra il service worker
+// offline, come PWA) su tablet e telefoni. Con `--dev` non compila: espone il
+// server di sviluppo Vite (HMR), per vedere le modifiche mentre si lavora. Safari registra il service worker
 // solo in un contesto sicuro: l'HTTPS lo dà `tailscale serve` con un
 // certificato *.ts.net valido, senza certificati locali.
 //
 // Se il Tailscale Service `svc:xmap` è configurato (vedi AGENTS.md §"Mobile e
 // PWA") l'indirizzo è lo stesso da qualunque PC: https://xmap.<tailnet>.ts.net.
 // Altrimenti si ripiega sul nome della macchina: https://<pc>.<tailnet>.ts.net.
+//
+// `--no-service` (o XMAP_TS_SERVICE vuota) serve solo sul nome della macchina e
+// toglie questo PC dagli host del Service: un host non raggiunge l'indirizzo del
+// proprio Service, quindi un PC che vuole aprire xmap.<tailnet>.ts.net non deve
+// pubblicarlo.
 import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
@@ -14,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 // Porta dedicata, alta apposta per non collidere con altri servizi.
 const PORT = 60417;
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../apps/web');
-const SERVICE = process.env.XMAP_TS_SERVICE ?? 'svc:xmap';
+const DEV = process.argv.includes('--dev');
+const SERVICE = process.argv.includes('--no-service') ? '' : (process.env.XMAP_TS_SERVICE ?? 'svc:xmap');
 const target = `http://127.0.0.1:${PORT}`;
 
 function tailscale(args, options = {}) {
@@ -109,28 +116,53 @@ if (listeners(PORT).length > 0) {
   process.exit(1);
 }
 
-execFileSync('pnpm', ['build'], { stdio: 'inherit' });
+// Toglie questo PC dagli host dei Service che pubblica (la preferenza resta
+// salvata in tailscaled anche dopo una run precedente con il Service).
+function stopAdvertising() {
+  let advertised = [];
+  try {
+    advertised = JSON.parse(tailscale(['debug', 'prefs'])).AdvertiseServices ?? [];
+  } catch (err) {
+    console.warn(`Impossibile leggere i Service pubblicati da questo PC: ${String(err.stderr ?? err.message).trim()}`);
+  }
+  for (const service of advertised) {
+    try {
+      tailscale(['serve', 'drain', service]);
+      tailscale(['serve', `--service=${service}`, 'off']);
+      console.log(`Questo PC non pubblica più ${service}.`);
+    } catch (err) {
+      console.warn(`Impossibile smettere di pubblicare ${service}: ${String(err.stderr ?? err.message).trim()}`);
+    }
+  }
+}
+
+// In sviluppo Vite legge i sorgenti (alias in vite.config.ts): niente build.
+if (!DEV) execFileSync('pnpm', ['build'], { stdio: 'inherit' });
 
 const machineUrl = `https://${status.Self.DNSName.replace(/\.$/, '')}/`;
-let url;
-try {
-  tailscale(['serve', `--service=${SERVICE}`, '--https=443', '--bg', target]);
-  url = `https://${SERVICE.replace(/^svc:/, '')}.${status.MagicDNSSuffix}/`;
-} catch (err) {
-  const reason = String(err.stderr ?? err.message).trim();
-  console.warn(`Tailscale Service ${SERVICE} non disponibile (${reason}): uso il nome della macchina.`);
-  url = machineUrl;
+let url = machineUrl;
+if (SERVICE) {
+  try {
+    tailscale(['serve', `--service=${SERVICE}`, '--https=443', '--bg', target]);
+    url = `https://${SERVICE.replace(/^svc:/, '')}.${status.MagicDNSSuffix}/`;
+  } catch (err) {
+    const reason = String(err.stderr ?? err.message).trim();
+    console.warn(`Tailscale Service ${SERVICE} non disponibile (${reason}): uso il nome della macchina.`);
+  }
+} else {
+  stopAdvertising();
 }
 // Il Service non è raggiungibile dal PC che lo ospita: l'URL col nome della
 // macchina serve a provare l'app da qui.
 tailscale(['serve', '--https=443', '--bg', target]);
 
-console.log(`\nXMap Studio sulla tailnet: ${url}`);
+console.log(`\nXMap Studio ${DEV ? '(sviluppo, HMR) ' : ''}sulla tailnet: ${url}`);
 if (url !== machineUrl) {
   console.log(`Il dominio del Service non è raggiungibile da questo PC: provalo da un altro dispositivo.\nDa questo PC: ${machineUrl}`);
 }
 console.log();
-const preview = spawn('pnpm', ['--filter', '@xmap/web', 'exec', 'vite', 'preview', '--port', String(PORT), '--strictPort'], {
+const viteArgs = DEV ? ['--port', String(PORT), '--strictPort'] : ['preview', '--port', String(PORT), '--strictPort'];
+const preview = spawn('pnpm', ['--filter', '@xmap/web', 'exec', 'vite', ...viteArgs], {
   stdio: 'inherit',
 });
 preview.on('exit', (code) => process.exit(code ?? 0));

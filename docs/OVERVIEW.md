@@ -43,7 +43,7 @@ packages/core/src/
   state/         # workbook aperto, undo/redo, DTO verso la UI
   controller.ts  # API unica verso la UI
 apps/web/src/
-  components/    # MapView (+ map/: editor, menu contestuale), Inspector, modali
+  components/    # MapView (+ map/: editor, menu contestuale), toolbar/ (barra flottante), latex/ (editor formule), modali
   adapters/      # dialogo file web / Electron
 apps/desktop/src # main (finestra, IPC, scrittura atomica) + preload
 ```
@@ -68,7 +68,7 @@ apply(topicId, latex)
   → pushHistory()             (snapshot per undo/redo; nulla tocca il disco)
 
 preview(latex)
-  → renderLatexToSvg          (SVG mostrato nell'ispettore, debounce 220 ms)
+  → renderLatexToSvg          (SVG mostrato nell'editor LaTeX, debounce 220 ms)
 
 save()
   → xmindProcesses            (blocca se XMind è aperto)
@@ -179,8 +179,8 @@ sotto-blocco · `Ctrl+P` stampa / PDF · `Ctrl+,` impostazioni.
 Sulla mappa, come in XMind: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello
 (`Maiusc+Invio` prima) · `F2`, `Spazio` o doppio clic per modificare il testo nel
 blocco (o inizia a scrivere) · `Canc` elimina (si annulla con `Ctrl+Z`) · frecce per
-spostarsi · `Ctrl+I` dettagli del blocco (barra destra, chiusa di base; anche il
-pulsante in alto) · `Ctrl+Maiusc+L` formula · `Esc` chiude i dettagli, poi deseleziona.
+spostarsi · `Ctrl+B`/`Ctrl+I`/`Ctrl+U` grassetto, corsivo, sottolineato (sulla selezione
+se stai scrivendo nel blocco) · `Ctrl+Maiusc+L` editor della formula · `Esc` deseleziona.
 La barra flottante sul blocco compare solo su touch. I blocchi liberi si trascinano dove vuoi.
 Su touch un blocco si sposta solo se è già selezionato (tocco breve, poi trascina); trascinando un blocco non selezionato si sposta la mappa.
 
@@ -188,9 +188,16 @@ Nell'albero a sinistra puoi **cercare**, filtrare per tipo (**Testo/Formule/
 Immagini**) e **trascinare un blocco** su un altro: rilasciando al centro diventa
 un sotto-blocco, sui bordi superiore/inferiore si riordina tra i fratelli.
 
-L'ispettore a destra raccoglie l'editing del blocco selezionato: testo, equazione
-LaTeX con anteprima, note, etichette, link, marker, colore del ramo, task e
-struttura (relazioni, cornici, sommari). Il menu **⋮** in alto raccoglie
+La barra flottante (in alto al centro; trascinandola da un punto qualsiasi si aggancia
+alla posizione più vicina tra alto, basso, lato sinistro e lato destro, dove diventa
+verticale; durante il trascinamento sagome tratteggiate blu mostrano le quattro posizioni,
+con evidenziata quella di arrivo; la scelta è ricordata; fissa in basso sugli schermi stretti) raccoglie l'editing del blocco
+selezionato: grassetto (gli altri stili e il colore del testo in un sottomenu), colore
+del ramo con i pallini sempre visibili, formula LaTeX, note, frecce e struttura
+(relazioni, cornici, sommari), link e il pannello marker ed etichette (marker per
+categoria in una griglia, con ricerca).
+La formula si scrive in un editor al centro dello schermo con anteprima dal vivo,
+suggerimenti dei comandi e tavolozza di simboli. Il menu **⋮** in alto raccoglie
 salva-con-nome, stampa/PDF, export/import Markdown/OPML, export equazione SVG/PNG, allega
 file, unisci mappa, estrai ramo e informazioni.
 
@@ -240,7 +247,8 @@ nativo con il LaTeX corretto.
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 (`content.xml`) non è
   supportato e viene segnalato.
-- Editing supportato: testo, note, etichette, marker, link e task dei blocchi;
+- Editing supportato: testo, note, etichette, marker e link dei blocchi (i task
+  presenti nel file si leggono e si conservano, ma non si modificano più);
   aggiunta, eliminazione (con i figli), spostamento (riordino/riannidamento) e
   struttura (relazioni, cornici, sommari). Restano fuori scope il rich text, la
   registrazione audio e l'editor di temi (il colore del ramo è supportato).

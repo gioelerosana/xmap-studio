@@ -22,6 +22,25 @@
     <link rel="apple-touch-icon" href="./icon-256.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>XMap Studio</title>
+    <!-- Se l'app non parte (schermo bianco) mostra l'errore a video: su iPad/iPhone non c'è console. -->
+    <script>
+      (function () {
+        function show(message) {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount) return;
+          var box = document.createElement('pre');
+          box.style.cssText = 'white-space:pre-wrap;word-break:break-word;padding:16px;font:13px/1.4 monospace;color:#b00020';
+          box.textContent = 'XMap Studio non è partito:\n' + message;
+          root.appendChild(box);
+        }
+        window.addEventListener('error', function (e) {
+          show((e.message || 'errore') + (e.filename ? '\n' + e.filename + ':' + e.lineno : ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          show(String((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

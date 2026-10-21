@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Modal, ToastContainer } from '@xmap/ui-kit';
 import { AppController, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
 import { MapView, type MapEditing } from './components/MapView.js';
-import { Inspector } from './components/Inspector.js';
+import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
+import { LatexEditorModal } from './components/latex/LatexEditorModal.js';
 import { ExportModal } from './components/ExportModal.js';
 import { PrintModal } from './components/PrintModal.js';
 import { ImportModal } from './components/ImportModal.js';
@@ -15,7 +16,7 @@ import { sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
 import { useToasts } from './app/useToasts.js';
 import { useSelection } from './app/useSelection.js';
-import { useDetailsPanel } from './app/useDetailsPanel.js';
+import { useTopicActions } from './app/useTopicActions.js';
 import { useWorkbookSave } from './app/useWorkbookSave.js';
 import { useWorkbookFiles } from './app/useWorkbookFiles.js';
 import { useElectronWindow } from './app/useElectronWindow.js';
@@ -42,8 +43,6 @@ export const App: React.FC = () => {
 
   const selection = useSelection();
   const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
-  const { inspectorWidth, setInspectorWidth, inspectorVisible, showDetails, hideDetails, toggleDetails } =
-    useDetailsPanel(selectedTopicId, settings.detailsOnSelect);
   const { headerRef, layout: headerLayout } = useAdaptiveHeader(Boolean(workbook));
   const { toasts, addToast, removeToast } = useToasts();
 
@@ -57,6 +56,8 @@ export const App: React.FC = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editing, setEditing] = useState<MapEditing | null>(null);
+  // Blocco aperto nell'editor LaTeX centrato; `undefined` = editor chiuso.
+  const [latexTopicId, setLatexTopicId] = useState<string | undefined>();
 
   const refreshState = useCallback(() => {
     setWorkbook(controller.workbook());
@@ -104,12 +105,16 @@ export const App: React.FC = () => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
-  const openDetails = useCallback(
+  const openLatex = useCallback(
     (id: string) => {
       selectSingle(id);
-      showDetails();
+      setLatexTopicId(id);
     },
-    [selectSingle, showDetails]
+    [selectSingle]
+  );
+  const latexTopic = useMemo(
+    () => (latexTopicId ? allTopics.find((t) => t.id === latexTopicId) ?? null : null),
+    [allTopics, latexTopicId]
   );
 
   const { writeWorkbook, handleSave, handleSaveAs } = useWorkbookSave({
@@ -169,8 +174,7 @@ export const App: React.FC = () => {
     editing,
     setEditing,
     setCollapsedIds,
-    openDetails,
-    showDetails,
+    openLatex,
   });
 
   const {
@@ -179,6 +183,8 @@ export const App: React.FC = () => {
     handleConnectRelationshipTarget,
     handleRelationshipControlPoint,
   } = useRelationships({ controller, refreshState, addToast });
+
+  const topicActions = useTopicActions({ controller, refreshState, addToast });
 
   const { handleAddImage, handlePasteImageAsSummary } = useImageInsert({
     controller,
@@ -241,6 +247,7 @@ export const App: React.FC = () => {
     !importModalOpen &&
     !aboutOpen &&
     !settingsOpen &&
+    !latexTopic &&
     !replacePrompt &&
     !closePrompt &&
     !busy;
@@ -262,9 +269,7 @@ export const App: React.FC = () => {
     selectedTopic,
     allTopics,
     editing,
-    inspectorVisible,
     selection,
-    hideDetails,
     doUndoRedo,
     handleSave,
     handleSaveAs,
@@ -283,7 +288,6 @@ export const App: React.FC = () => {
       onOpen: handleOpenLocalFile,
       onUndo: () => doUndoRedo('undo'),
       onRedo: () => doUndoRedo('redo'),
-      onToggleDetails: toggleDetails,
       onToggleTheme: toggleDarkMode,
       onSaveAs: handleSaveAs,
       onExport: () => setExportModalOpen(true),
@@ -307,8 +311,6 @@ export const App: React.FC = () => {
         workbook={workbook}
         busy={busy}
         darkMode={darkMode}
-        inspectorVisible={inspectorVisible}
-        hasSelection={Boolean(selectedTopicId)}
         settingsOpen={settingsOpen}
         isElectron={isElectron}
         isWindowMaximized={isWindowMaximized}
@@ -318,7 +320,6 @@ export const App: React.FC = () => {
         onUndo={() => doUndoRedo('undo')}
         onRedo={() => doUndoRedo('redo')}
         onToggleTheme={toggleDarkMode}
-        onToggleDetails={toggleDetails}
         onToggleSettings={() => setSettingsOpen((open) => !open)}
       />
 
@@ -342,7 +343,7 @@ export const App: React.FC = () => {
           <>
             <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
               {connectingTopicId && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto px-4 w-full max-w-md animate-fade-in">
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto px-4 w-full max-w-md animate-fade-in">
                   <Banner
                     variant="info"
                     title="Clicca il blocco da collegare — Esc per annullare"
@@ -364,11 +365,10 @@ export const App: React.FC = () => {
                 selectedTopicId={selectedTopicId}
                 selectedTopicIds={selectedTopicIds}
                 onSelectTopic={selection.onSelectTopic}
+                onClearSelection={() => selectSingle(undefined)}
                 onAddSummary={handleCreateSummary}
                 canAddSummary={canAddSummary}
-                onOpenDetails={openDetails}
-                onOpenLatex={openDetails}
-                detailsOpen={inspectorVisible}
+                onOpenLatex={openLatex}
                 onAddChild={(id) => createTopic(id, 'child')}
                 onAddSibling={(id, where) => createTopic(id, where ?? 'after')}
                 onDeleteTopic={handleDeleteSelected}
@@ -398,6 +398,19 @@ export const App: React.FC = () => {
                 onConnectRelationshipTarget={handleConnectRelationshipTarget}
               />
 
+              <FloatingToolbar
+                topic={selectedTopic}
+                selectedTopicIds={selectedTopicIds}
+                allTopics={allTopics}
+                relationships={currentSheet?.relationships || []}
+                isEditingText={Boolean(editing)}
+                actions={topicActions}
+                canAddSummary={canAddSummary}
+                onAddSummaryForSelection={handleCreateSummary}
+                onOpenLatex={openLatex}
+                onStartConnectRelationship={(id) => setConnectingTopicId(id)}
+              />
+
               {workbook.sheets.length > 1 && (
                 <div className="flex h-[calc(2.25rem+env(safe-area-inset-bottom))] shrink-0 items-center gap-1 overflow-x-auto border-t bg-sidebar px-2 pb-[env(safe-area-inset-bottom)]">
                   {workbook.sheets.map((sheet, idx) => (
@@ -418,27 +431,20 @@ export const App: React.FC = () => {
               )}
             </div>
 
-            {inspectorVisible && (
-              <Inspector
-                topic={selectedTopic}
-                allTopics={allTopics}
-                relationships={currentSheet?.relationships || []}
-                controller={controller}
-                onChanged={refreshState}
-                onClose={hideDetails}
-                darkMode={darkMode}
-                onToast={addToast}
-                width={inspectorWidth}
-                onWidthChange={setInspectorWidth}
-                selectedTopicIds={selectedTopicIds}
-                onAddSummaryForSiblings={handleCreateSummary}
-                canAddSummary={canAddSummary}
-              />
-            )}
           </>
         )}
       </main>
 
+      <LatexEditorModal
+        // Rimontato a ogni apertura: la bozza riparte dalla formula del blocco.
+        key={latexTopic?.id ?? 'closed'}
+        topic={latexTopic}
+        onClose={() => setLatexTopicId(undefined)}
+        controller={controller}
+        darkMode={darkMode}
+        onChanged={refreshState}
+        onToast={addToast}
+      />
       <ExportModal
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}

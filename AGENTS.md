@@ -222,6 +222,7 @@ pnpm install
 ```bash
 pnpm dev:web        # UI nel browser (Vite)
 pnpm dev:desktop    # app Electron (avvia da solo il server web)
+pnpm dev:tailnet    # server di sviluppo (HMR) su https://xmap.<tailnet>.ts.net
 pnpm build          # core → ui-kit → web → desktop
 pnpm test           # test di packages/core (Vitest)
 ```
@@ -269,18 +270,33 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
   (`HEADER_LEVEL` in `App.tsx`); nessun pulsante deve sovrapporsi;
 - gesti sulla mappa (`MapView.tsx`): pan con un dito, pinch a due dita, tap e
   doppio tap; il pinch da trackpad in Safari arriva come `GestureEvent`;
-- sotto `lg` l'inspector è un pannello sovrapposto (bottom sheet su smartphone);
-  non c'è più una barra laterale con l'elenco dei blocchi.
+- non ci sono pannelli laterali: l'editing del blocco passa dalla barra flottante
+  (`components/toolbar/`), agganciabile sul desktop in alto, in basso o in verticale su un
+  lato (`useToolbarPosition.ts`, orientamento via `ToolbarOrientationContext`) e agganciata in basso sotto `sm`;
+  i suoi popover devono restare visibili in tutte le posizioni;
 - la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
   `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
-  disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (drawer,
-  bottom sheet, toast). Dopo modifiche al config verifica che la CSS generata
+  disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (barra
+  agganciata, editor LaTeX a foglio, toast). Dopo modifiche al config verifica che la CSS generata
   le contenga.
 
 Per provarla su un dispositivo si serve **sempre via Tailscale**, da qualunque
-PC si lavori: `pnpm serve:tailnet` (`scripts/serve-tailnet.mjs`) compila, avvia
-`vite preview` sulla porta dedicata 60417 e lo espone in HTTPS con `tailscale serve`. Quella porta è riservata allo script:
-all'avvio ferma chiunque la occupi e le vecchie istanze di `serve:tailnet`/`vite preview`.
+PC si lavori, con `scripts/serve-tailnet.mjs` sulla porta dedicata 60417,
+esposta in HTTPS con `tailscale serve`:
+
+- `pnpm dev:tailnet` espone il **server di sviluppo** Vite: niente build, le
+  modifiche arrivano subito sul dispositivo (HMR, via `wss` sullo stesso
+  indirizzo). È il modo normale di provare l'app mentre la si sviluppa. Niente
+  service worker: in sviluppo non si registra.
+- `pnpm serve:tailnet` compila e avvia `vite preview` sulla build di
+  produzione: serve per provare PWA, installazione e uso offline.
+
+**A inizio sessione** che tocca la UI, sul PC che ospita `svc:xmap`
+controlla che l'app risponda (`curl -sI http://127.0.0.1:60417/`); se non
+risponde, avvia `pnpm dev:tailnet` staccato dalla sessione, così non si ferma
+con lei: `setsid nohup pnpm dev:tailnet > /tmp/serve-tailnet.log 2>&1 < /dev/null &`.
+I due comandi si escludono: la porta è riservata allo script, che all'avvio
+ferma chiunque la occupi e le vecchie istanze di `serve:tailnet`/`vite preview`.
 L'HTTPS è indispensabile: Safari registra il service worker (e quindi la PWA
 funziona offline) solo in un contesto sicuro, non su `http://IP-LAN`. Niente
 certificati locali: si usa quello `*.ts.net` di Tailscale. Il dispositivo deve
@@ -298,6 +314,11 @@ essere nella tailnet (app Tailscale, stesso account).
   lo ospita: si prova da un altro dispositivo.
 - Senza il servizio lo script ripiega sul nome della macchina
   (`https://<pc>.<tailnet>.ts.net`).
+- Un PC che ha pubblicato `svc:xmap` una volta resta host anche a script
+  chiuso (la preferenza `AdvertiseServices` resta salvata in `tailscaled`) e
+  da lì `xmap.<tailnet>.ts.net` non si apre più. Su un PC da cui si vuole
+  aprire l'indirizzo del servizio si usa `pnpm serve:tailnet --no-service`:
+  serve solo sul nome della macchina e toglie il PC dagli host del servizio.
 - Un nome fuori da `*.ts.net` (es. `xmap.net`) non è possibile con i certificati
   di Tailscale.
 - Per spegnere: `tailscale serve --service=svc:xmap off` oppure
@@ -426,8 +447,8 @@ punto da verificare in UI.
 ## Limiti noti (non introdurre regressioni)
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 non è supportato.
-- Editing: testo (anche in place sulla mappa), stile del testo, note, marker e
-  task dei blocchi, aggiunta di sotto-blocchi e fratelli (Tab/Invio), eliminazione
+- Editing: testo (anche in place sulla mappa), stile del testo, note, marker,
+  etichette e link dei blocchi (dalla barra flottante), aggiunta di sotto-blocchi e fratelli (Tab/Invio), eliminazione
   (con i figli, senza conferma: si annulla), spostamento (riordino/riannidamento)
   via drag & drop sulla mappa, posizione dei blocchi liberi, punti di controllo
   delle relazioni, formattazione parziale (Ctrl+B/I/U), larghezza dei blocchi e

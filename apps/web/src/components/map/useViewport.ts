@@ -7,6 +7,12 @@ const SYNC_DELAY_MS = 120;
 /**
  * Pan e zoom della mappa. Durante i gesti si aggiorna solo `viewRef` e lo style dell'SVG;
  * lo stato React `view` viene allineato a gesto concluso.
+ *
+ * Nitidezza: una trasformazione CSS (con `will-change`) fa rasterizzare l'SVG una volta e poi
+ * ingrandisce la bitmap: il testo esce sgranato e Safari su iPad non lo ridisegna mai. Per questo
+ * la vista "a riposo" è scritta come attributo `transform` del gruppo `[data-map-viewport]`
+ * (il browser ridisegna in vettoriale alla scala giusta); durante i gesti la CSS applica solo la
+ * differenza rispetto a quella vista, e a gesto concluso la si riporta nell'attributo.
  */
 export function useViewport(layout: Layout | null) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -17,6 +23,9 @@ export function useViewport(layout: Layout | null) {
   // dell'SVG; `view` (stato React) viene allineato a gesto concluso.
   const viewRef = useRef<View>({ x: 60, y: 60, k: 1 });
   const [view, setView] = useState<View>(viewRef.current);
+  const viewportGroupRef = useRef<SVGGElement>(null);
+  // Vista scritta nell'attributo di `viewportGroupRef`: base della trasformazione CSS dei gesti.
+  const committedRef = useRef<View>(viewRef.current);
   const selectedNodeRef = useRef<LayoutNode | null>(null);
   const frameRef = useRef(0);
   const syncTimerRef = useRef<number | undefined>(undefined);
@@ -32,8 +41,16 @@ export function useViewport(layout: Layout | null) {
 
   const applyView = useCallback(() => {
     const v = viewRef.current;
-    if (svgRef.current) {
-      svgRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
+    const svg = svgRef.current;
+    if (svg) {
+      const c = committedRef.current;
+      const s = v.k / c.k;
+      const tx = v.x - c.x * s;
+      const ty = v.y - c.y * s;
+      const atRest = s === 1 && tx === 0 && ty === 0;
+      // A riposo nessun layer composito: la mappa si dipinge in vettoriale, nitida.
+      svg.style.transform = atRest ? '' : `translate(${tx}px, ${ty}px) scale(${s})`;
+      svg.style.willChange = atRest ? '' : 'transform';
     }
     if (editorLayerRef.current) {
       editorLayerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
@@ -47,11 +64,23 @@ export function useViewport(layout: Layout | null) {
     }
   }, []);
 
-  // Allinea lo stato React (percentuale, ecc.) dopo che il gesto si è fermato.
+  // Porta la vista viva nell'attributo del gruppo e azzera la trasformazione CSS:
+  // il browser ridisegna testo e formule alla scala reale.
+  const commitView = useCallback(() => {
+    const v = viewRef.current;
+    committedRef.current = { ...v };
+    viewportGroupRef.current?.setAttribute('transform', `translate(${v.x}, ${v.y}) scale(${v.k})`);
+    applyView();
+  }, [applyView]);
+
+  // Allinea attributo e stato React (percentuale, ecc.) dopo che il gesto si è fermato.
   const scheduleSync = useCallback(() => {
     window.clearTimeout(syncTimerRef.current);
-    syncTimerRef.current = window.setTimeout(() => setView({ ...viewRef.current }), SYNC_DELAY_MS);
-  }, []);
+    syncTimerRef.current = window.setTimeout(() => {
+      commitView();
+      setView({ ...viewRef.current });
+    }, SYNC_DELAY_MS);
+  }, [commitView]);
 
   // Più eventi nello stesso frame producono una sola scrittura sullo style.
   const scheduleApply = useCallback(() => {
@@ -114,9 +143,9 @@ export function useViewport(layout: Layout | null) {
     if (!fit) return;
     cancelMotion();
     viewRef.current = fit;
-    applyView();
+    commitView();
     setView(fit);
-  }, [computeFit, cancelMotion, applyView]);
+  }, [computeFit, cancelMotion, commitView]);
 
   const fitAnimated = useCallback(() => {
     const fit = computeFit();
@@ -137,13 +166,17 @@ export function useViewport(layout: Layout | null) {
   );
 
   // Dopo ogni render riapplica la vista viva (SVG appena montato, barra del nodo).
+  // Un gruppo appena montato riparte dalla vista viva, senza differenza CSS.
   useLayoutEffect(() => {
-    applyView();
+    const g = viewportGroupRef.current;
+    if (g && !g.hasAttribute('transform')) commitView();
+    else applyView();
   });
 
   return {
     containerRef,
     svgRef,
+    viewportGroupRef,
     toolbarRef,
     editorLayerRef,
     selectedNodeRef,
@@ -155,6 +188,7 @@ export function useViewport(layout: Layout | null) {
     syncTimerRef,
     toWorld,
     applyView,
+    commitView,
     scheduleSync,
     scheduleApply,
     cancelMotion,

@@ -27,7 +27,7 @@ export interface MapViewProps {
   onCommitEdit?: (topicId: string, text: string, exit: EditExit, runs?: TitleRun[]) => void;
   onCancelEdit?: () => void;
   layout: Layout | null;
-  /** Blocco con selezione primaria (determina l'Inspector e i dettagli). */
+  /** Blocco con selezione primaria (determina i comandi della barra flottante). */
   selectedTopicId?: string;
   /**
    * Elenco degli ID dei blocchi selezionati nella mappa (selezione multipla).
@@ -39,8 +39,10 @@ export interface MapViewProps {
    * aggiunge o toglie il blocco alla selezione multipla.
    */
   onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
-  onOpenDetails: (topicId: string) => void;
-  onOpenLatex?: (topicId: string) => void;
+  /** Clic o tap sullo sfondo della mappa: svuota la selezione. */
+  onClearSelection?: () => void;
+  /** Apre l'editor LaTeX centrato sul blocco (formule; anche per trasformare un testo in formula). */
+  onOpenLatex: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
   /** Crea un fratello dopo il blocco, come Invio. */
   /** Crea un fratello dopo o prima del blocco, come Invio / Maiusc+Invio. */
@@ -71,8 +73,6 @@ export interface MapViewProps {
   onResizeTopicWidth?: (topicId: string, width: number | null) => void;
   /** Dimensioni immagine modificate tramite maniglia d'angolo. */
   onResizeTopicImage?: (topicId: string, size: { width: number; height: number }) => void;
-  /** Pannello dettagli aperto: su smartphone il blocco viene portato sopra il bottom sheet. */
-  detailsOpen?: boolean;
   /** Callback per creare un sommario sui blocchi selezionati (es. Ctrl+] o pulsante barra). */
   onAddSummary?: () => void;
   /** Indica se i blocchi correntemente selezionati sono fratelli validi per creare un sommario. */
@@ -91,7 +91,6 @@ export interface ContextMenuState {
 export type MapHandlers = Pick<
   MapViewProps,
   | 'onSelectTopic'
-  | 'onOpenDetails'
   | 'onOpenLatex'
   | 'onAddChild'
   | 'onAddSibling'

@@ -47,7 +47,7 @@ non serve, si usa `text-primary-foreground`.
 | Vetro | `surface-glass` per dialog, menu e toolbar flottanti |
 | Codice, LaTeX, numeri | `font-mono` (cifre tabulari) |
 | Animazioni | `animate-fade-in`, `animate-pop-in`, `animate-slide-in-right`; easing `ease-sheet` |
-| Layout | barra superiore `h-topbar` (48px), sidebar `w-sidebar` (280px), inspector `w-inspector` (352px) |
+| Layout | barra superiore `h-topbar` (48px), sidebar `w-sidebar` (280px) |
 
 Tipografia: titoli di vista `text-base font-semibold` (16px), titoli di sezione
 `text-sm font-medium`, etichette di gruppo `text-2xs font-medium uppercase
@@ -124,8 +124,7 @@ text-foreground`, inattivi `text-muted-foreground`.
 
 ### `Card`, `Section`
 `Card`: `bg-card border rounded-lg`. `Section`: blocco di pannello con `title`,
-`description?`, `actions?` (a destra del titolo), `children`; usato
-nell'Inspector.
+`description?`, `actions?` (a destra del titolo), `children`.
 
 ### `EmptyHint`
 Stato vuoto compatto: `icon`, `title`, `description?`, `action?`.

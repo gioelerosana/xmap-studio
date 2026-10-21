@@ -333,8 +333,8 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
           if (editingRef.current?.id !== nodeId) {
             handlers.current.onStartEdit(nodeId);
           }
-        } else {
-          handlers.current.onOpenDetails(nodeId);
+        } else if (node?.kind === 'equation') {
+          handlers.current.onOpenLatex(nodeId);
         }
         suppressSyntheticUntil = performance.now() + 400;
       } else {

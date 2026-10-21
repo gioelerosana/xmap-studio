@@ -15,7 +15,6 @@ import {
   Split,
   Trash2,
   Info,
-  PanelRight,
   Printer,
 } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
@@ -32,7 +31,6 @@ export interface MenuActions {
   onOpen: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onToggleDetails: () => void;
   onToggleTheme: () => void;
   onSaveAs: () => void;
   onExport: () => void;
@@ -58,9 +56,6 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
       : []),
     ...(workbook && !layout.inlineRedo
       ? [{ id: 'redo', label: 'Ripeti', icon: <Redo2 className="size-4" />, disabled: !workbook.canRedo, onSelect: actions.onRedo }]
-      : []),
-    ...(workbook && !layout.inlineDetails
-      ? [{ id: 'details', label: 'Dettagli blocco', icon: <PanelRight className="size-4" />, disabled: !selectedTopicId, onSelect: actions.onToggleDetails }]
       : []),
   ];
 

@@ -9,9 +9,7 @@ interface GlobalShortcutsOptions {
   selectedTopic: TopicView | null;
   allTopics: TopicView[];
   editing: MapEditing | null;
-  inspectorVisible: boolean;
   selection: SelectionState;
-  hideDetails: () => void;
   doUndoRedo: (kind: 'undo' | 'redo') => void;
   handleSave: () => Promise<void>;
   handleSaveAs: () => Promise<void>;
@@ -22,15 +20,13 @@ interface GlobalShortcutsOptions {
   setPrintModalOpen: Dispatch<SetStateAction<boolean>>;
 }
 
-/** Scorciatoie globali: Ctrl+lettera (undo, salva, apri, stampa…) ed Esc per chiudere il pannello o la selezione multipla. */
+/** Scorciatoie globali: Ctrl+lettera (undo, salva, apri, stampa…) ed Esc per ridurre o togliere la selezione. */
 export function useGlobalShortcuts({
   hasWorkbook,
   selectedTopic,
   allTopics,
   editing,
-  inspectorVisible,
   selection,
-  hideDetails,
   doUndoRedo,
   handleSave,
   handleSaveAs,
@@ -40,7 +36,7 @@ export function useGlobalShortcuts({
   setSettingsOpen,
   setPrintModalOpen,
 }: GlobalShortcutsOptions) {
-  const { selectedTopicId, selectedTopicIds, setSelectedTopicIds } = selection;
+  const { selectedTopicId, selectedTopicIds, setSelectedTopicIds, selectSingle } = selection;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -81,7 +77,7 @@ export function useGlobalShortcuts({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleAddChild, handleCreateSummary, hasWorkbook, setSettingsOpen, setPrintModalOpen]);
 
-  // Esc chiude l'Inspector se aperto e non si sta editando testo; con selezione multipla torna a singola
+  // Esc fuori dai campi di testo: la selezione multipla torna singola, quella singola si toglie.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -94,12 +90,12 @@ export function useGlobalShortcuts({
         setSelectedTopicIds(selectedTopicId ? [selectedTopicId] : []);
         return;
       }
-      if (inspectorVisible) {
+      if (selectedTopicId) {
         e.preventDefault();
-        hideDetails();
+        selectSingle(undefined);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editing, inspectorVisible, selectedTopicIds, selectedTopicId, setSelectedTopicIds, hideDetails]);
+  }, [editing, selectedTopicIds, selectedTopicId, setSelectedTopicIds, selectSingle]);
 }

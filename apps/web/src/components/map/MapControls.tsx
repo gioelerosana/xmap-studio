@@ -1,44 +1,6 @@
-import { Braces, GitFork, ListTree, Maximize2, Minus, Plus } from 'lucide-react';
-import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+import { GitFork, ListTree, Maximize2, Minus, Plus } from 'lucide-react';
+import { IconButton, Separator, cn } from '@xmap/ui-kit';
 import type { MapStructure } from '@xmap/core';
-
-/** Barra contestuale della selezione multipla, con l'azione di sommario sui blocchi selezionati. */
-export function MultiSelectBar({
-  count,
-  onAddSummary,
-  canAddSummary,
-}: {
-  count: number;
-  onAddSummary?: () => void;
-  canAddSummary: boolean;
-}) {
-  return (
-    <div
-      data-map-ui
-      onMouseDown={(e) => e.preventDefault()}
-      className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-1.5 p-1.5 surface-glass border rounded-xl shadow-composer max-w-[calc(100%-32px)]"
-    >
-      <span className="px-2 text-xs font-medium text-foreground whitespace-nowrap">
-        {count} blocchi selezionati
-      </span>
-      {onAddSummary && (
-        <>
-          <Separator orientation="vertical" className="h-4 mx-0.5" />
-          <Button
-            variant={canAddSummary ? 'default' : 'ghost'}
-            size="sm"
-            className="px-2.5 text-xs"
-            icon={<Braces className="size-4" />}
-            onClick={onAddSummary}
-            title="Crea sommario sui blocchi selezionati (Ctrl+])"
-          >
-            Sommario
-          </Button>
-        </>
-      )}
-    </div>
-  );
-}
 
 /** Pulsanti flottanti in basso a destra: vista ad albero/logica, zoom e adattamento. */
 export function ZoomControls({
@@ -57,7 +19,8 @@ export function ZoomControls({
   return (
     <div
       data-map-ui
-      className="absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))] z-20 flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer">
+      // Sotto `sm` la barra flottante è agganciata in basso: lo zoom sale sopra di lei.
+      className="absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] max-sm:bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))] z-20 flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer">
       <IconButton
         size="sm"
         variant="ghost"
