@@ -62,6 +62,8 @@ interface PendingPress {
   startY: number;
 }
 
+type DragPreview = NonNullable<ToolbarPosition['dragPreview']>;
+
 const isToolbarDock = (value: string | null): value is ToolbarDock => DOCKS.some((dock) => dock === value);
 
 /**
@@ -77,6 +79,14 @@ export function nearestDock(x: number, y: number, width: number, height: number)
   ];
   const nearest = candidates.reduce((best, candidate) => (candidate.distance < best.distance ? candidate : best));
   return nearest.dock;
+}
+
+/** Aggancio sotto il puntatore, con la stessa geometria per il rilascio e per l'anteprima; `null` senza contenitore. */
+function dockAtPointer(bar: HTMLDivElement | null, clientX: number, clientY: number): ToolbarDock | null {
+  const parent = bar?.offsetParent instanceof HTMLElement ? bar.offsetParent : bar?.parentElement;
+  if (!parent) return null;
+  const rect = parent.getBoundingClientRect();
+  return nearestDock(clientX - rect.left, clientY - rect.top, parent.clientWidth, parent.clientHeight);
 }
 
 /** Rimuove la vecchia chiave di posizione e legge l'aggancio salvato, con fallback alla predefinita. */
@@ -111,9 +121,11 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
   const [storedDock, setStoredDock] = useState<ToolbarDock>(loadDock);
   const [dragging, setDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<DragOffset | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const barElementRef = useRef<HTMLDivElement | null>(null);
   const pendingRef = useRef<PendingPress | null>(null);
   const draggingRef = useRef(false);
+  const dragPreviewRef = useRef<DragPreview | null>(null);
   const detachWindowListenersRef = useRef<(() => void) | null>(null);
   const suppressClickRef = useRef(false);
 
@@ -134,6 +146,12 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
     setDragging(value);
   }, []);
 
+  /** Come `setDraggingState`, per l'anteprima: il ref evita di aggiornare lo stato a ogni movimento. */
+  const setDragPreviewState = useCallback((value: DragPreview | null) => {
+    dragPreviewRef.current = value;
+    setDragPreview(value);
+  }, []);
+
   const finishPress = useCallback(
     (event: PointerEvent, committed: boolean) => {
       const pending = pendingRef.current;
@@ -142,16 +160,8 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
       detachWindowListeners();
       if (!draggingRef.current) return;
 
-      const bar = barElementRef.current;
-      const parent = bar?.offsetParent instanceof HTMLElement ? bar.offsetParent : bar?.parentElement;
-      if (committed && parent) {
-        const rect = parent.getBoundingClientRect();
-        const next = nearestDock(
-          event.clientX - rect.left,
-          event.clientY - rect.top,
-          parent.clientWidth,
-          parent.clientHeight,
-        );
+      const next = committed ? dockAtPointer(barElementRef.current, event.clientX, event.clientY) : null;
+      if (next) {
         setStoredDock(next);
         saveDock(next);
       }
@@ -159,8 +169,9 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
       suppressClickRef.current = true;
       setDraggingState(false);
       setDragOffset(null);
+      setDragPreviewState(null);
     },
-    [detachWindowListeners, setDraggingState],
+    [detachWindowListeners, setDraggingState, setDragPreviewState],
   );
 
   const onPointerDown = useCallback(
@@ -182,8 +193,18 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
         if (!draggingRef.current) {
           if (Math.hypot(offset.x, offset.y) <= DRAG_THRESHOLD) return;
           setDraggingState(true);
+          const bar = barElementRef.current;
+          const target = dockAtPointer(bar, event.clientX, event.clientY);
+          if (target) {
+            setDragPreviewState({ target, barWidth: bar?.offsetWidth ?? 0, barHeight: bar?.offsetHeight ?? 0 });
+          }
         }
         setDragOffset(offset);
+        const current = dragPreviewRef.current;
+        const target = dockAtPointer(barElementRef.current, event.clientX, event.clientY);
+        if (current && target && target !== current.target) {
+          setDragPreviewState({ ...current, target });
+        }
       };
       const handleUp = (event: PointerEvent) => finishPress(event, true);
       const handleCancel = (event: PointerEvent) => finishPress(event, false);
@@ -198,7 +219,7 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
       window.addEventListener('pointercancel', handleCancel);
       detachWindowListenersRef.current = removeListeners;
     },
-    [enabled, detachWindowListeners, finishPress, setDraggingState],
+    [enabled, detachWindowListeners, finishPress, setDraggingState, setDragPreviewState],
   );
 
   const onClickCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -213,8 +234,7 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
     dock: enabled ? storedDock : 'bottom',
     dragging: enabled && dragging,
     dragOffset: enabled && dragging ? dragOffset : null,
-    // Segnaposto del contratto: implementazione in arrivo.
-    dragPreview: null,
+    dragPreview: enabled && dragging ? dragPreview : null,
     dragProps: {
       onPointerDown,
       onPointerMove: noopPointerHandler,
