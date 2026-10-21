@@ -54,8 +54,9 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
     };
   }, [latex, inkColor, darkMode, controller]);
 
-  const handleApplyEquation = async () => {
-    if (!latex.trim() || preview?.error) return;
+  // Restituisce `true` se l'equazione è stata applicata (l'editor può chiudersi).
+  const handleApplyEquation = async (): Promise<boolean> => {
+    if (!latex.trim() || preview?.error) return false;
     setApplying(true);
     try {
       let mode: TitleMode;
@@ -65,20 +66,24 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
       await controller.apply(t.id, latex.trim(), { titleMode: mode, color: inkColor });
       onChanged();
       onToast('success', 'Equazione applicata');
+      return true;
     } catch (err: any) {
       onToast('error', `Errore: ${err.message}`);
+      return false;
     } finally {
       setApplying(false);
     }
   };
 
-  const handleRemoveEquation = () => {
+  const handleRemoveEquation = (): boolean => {
     try {
       controller.removeEquation(t.id);
       onChanged();
       onToast('info', 'Equazione rimossa');
+      return true;
     } catch (err: any) {
       onToast('error', err.message);
+      return false;
     }
   };
 
