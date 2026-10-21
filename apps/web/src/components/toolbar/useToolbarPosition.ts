@@ -25,6 +25,12 @@ export interface ToolbarPosition {
   dragging: boolean;
   /** Scostamento da applicare con `transform` durante il trascinamento; `null` a riposo. */
   dragOffset: DragOffset | null;
+  /**
+   * Durante il trascinamento: aggancio che verrebbe scelto rilasciando ora (`nearestDock` sul
+   * puntatore) e misure della barra all'inizio del trascinamento, per disegnare le sagome
+   * delle quattro posizioni. `null` a riposo.
+   */
+  dragPreview: { target: ToolbarDock; barWidth: number; barHeight: number } | null;
   /** Eventi da spargere sulla radice della barra (il trascinamento parte da qualunque punto). */
   dragProps: {
     onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
@@ -207,6 +213,8 @@ export function useToolbarPosition(enabled: boolean): ToolbarPosition {
     dock: enabled ? storedDock : 'bottom',
     dragging: enabled && dragging,
     dragOffset: enabled && dragging ? dragOffset : null,
+    // Segnaposto del contratto: implementazione in arrivo.
+    dragPreview: null,
     dragProps: {
       onPointerDown,
       onPointerMove: noopPointerHandler,
