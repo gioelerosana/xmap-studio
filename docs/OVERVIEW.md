@@ -191,8 +191,9 @@ un sotto-blocco, sui bordi superiore/inferiore si riordina tra i fratelli.
 La barra flottante in alto (spostabile trascinando la maniglia, doppio clic per
 riportarla al centro; in basso sugli schermi stretti) raccoglie l'editing del blocco
 selezionato: grassetto (gli altri stili e il colore del testo in un sottomenu), colore
-del ramo in evidenza, formula LaTeX, note, frecce e struttura (relazioni, cornici,
-sommari), link, marker ed etichette.
+del ramo con i pallini sempre visibili, formula LaTeX, note, frecce e struttura
+(relazioni, cornici, sommari), link e il pannello marker ed etichette (marker per
+categoria in una griglia, con ricerca).
 La formula si scrive in un editor al centro dello schermo con anteprima dal vivo,
 suggerimenti dei comandi e tavolozza di simboli. Il menu **⋮** in alto raccoglie
 salva-con-nome, stampa/PDF, export/import Markdown/OPML, export equazione SVG/PNG, allega
