@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import type { Layout, LayoutNode, Point } from '@xmap/core';
+import type { Layout, Point } from '@xmap/core';
 import { clampZoom, computeFitView, type View } from './viewport.js';
 
 const SYNC_DELAY_MS = 120;
@@ -17,7 +17,8 @@ export function useViewport(layout: Layout | null) {
   // dell'SVG; `view` (stato React) viene allineato a gesto concluso.
   const viewRef = useRef<View>({ x: 60, y: 60, k: 1 });
   const [view, setView] = useState<View>(viewRef.current);
-  const selectedNodeRef = useRef<LayoutNode | null>(null);
+  // Punto mondo sopra cui sta la barra flottante (blocco o relazione selezionati); `centered` la centra su x.
+  const toolbarAnchorRef = useRef<{ x: number; y: number; centered?: boolean } | null>(null);
   const frameRef = useRef(0);
   const syncTimerRef = useRef<number | undefined>(undefined);
   const motionRef = useRef(0); // rAF di animazione o inerzia
@@ -38,12 +39,14 @@ export function useViewport(layout: Layout | null) {
     if (editorLayerRef.current) {
       editorLayerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
     }
-    const n = selectedNodeRef.current;
-    if (toolbarRef.current && n) {
+    const a = toolbarAnchorRef.current;
+    if (toolbarRef.current && a) {
       // Su schermi stretti la barra resta dentro il canvas invece di uscire a destra.
-      const maxLeft = Math.max(8, (containerRef.current?.clientWidth ?? Infinity) - toolbarRef.current.offsetWidth - 8);
-      toolbarRef.current.style.left = `${Math.max(8, Math.min(v.x + n.x * v.k, maxLeft))}px`;
-      toolbarRef.current.style.top = `${v.y + (n.y - 42) * v.k}px`;
+      const width = toolbarRef.current.offsetWidth;
+      const maxLeft = Math.max(8, (containerRef.current?.clientWidth ?? Infinity) - width - 8);
+      const left = v.x + a.x * v.k - (a.centered ? width / 2 : 0);
+      toolbarRef.current.style.left = `${Math.max(8, Math.min(left, maxLeft))}px`;
+      toolbarRef.current.style.top = `${v.y + (a.y - 42) * v.k}px`;
     }
   }, []);
 
@@ -146,7 +149,7 @@ export function useViewport(layout: Layout | null) {
     svgRef,
     toolbarRef,
     editorLayerRef,
-    selectedNodeRef,
+    toolbarAnchorRef,
     viewRef,
     view,
     setView,

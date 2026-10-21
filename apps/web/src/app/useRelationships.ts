@@ -8,7 +8,7 @@ interface RelationshipsOptions {
   addToast: AddToast;
 }
 
-/** Relazioni tra blocchi: modalità di collegamento (clic sul secondo blocco) e punti di controllo. */
+/** Relazioni tra blocchi: modalità di collegamento (clic sul secondo blocco) e punti di controllo, eliminazione. */
 export function useRelationships({ controller, refreshState, addToast }: RelationshipsOptions) {
   const [connectingTopicId, setConnectingTopicId] = useState<string | null>(null);
 
@@ -45,6 +45,20 @@ export function useRelationships({ controller, refreshState, addToast }: Relatio
     [controller, refreshState, addToast]
   );
 
+  const handleDeleteRelationship = useCallback(
+    (relationshipId: string) => {
+      try {
+        controller.removeTopicRelationship(relationshipId);
+        refreshState();
+        addToast('success', 'Relazione eliminata');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast('error', `Relazione non eliminata: ${msg}`);
+      }
+    },
+    [controller, refreshState, addToast]
+  );
+
   // Annulla la modalità di connessione relazione con Esc
   useEffect(() => {
     if (!connectingTopicId) return;
@@ -64,5 +78,6 @@ export function useRelationships({ controller, refreshState, addToast }: Relatio
     setConnectingTopicId,
     handleConnectRelationshipTarget,
     handleRelationshipControlPoint,
+    handleDeleteRelationship,
   };
 }

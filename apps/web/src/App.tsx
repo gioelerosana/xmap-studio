@@ -178,6 +178,7 @@ export const App: React.FC = () => {
     setConnectingTopicId,
     handleConnectRelationshipTarget,
     handleRelationshipControlPoint,
+    handleDeleteRelationship,
   } = useRelationships({ controller, refreshState, addToast });
 
   const { handleAddImage, handlePasteImageAsSummary } = useImageInsert({
@@ -386,6 +387,7 @@ export const App: React.FC = () => {
                 onMoveTopic={handleMove}
                 onMoveFloatingTopic={handleMoveFloating}
                 onRelationshipControlPointsChange={handleRelationshipControlPoint}
+                onDeleteRelationship={handleDeleteRelationship}
                 onResizeTopicWidth={handleResizeTopicWidth}
                 onResizeTopicImage={handleResizeTopicImage}
                 onCopyTopic={handleCopyTopic}

@@ -67,6 +67,8 @@ export interface MapViewProps {
   onMoveFloatingTopic?: (topicId: string, position: Point) => void;
   /** Punti di controllo di una relazione trascinati (`null` = ripristina, `undefined` = invariato). */
   onRelationshipControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
+  /** Elimina una relazione (dalla barra flottante su touch). */
+  onDeleteRelationship?: (relationshipId: string) => void;
   /** Larghezza custom modificata tramite maniglia. */
   onResizeTopicWidth?: (topicId: string, width: number | null) => void;
   /** Dimensioni immagine modificate tramite maniglia d'angolo. */
@@ -101,6 +103,7 @@ export type MapHandlers = Pick<
   | 'onMoveTopic'
   | 'onMoveFloatingTopic'
   | 'onRelationshipControlPointsChange'
+  | 'onDeleteRelationship'
   | 'onStartEdit'
   | 'onAddSummary'
   | 'onResizeTopicWidth'

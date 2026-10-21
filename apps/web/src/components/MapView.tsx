@@ -45,6 +45,7 @@ export const MapView: React.FC<MapViewProps> = ({
   onMoveTopic,
   onMoveFloatingTopic,
   onRelationshipControlPointsChange,
+  onDeleteRelationship,
   onResizeTopicWidth,
   onResizeTopicImage,
   editing = null,
@@ -66,7 +67,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const viewport = useViewport(layout);
-  const { view, containerRef, svgRef, toolbarRef, editorLayerRef, selectedNodeRef, toWorld, zoomByButton, fitToView, fitAnimated } = viewport;
+  const { view, containerRef, svgRef, toolbarRef, editorLayerRef, toolbarAnchorRef, toWorld, zoomByButton, fitToView, fitAnimated } = viewport;
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
@@ -94,6 +95,7 @@ export const MapView: React.FC<MapViewProps> = ({
     onMoveTopic,
     onMoveFloatingTopic,
     onRelationshipControlPointsChange,
+    onDeleteRelationship,
     onStartEdit,
     onAddSummary,
     onResizeTopicWidth,
@@ -129,7 +131,17 @@ export const MapView: React.FC<MapViewProps> = ({
     return effectiveLayout.nodes.find((n) => n.id === selectedTopicId) || null;
   }, [effectiveLayout, selectedTopicId]);
 
-  selectedNodeRef.current = selectedNode;
+  // La relazione selezionata ha la precedenza sul blocco: la barra flottante è una sola.
+  const selectedRelationship = useMemo(() => {
+    if (!effectiveLayout || !selectedRelationshipId) return null;
+    return effectiveLayout.relationships.find((r) => r.id === selectedRelationshipId) || null;
+  }, [effectiveLayout, selectedRelationshipId]);
+
+  toolbarAnchorRef.current = selectedRelationship
+    ? { x: selectedRelationship.geometry.label.x, y: selectedRelationship.geometry.label.y, centered: true }
+    : selectedNode
+      ? { x: selectedNode.x, y: selectedNode.y }
+      : null;
 
   const editingNode = useMemo(() => {
     if (!effectiveLayout || !editing) return null;
@@ -289,7 +301,29 @@ export const MapView: React.FC<MapViewProps> = ({
       />
 
       {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse) */}
-      {isCoarse && selectedNode && (
+      {isCoarse && selectedRelationship && (
+        <div
+          ref={toolbarRef}
+          data-map-ui
+          onMouseDown={(e) => e.preventDefault()}
+          className="absolute z-20 pointer-events-auto flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer max-w-[calc(100%-16px)]"
+          style={{ transform: 'translateY(-100%)' }}
+        >
+          <IconButton
+            size="sm"
+            variant="ghost-destructive"
+            label="Elimina relazione"
+            onClick={() => {
+              setSelectedRelationshipId(undefined);
+              onDeleteRelationship?.(selectedRelationship.id);
+            }}
+          >
+            <Trash2 className="size-4" />
+          </IconButton>
+        </div>
+      )}
+
+      {isCoarse && !selectedRelationship && selectedNode && (
         <div
           ref={toolbarRef}
           data-map-ui
