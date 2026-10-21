@@ -44,9 +44,11 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['F2'], action: 'Modifica testo' },
   { keys: ['Canc'], action: 'Elimina blocco' },
   { keys: ['←', '↑', '→', '↓'], action: 'Naviga tra i blocchi' },
-  { keys: ['Ctrl', 'I'], action: 'Apri i dettagli del blocco' },
-  { keys: ['Ctrl', 'Shift', 'L'], action: 'Modifica la formula del blocco' },
-  { keys: ['Esc'], action: 'Chiudi i dettagli, poi deseleziona' },
+  { keys: ['Ctrl', 'B'], action: 'Grassetto' },
+  { keys: ['Ctrl', 'I'], action: 'Corsivo' },
+  { keys: ['Ctrl', 'U'], action: 'Sottolineato' },
+  { keys: ['Ctrl', 'Shift', 'L'], action: 'Editor della formula LaTeX' },
+  { keys: ['Esc'], action: 'Deseleziona' },
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 

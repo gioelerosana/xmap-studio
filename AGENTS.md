@@ -270,12 +270,13 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
   (`HEADER_LEVEL` in `App.tsx`); nessun pulsante deve sovrapporsi;
 - gesti sulla mappa (`MapView.tsx`): pan con un dito, pinch a due dita, tap e
   doppio tap; il pinch da trackpad in Safari arriva come `GestureEvent`;
-- sotto `lg` l'inspector è un pannello sovrapposto (bottom sheet su smartphone);
-  non c'è più una barra laterale con l'elenco dei blocchi.
+- non ci sono pannelli laterali: l'editing del blocco passa dalla barra flottante
+  (`components/toolbar/`), spostabile sul desktop e agganciata in basso sotto `sm`;
+  i suoi popover devono restare visibili in entrambe le posizioni;
 - la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
   `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
-  disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (drawer,
-  bottom sheet, toast). Dopo modifiche al config verifica che la CSS generata
+  disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (barra
+  agganciata, editor LaTeX a foglio, toast). Dopo modifiche al config verifica che la CSS generata
   le contenga.
 
 Per provarla su un dispositivo si serve **sempre via Tailscale**, da qualunque
@@ -445,8 +446,8 @@ punto da verificare in UI.
 ## Limiti noti (non introdurre regressioni)
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 non è supportato.
-- Editing: testo (anche in place sulla mappa), stile del testo, note, marker e
-  task dei blocchi, aggiunta di sotto-blocchi e fratelli (Tab/Invio), eliminazione
+- Editing: testo (anche in place sulla mappa), stile del testo, note, marker,
+  etichette e link dei blocchi (dalla barra flottante), aggiunta di sotto-blocchi e fratelli (Tab/Invio), eliminazione
   (con i figli, senza conferma: si annulla), spostamento (riordino/riannidamento)
   via drag & drop sulla mappa, posizione dei blocchi liberi, punti di controllo
   delle relazioni, formattazione parziale (Ctrl+B/I/U), larghezza dei blocchi e

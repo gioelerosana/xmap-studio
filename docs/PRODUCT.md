@@ -199,11 +199,11 @@ topic link).
 toccano l'archivio se non per nessuna risorsa, e sono le più probabili a essere
 bloccate in Free. Riusano `extra` e la validazione esistenti.
 **Dove:** `model/` (tipi + `edit.ts`), `markers/catalog.ts` (catalogo),
-`controller.ts`, `state/types.ts` per il DTO, `Inspector` in `apps/web`.
+`controller.ts`, `state/types.ts` per il DTO, barra flottante in `apps/web`.
 **Done:** round-trip fedele con note/label/marker/href; apertura in XMind con i
 valori visibili e modificabili; `pnpm build && pnpm test` verdi.
-**Stato:** fatto. `model/`, `markers/` + pannello «Contenuto del
-blocco» nell'`Inspector`; note scritte con entrambe le metà (plain + realHTML
+**Stato:** fatto. `model/`, `markers/` + popover della barra flottante
+(`components/toolbar/`, prima nel pannello laterale rimosso); note scritte con entrambe le metà (plain + realHTML
 escapato), catalogo marker di 173 id verificato dal binario.
 
 ### Fase 2 — Interoperabilità (nessuno schema, massimo distacco da Free)
@@ -227,7 +227,7 @@ usano il layout della Fase 6 e restano da completare come export su file.
 dedicata (le relazioni vivono a livello sheet, boundary/summary sui figli) e la
 doppia rappresentazione va gestita con attenzione.
 **Dove:** `model/types.ts` (`relationships`, `boundaries`, `summaries`),
-`model/edit.ts`, rendering in `MapView`, editing nell'`Inspector`.
+`model/edit.ts`, rendering in `MapView`, editing dalla barra flottante.
 **Done:** relazioni e summary creati sopravvivono al round-trip e si vedono in
 XMind; nessun riferimento orfano dopo l'eliminazione di un topic.
 **Stato:** **fatto**. Tipi in `model/types.ts` (`Relationship`,
@@ -258,7 +258,8 @@ inferiore rispetto alle fasi precedenti; il formato è ormai confermato.
 **Dove:** `TopicTree` (ricerca), `task/task.ts` (task),
 `model/utils.ts` (colore).
 **Stato:** **fatto** per task (`task/task.ts`: priorità, avanzamento, date; estensione
-scritta con `dependencies` preservate), outliner (export; la vista in app è stata tolta), ricerca/filtro
+scritta con `dependencies` preservate; l'editor dei task è stato tolto dalla UI con il pannello
+laterale, il modello resta e i task del file si conservano), outliner (export; la vista in app è stata tolta), ricerca/filtro
 (già presenti) e colore del ramo (`svg:fill`). L'editor dei temi e il rich text
 restano da fare.
 
@@ -308,8 +309,8 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Rimuovi solo questo blocco (i figli risalgono al genitore) | ✅ | menu contestuale; `removeTopicKeepChildren` in `model/edit.ts`, un solo undo; sommari/bordi del blocco seguono i figli, bordo `master` scartato; figli liberi e sommari con figli non ammessi (usa Elimina) |
 | | Selezione multipla e spostamento di gruppo | 🟡 | selezione con Maiusc/Ctrl+clic (usata dal sommario); spostamento di gruppo da fare |
 | | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | trascinabili, `position` = centro relativo alla radice (dal codice di XMind); round-trip in XMind da verificare |
-| Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | ispettore |
-| | Formattazione parziale del titolo (`attributedTitle`) | ✅ | Ctrl+B/I/U sulla selezione nell'editor in place; round-trip in XMind da verificare |
+| Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | barra flottante, Ctrl+B/I/U |
+| | Formattazione parziale del titolo (`attributedTitle`) | ✅ | Ctrl+B/I/U o barra flottante sulla selezione nell'editor in place; round-trip in XMind da verificare |
 | | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti |
 | Relazioni | Forme curved/straight/angled/zigzag, tratteggio, frecce dal tema | ✅ | `layout/relationship.ts` |
 | | Punti di controllo trascinabili (`controlPoints`) | ✅ | maniglie sulla relazione selezionata |
@@ -325,7 +326,7 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Formule `$…$` in linea nel testo del blocco | ✅ | solo resa nell'app: nel file resta testo, XMind mostra il sorgente |
 | | Larghezza del blocco (`customWidth`) e dimensione delle immagini trascinabili | ✅ | maniglie sul blocco selezionato; round-trip in XMind da verificare |
 | | Immagini incollate o trascinate sulla mappa | ✅ | risorsa SHA-256 in `resources/`, registrata nel manifest |
-| | Note, etichette, marker, link, task, allegati, immagini | ✅ | |
+| | Note, etichette, marker, link, task, allegati, immagini | ✅ | task: letti e conservati, editor rimosso dalla UI (barra flottante) |
 | | Callout | 🟡 | letti, non disegnati come callout |
 | Navigazione | Pan, zoom, fit, collapse, ricerca | ✅ | |
 | | Outliner, presentazione (Pitch), focus su un ramo | 🟡 | outliner sì |
