@@ -6,7 +6,8 @@ import { COMPACT_QUERY, TEXT_FIELD } from '../../app/constants.js';
 import { useMediaQuery } from '../../app/useMediaQuery.js';
 import { ColorPopover } from './ColorPopover.js';
 import { BRANCH_COLORS } from './constants.js';
-import { MorePopover } from './MorePopover.js';
+import { LinkPopover } from './LinkPopover.js';
+import { MarkersPopover } from './MarkersPopover.js';
 import { NotesPopover } from './NotesPopover.js';
 import { ToolbarButton, ToolbarSeparator } from './primitives.js';
 import { StructurePopover } from './StructurePopover.js';
@@ -113,7 +114,8 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
       <ToolbarSeparator />
 
-      <MorePopover topic={topic} actions={actions} />
+      <LinkPopover topic={topic} actions={actions} />
+      <MarkersPopover topic={topic} actions={actions} />
 
       {multiple && (
         <>
