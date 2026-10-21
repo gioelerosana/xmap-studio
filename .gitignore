@@ -16,6 +16,9 @@ apps/desktop/release/
 *.backup.*.xmind
 .xmind-eq-*.tmp
 
+# Stato locale di Wrangler (Cloudflare)
+.wrangler/
+
 # Log, editor, OS
 *.log
 *.swp
