@@ -33,10 +33,42 @@ function precacheManifest(): Plugin {
   };
 }
 
+// In sviluppo `/sw.js` è un service worker che si autodistrugge. Un dispositivo che ha
+// installato la PWA da `serve:tailnet` tiene il service worker di produzione, che mette in
+// cache anche i moduli del server di sviluppo e li serve vecchi per sempre (né si aggiorna:
+// il `sw.js` di `public/` senza segnaposto sostituiti non è valido). Questo lo sostituisce,
+// svuota le cache dell'app, si deregistra e ricarica le schede aperte.
+const SELF_DESTROYING_SW = `
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k.startsWith('xmap-studio-')).map((k) => caches.delete(k)));
+    await self.registration.unregister();
+    const clients = await self.clients.matchAll({ type: 'window' });
+    for (const client of clients) client.navigate(client.url);
+  })());
+});
+`;
+
+function devServiceWorkerReset(): Plugin {
+  return {
+    name: 'xmap-dev-sw-reset',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/sw.js', (_req, res) => {
+        res.setHeader('Content-Type', 'text/javascript');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(SELF_DESTROYING_SW);
+      });
+    },
+  };
+}
+
 export default defineConfig({
   // Percorsi relativi: in Electron la UI compilata si carica da file://.
   base: './',
-  plugins: [react(), precacheManifest()],
+  plugins: [react(), precacheManifest(), devServiceWorkerReset()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
