@@ -364,6 +364,7 @@ export const App: React.FC = () => {
                 selectedTopicId={selectedTopicId}
                 selectedTopicIds={selectedTopicIds}
                 onSelectTopic={selection.onSelectTopic}
+                onClearSelection={() => selectSingle(undefined)}
                 onAddSummary={handleCreateSummary}
                 canAddSummary={canAddSummary}
                 onOpenDetails={openDetails}

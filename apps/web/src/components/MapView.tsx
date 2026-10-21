@@ -30,6 +30,7 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedTopicId,
   selectedTopicIds,
   onSelectTopic,
+  onClearSelection,
   onOpenDetails,
   onOpenLatex,
   onAddChild,
@@ -66,7 +67,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const viewport = useViewport(layout);
-  const { view, containerRef, svgRef, toolbarRef, editorLayerRef, selectedNodeRef, toWorld, zoomByButton, fitToView, fitAnimated } = viewport;
+  const { view, containerRef, svgRef, viewportGroupRef, toolbarRef, editorLayerRef, selectedNodeRef, toWorld, zoomByButton, fitToView, fitAnimated } = viewport;
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
@@ -270,9 +271,12 @@ export const MapView: React.FC<MapViewProps> = ({
         isConnectingRelationship && '!cursor-crosshair'
       )}
       onClick={(e) => {
-        // Click sullo sfondo: deseleziona la relazione.
+        // Click o tap sullo sfondo: deseleziona relazione e blocchi (con Maiusc/Ctrl la selezione resta).
         const t = e.target as Element;
-        if (t === e.currentTarget || t.tagName === 'svg' || t.id === 'map-bg') setSelectedRelationshipId(undefined);
+        if (t !== e.currentTarget && t.tagName !== 'svg' && t.id !== 'map-bg') return;
+        setSelectedRelationshipId(undefined);
+        if (isConnectingRelationship || e.shiftKey || e.ctrlKey || e.metaKey) return;
+        onClearSelection?.();
       }}
     >
       {selectedTopicIds && selectedTopicIds.length > 1 && (
@@ -387,17 +391,20 @@ export const MapView: React.FC<MapViewProps> = ({
       {/* Canvas SVG principale */}
       {/* overflow-visible: l'SVG ritaglia prima della trasformazione, quindi senza
           questa classe a zoom < 1 la mappa verrebbe tagliata a una frazione del canvas.
-          La trasformazione è applicata imperativamente (applyView), non da React. */}
+          Pan e zoom sono applicati imperativamente (useViewport), non da React: attributo
+          `transform` del gruppo a riposo, trasformazione CSS dell'SVG solo durante i gesti. */}
       <svg
         ref={svgRef}
         data-map-canvas
         className="w-full h-full overflow-visible"
-        style={{ transformOrigin: '0 0', willChange: 'transform', textRendering: 'geometricPrecision' }}
+        style={{ transformOrigin: '0 0', textRendering: 'geometricPrecision' }}
       >
-        <g data-map-content>
-          {content}
+        <g ref={viewportGroupRef} data-map-viewport>
+          <g data-map-content>
+            {content}
+          </g>
+          <TopicDragOverlay dragOverlay={dragOverlay} layout={layout} darkMode={darkMode} />
         </g>
-        <TopicDragOverlay dragOverlay={dragOverlay} layout={layout} darkMode={darkMode} />
       </svg>
 
       {contextMenu && (

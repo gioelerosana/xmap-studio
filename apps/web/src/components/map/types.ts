@@ -39,6 +39,8 @@ export interface MapViewProps {
    * aggiunge o toglie il blocco alla selezione multipla.
    */
   onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
+  /** Clic o tap sullo sfondo della mappa: svuota la selezione. */
+  onClearSelection?: () => void;
   onOpenDetails: (topicId: string) => void;
   onOpenLatex?: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
