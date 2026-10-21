@@ -25,20 +25,20 @@ File coinvolti:
 
 ```bash
 pnpm preview:cloudflare   # build + runtime Workers in locale (http://localhost:8787)
-pnpm deploy:cloudflare    # build + pubblicazione su <nome>.<account>.workers.dev
+pnpm deploy:cloudflare    # build + pubblicazione su https://xmap.jshep.xyz
 wrangler versions list    # versioni pubblicate
 wrangler rollback         # torna alla versione precedente
 ```
 
 Ogni `deploy` è atomico: finché non termina si serve la versione precedente.
 
-## Dominio proprio
+## Dominio
 
-Con un dominio su Cloudflare, aggiungi in `wrangler.jsonc`:
-
-```jsonc
-"routes": [{ "pattern": "xmap.esempio.it", "custom_domain": true }]
-```
+L'app è servita da **https://xmap.jshep.xyz**: `routes` in `wrangler.jsonc` con
+`custom_domain: true`, e la zona `jshep.xyz` sullo stesso account Cloudflare. Al
+deploy Cloudflare crea da solo record DNS e certificato. `workers.dev` e i
+Preview URL sono spenti. Per un altro dominio serve che la sua zona sia attiva
+sull'account (nameserver di Cloudflare presso il registrar).
 
 La PWA usa percorsi assoluti (`start_url: "/"`) e va quindi servita dalla radice
 del dominio, come fa il Worker.
