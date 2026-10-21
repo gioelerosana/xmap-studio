@@ -1,65 +1,28 @@
 import React from 'react';
-import { Baseline, Bold, Italic, Strikethrough, Underline } from 'lucide-react';
+import { Bold, ChevronDown, Italic, Strikethrough, Underline } from 'lucide-react';
 import type { TopicView } from '@xmap/core';
 import { cn } from '@xmap/ui-kit';
 
-import { COMPACT_QUERY } from '../../app/constants.js';
-import { useMediaQuery } from '../../app/useMediaQuery.js';
 import type { TopicActions } from '../../app/useTopicActions.js';
 import type { InlineToggleStyle } from '../map/editorBridge.js';
-import { ColorPopover, sameColor } from './ColorPopover.js';
-import { FOCUS_RING, swatchHairline, swatchSelected } from './classes.js';
+import { sameColor } from './ColorPopover.js';
+import { FOCUS_RING, chipClass, swatchHairline, swatchSelected } from './classes.js';
 import { BRANCH_COLORS } from './constants.js';
-import { ToolbarButton } from './primitives.js';
+import { ToolbarButton, ToolbarPopover } from './primitives.js';
 import { setTextColor, toggleTextStyle } from './useTextStyleShortcuts.js';
 
-const STYLE_BUTTONS: { style: InlineToggleStyle; label: string; Icon: React.ElementType }[] = [
-  { style: 'bold', label: 'Grassetto (Ctrl+B)', Icon: Bold },
+// Stili nel pannello "Altri stili": il grassetto resta sempre visibile sulla barra.
+const POPOVER_STYLE_BUTTONS: { style: InlineToggleStyle; label: string; Icon: React.ElementType }[] = [
   { style: 'italic', label: 'Corsivo (Ctrl+I)', Icon: Italic },
   { style: 'underline', label: 'Sottolineato (Ctrl+U)', Icon: Underline },
   { style: 'strikethrough', label: 'Barrato', Icon: Strikethrough },
 ];
-
-// Rosso, verde e azzurro della tavolozza: gli accessi rapidi accanto al "predefinito".
-const QUICK_TEXT_COLORS = [BRANCH_COLORS[0], BRANCH_COLORS[3], BRANCH_COLORS[4]].filter(
-  (color): color is string => color !== undefined,
-);
 
 interface TextStyleControlsProps {
   topic: TopicView | null;
   isEditingText: boolean;
   actions: TopicActions;
 }
-
-const Swatch: React.FC<{
-  label: string;
-  color: string | null;
-  selected: boolean;
-  disabled: boolean;
-  onPick: () => void;
-}> = ({ label, color, selected, disabled, onPick }) => (
-  <button
-    type="button"
-    aria-label={label}
-    title={label}
-    aria-pressed={selected}
-    disabled={disabled}
-    // Il clic non deve togliere il focus all'editor in place.
-    onPointerDown={(e) => e.preventDefault()}
-    onMouseDown={(e) => e.preventDefault()}
-    onClick={onPick}
-    className={cn('flex size-6 shrink-0 items-center justify-center rounded-full disabled:pointer-events-none disabled:opacity-disabled coarse:size-8', FOCUS_RING)}
-  >
-    <span
-      className={cn(
-        'block size-4 rounded-full transition-shadow',
-        selected ? swatchSelected : swatchHairline,
-        !color && 'bg-foreground',
-      )}
-      style={color ? { backgroundColor: color } : undefined}
-    />
-  </button>
-);
 
 // Stile e colore del testo: valgono per il blocco di testo selezionato, o per la selezione
 // dell'editor in place mentre si scrive (vedi map/editorBridge.ts).
@@ -69,54 +32,92 @@ export const TextStyleControls: React.FC<TextStyleControlsProps> = ({ topic, isE
   // Durante la modifica in place lo stato della selezione parziale non è noto: nessun pulsante risulta attivo.
   const style = isEditingText ? undefined : topic?.textStyle;
   const color = style?.color ?? null;
-  // Sugli schermi stretti i pallini rapidi lasciano posto a un solo pulsante con il colore attuale.
-  const compact = useMediaQuery(COMPACT_QUERY);
+  // Il chevron resta acceso anche a pannello chiuso se uno stile nascosto o il colore è impostato.
+  const hiddenStyleActive = Boolean(style?.italic || style?.underline || style?.strikethrough) || color !== null;
 
   return (
     <>
-      {STYLE_BUTTONS.map(({ style: key, label, Icon }) => (
-        <ToolbarButton
-          key={key}
-          label={label}
-          active={Boolean(style?.[key])}
-          disabled={!enabled}
-          onClick={() => toggleTextStyle(target, key)}
-        >
-          <Icon className="size-[18px]" />
-        </ToolbarButton>
-      ))}
-      <div role="group" aria-label="Colore del testo" className="ml-1 flex items-center">
-        {!compact && (
+      <ToolbarButton
+        label="Grassetto (Ctrl+B)"
+        active={Boolean(style?.bold)}
+        disabled={!enabled}
+        onClick={() => toggleTextStyle(target, 'bold')}
+      >
+        <Bold className="size-4" />
+      </ToolbarButton>
+      <ToolbarPopover
+        align="center"
+        panelClassName="flex w-44 flex-col gap-2"
+        trigger={({ open, toggle }) => (
+          <ToolbarButton
+            label="Altri stili del testo"
+            active={open || hiddenStyleActive}
+            disabled={!enabled}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onClick={toggle}
+            className="w-5 coarse:w-6"
+          >
+            <ChevronDown className="size-3.5" />
+          </ToolbarButton>
+        )}
+      >
+        {(close) => (
           <>
-            <Swatch
-              label="Colore del testo predefinito"
-              color={null}
-              selected={enabled && !isEditingText && color === null}
-              disabled={!enabled}
-              onPick={() => setTextColor(target, null)}
-            />
-            {QUICK_TEXT_COLORS.map((c) => (
-              <Swatch
-                key={c}
-                label={`Colore del testo ${c}`}
-                color={c}
-                selected={sameColor(color, c)}
-                disabled={!enabled}
-                onPick={() => setTextColor(target, c)}
-              />
-            ))}
+            <div className="flex gap-1">
+              {POPOVER_STYLE_BUTTONS.map(({ style: key, label, Icon }) => (
+                <ToolbarButton
+                  key={key}
+                  label={label}
+                  active={Boolean(style?.[key])}
+                  disabled={!enabled}
+                  onClick={() => toggleTextStyle(target, key)}
+                >
+                  <Icon className="size-4" />
+                </ToolbarButton>
+              ))}
+            </div>
+            <div role="group" aria-label="Colore del testo" className="flex flex-col gap-2">
+              <span className="text-2xs text-muted-foreground">Colore del testo</span>
+              <button
+                type="button"
+                aria-pressed={color === null}
+                // Il clic non deve togliere il focus all'editor in place.
+                onPointerDown={(e) => e.preventDefault()}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setTextColor(target, null);
+                  close();
+                }}
+                className={cn(chipClass(color === null), 'flex h-6 items-center justify-center px-2')}
+              >
+                Predefinito
+              </button>
+              <div className="flex flex-wrap gap-2">
+                {BRANCH_COLORS.map((c) => {
+                  const selected = sameColor(color, c);
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-label={`Colore del testo ${c}`}
+                      aria-pressed={selected}
+                      onPointerDown={(e) => e.preventDefault()}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setTextColor(target, c);
+                        close();
+                      }}
+                      className={cn('size-5 rounded-full', FOCUS_RING, selected ? swatchSelected : swatchHairline)}
+                      style={{ backgroundColor: c }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </>
         )}
-        <ColorPopover
-          label="Colore del testo"
-          value={color}
-          colors={BRANCH_COLORS}
-          noneLabel="Predefinito"
-          disabled={!enabled}
-          icon={compact ? <Baseline className="size-4" /> : undefined}
-          onSelect={(c) => setTextColor(target, c)}
-        />
-      </div>
+      </ToolbarPopover>
     </>
   );
 };

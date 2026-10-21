@@ -4,12 +4,12 @@ import { cn } from '@xmap/ui-kit';
 
 import { COMPACT_QUERY, TEXT_FIELD } from '../../app/constants.js';
 import { useMediaQuery } from '../../app/useMediaQuery.js';
-import { ColorPopover } from './ColorPopover.js';
+import { ColorPopover, sameColor } from './ColorPopover.js';
 import { BRANCH_COLORS } from './constants.js';
 import { LinkPopover } from './LinkPopover.js';
 import { MarkersPopover } from './MarkersPopover.js';
 import { NotesPopover } from './NotesPopover.js';
-import { ToolbarButton, ToolbarSeparator } from './primitives.js';
+import { ToolbarButton, ToolbarSeparator, ToolbarSwatch } from './primitives.js';
 import { StructurePopover } from './StructurePopover.js';
 import { TextStyleControls } from './TextStyleControls.js';
 import type { FloatingToolbarProps } from './types.js';
@@ -18,6 +18,9 @@ import { useToolbarPosition, TOOLBAR_TOP_GAP } from './useToolbarPosition.js';
 
 // Nasconde la barra di scorrimento orizzontale (Firefox e WebKit) senza disattivare lo scorrimento.
 const HIDE_SCROLLBAR = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
+
+// Quanti colori del ramo mostrare come pallini diretti nella barra (il resto sta nel pannello).
+const INLINE_BRANCH_COLORS = 5;
 
 /**
  * Barra degli strumenti flottante, ispirata a quella di GoodNotes: una pillola di vetro con
@@ -80,15 +83,40 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
       <ToolbarSeparator />
 
-      <ColorPopover
-        label="Colore del blocco"
-        value={topic?.fillColor ?? null}
-        colors={BRANCH_COLORS}
-        noneLabel="Predefinito"
-        disabled={!hasTopic}
-        icon={<PaintBucket className="size-4" />}
-        onSelect={(color) => topic && actions.setBranchColor(topic.id, color)}
-      />
+      <div role="group" aria-label="Colore del ramo" className="flex items-center">
+        {/* Su schermi larghi i colori più usati sono sempre visibili; il pannello completo resta a portata di chevron. */}
+        {!compact && (
+          <>
+            <ToolbarSwatch
+              label="Predefinito"
+              color={null}
+              selected={hasTopic && !topic.fillColor}
+              disabled={!hasTopic}
+              emptyClassName="border border-dashed border-muted-foreground/60 bg-transparent"
+              onPick={() => topic && actions.setBranchColor(topic.id, null)}
+            />
+            {BRANCH_COLORS.slice(0, INLINE_BRANCH_COLORS).map((c, i) => (
+              <ToolbarSwatch
+                key={c}
+                label={`Colore ${i + 1}`}
+                color={c}
+                selected={sameColor(topic?.fillColor ?? null, c)}
+                disabled={!hasTopic}
+                onPick={() => topic && actions.setBranchColor(topic.id, c)}
+              />
+            ))}
+          </>
+        )}
+        <ColorPopover
+          label="Colore del ramo"
+          value={topic?.fillColor ?? null}
+          colors={BRANCH_COLORS}
+          noneLabel="Predefinito"
+          disabled={!hasTopic}
+          icon={compact ? <PaintBucket className="size-4" /> : undefined}
+          onSelect={(color) => topic && actions.setBranchColor(topic.id, color)}
+        />
+      </div>
 
       <ToolbarSeparator />
 
