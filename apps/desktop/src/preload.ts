@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 /** Esito di un salvataggio sotto guardia (vedi `guardedSave` in @xmap/core/node). */
 export type SaveOutcome =
@@ -42,6 +42,8 @@ export interface ElectronAPI {
   getInitialFile: () => Promise<string | null>;
   onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;
   onBeforeClose: (callback: () => void) => () => void;
+  /** Zoom di Chromium sulla pagina (Impostazioni > Scala interfaccia): 1 = 100%. */
+  setZoomFactor: (factor: number) => void;
 }
 
 const api: ElectronAPI = {
@@ -70,6 +72,9 @@ const api: ElectronAPI = {
     const handler = () => callback();
     ipcRenderer.on('app:beforeClose', handler);
     return () => ipcRenderer.removeListener('app:beforeClose', handler);
+  },
+  setZoomFactor: (factor) => {
+    if (Number.isFinite(factor) && factor > 0) webFrame.setZoomFactor(factor);
   },
 };
 

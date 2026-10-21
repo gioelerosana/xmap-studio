@@ -3,13 +3,22 @@ import { ArrowLeft, FileLock2, Info, Keyboard, Network, Palette } from 'lucide-r
 import {
   Button,
   IconButton,
+  Input,
   KbdGroup,
   Kbd,
   SegmentedControl,
   Switch,
   cn,
 } from '@xmap/ui-kit';
-import type { MapStructureSetting, Settings, ThemePreference } from '../settings.js';
+import {
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
+  UI_SCALE_PRESETS,
+  clampUiScale,
+  type MapStructureSetting,
+  type Settings,
+  type ThemePreference,
+} from '../settings.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from '../appInfo.js';
 import { AppMark } from './AppMark.js';
 
@@ -30,6 +39,8 @@ const STRUCTURE_ITEMS: { id: MapStructureSetting; label: string }[] = [
   { id: 'tree', label: 'Albero' },
   { id: 'logic', label: 'Logica' },
 ];
+
+const UI_SCALE_ITEMS = UI_SCALE_PRESETS.map((value) => ({ id: String(value), label: `${value}%` }));
 
 /** Ogni riga: keys sono i singoli tasti mostrati con `Kbd`. */
 const SHORTCUTS: { keys: string[]; action: string }[] = [
@@ -85,6 +96,54 @@ function SettingsSection({ title, children }: { title: string; children: React.R
 }
 
 /**
+ * Scala dell'interfaccia: valori proposti più un campo libero.
+ *
+ * Il campo applica il valore solo a conferma (Invio o uscita dal campo): mentre
+ * si digita "1" → "15" → "150" l'interfaccia non deve ridimensionarsi a ogni tasto.
+ */
+function UiScaleControl({ value, onChange }: { value: number; onChange: (uiScale: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+
+  const commit = () => {
+    const next = clampUiScale(Number.parseFloat(draft.replace(',', '.')));
+    if (next === null) setDraft(String(value));
+    else if (next !== value) onChange(next);
+    else setDraft(String(value));
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <SegmentedControl
+        aria-label="Scala predefinita"
+        size="sm"
+        items={UI_SCALE_ITEMS}
+        activeId={String(value)}
+        onChange={(id) => onChange(Number(id))}
+      />
+      <Input
+        aria-label="Scala personalizzata in percento"
+        size="sm"
+        type="number"
+        inputMode="numeric"
+        min={UI_SCALE_MIN}
+        max={UI_SCALE_MAX}
+        step={5}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+        }}
+        trailing={<span className="text-muted-foreground">%</span>}
+        className="w-24"
+        inputClassName="tabular-nums"
+      />
+    </div>
+  );
+}
+
+/**
  * Pagina impostazioni a tutto schermo, senza trasparenze.
  *
  * Perché non un `Modal`: le impostazioni sono una destinazione, non un
@@ -93,6 +152,7 @@ function SettingsSection({ title, children }: { title: string; children: React.R
  * Il componente si monta solo da aperto, così lo stato locale riparte pulito.
  */
 export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsPageProps) {
+  const isElectron = Boolean(window.electronAPI);
   const [active, setActive] = useState<SectionId>('appearance');
   const pageRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -170,6 +230,21 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsP
                   onCheckedChange={(reduceMotion) => onUpdate({ reduceMotion })}
                 />
               </SettingRow>
+              {isElectron ? (
+                <SettingRow
+                  label="Scala interfaccia"
+                  hint={`Ingrandisce o rimpicciolisce tutta l'app, da ${UI_SCALE_MIN}% a ${UI_SCALE_MAX}%.`}
+                >
+                  <UiScaleControl value={settings.uiScale} onChange={(uiScale) => onUpdate({ uiScale })} />
+                </SettingRow>
+              ) : (
+                <SettingRow
+                  label="Scala interfaccia"
+                  hint="Nel browser si usa lo zoom della pagina: Ctrl + e Ctrl − (⌘ su Mac), Ctrl 0 per tornare al 100%."
+                >
+                  {null}
+                </SettingRow>
+              )}
             </SettingsSection>
           )}
 

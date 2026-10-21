@@ -7,7 +7,7 @@
  * Le chiavi precedenti (tema non persistito, struttura della mappa, sidebar)
  * vengono lette solo se la chiave unica non esiste ancora.
  */
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type MapStructureSetting = 'tree' | 'logic';
@@ -19,7 +19,14 @@ export interface Settings {
   mapStructure: MapStructureSetting;
   /** Azzera transizioni e animazioni (classe `reduce-motion` su `<html>`). */
   reduceMotion: boolean;
+  /** Scala dell'interfaccia in percento (100 = dimensione nativa); oggi agisce solo nell'app desktop. */
+  uiScale: number;
 }
+
+export const UI_SCALE_MIN = 50;
+export const UI_SCALE_MAX = 300;
+/** Valori proposti nella pagina impostazioni; il campo libero accetta tutto l'intervallo. */
+export const UI_SCALE_PRESETS: readonly number[] = [100, 125, 150, 175, 200];
 
 const SETTINGS_KEY = 'xmap-studio.settings';
 const LEGACY_STRUCTURE_KEY = 'xmap-studio.map-structure';
@@ -38,6 +45,7 @@ export function defaultSettings(): Settings {
     theme: 'system',
     mapStructure: 'tree',
     reduceMotion: systemPrefers(REDUCE_MOTION_QUERY),
+    uiScale: 100,
   };
 }
 
@@ -49,6 +57,12 @@ function pickOneOf<T extends string>(value: unknown, allowed: readonly T[], fall
   return allowed.find((item) => item === value) ?? fallback;
 }
 
+/** Riporta un valore qualsiasi nell'intervallo ammesso, in percento intero; `null` se non è un numero. */
+export function clampUiScale(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(value)));
+}
+
 /** Valida campo per campo: ciò che non è valido torna al valore di `base`. */
 export function sanitizeSettings(value: unknown, base: Settings): Settings {
   const record = isRecord(value) ? value : {};
@@ -56,6 +70,7 @@ export function sanitizeSettings(value: unknown, base: Settings): Settings {
     theme: pickOneOf(record.theme, THEMES, base.theme),
     mapStructure: pickOneOf(record.mapStructure, STRUCTURES, base.mapStructure),
     reduceMotion: typeof record.reduceMotion === 'boolean' ? record.reduceMotion : base.reduceMotion,
+    uiScale: clampUiScale(record.uiScale) ?? base.uiScale,
   };
 }
 
@@ -165,6 +180,11 @@ export function useSettings(): SettingsHandle {
   useEffect(() => {
     document.documentElement.classList.toggle('reduce-motion', settings.reduceMotion);
   }, [settings.reduceMotion]);
+
+  // Layout effect: lo zoom si applica prima del primo disegno, senza un frame al 100%.
+  useLayoutEffect(() => {
+    window.electronAPI?.setZoomFactor(settings.uiScale / 100);
+  }, [settings.uiScale]);
 
   const update = useCallback((patch: Partial<Settings>) => updateSettings(patch), []);
   const reset = useCallback(() => resetSettings(), []);

@@ -33,6 +33,7 @@ declare global {
       getInitialFile: () => Promise<string | null>;
       onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;
       onBeforeClose: (callback: () => void) => () => void;
+      setZoomFactor: (factor: number) => void;
     };
   }
 }
