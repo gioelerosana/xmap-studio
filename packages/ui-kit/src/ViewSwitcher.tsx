@@ -45,6 +45,8 @@ export function SegmentedControl<T extends string>({
   'aria-label': ariaLabel,
 }: SegmentedControlProps<T>) {
   const groupRef = useRef<HTMLDivElement>(null);
+  // Nessuna voce attiva (es. un valore fuori elenco): la prima resta la tappa di Tab.
+  const tabStopId = items.some((item) => item.id === activeId) ? activeId : items.find((item) => !item.disabled)?.id;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step =
@@ -87,7 +89,7 @@ export function SegmentedControl<T extends string>({
             role="radio"
             aria-checked={active}
             data-id={item.id}
-            tabIndex={active ? 0 : -1}
+            tabIndex={item.id === tabStopId ? 0 : -1}
             disabled={item.disabled}
             onClick={() => onChange(item.id)}
             className={cn(
