@@ -298,6 +298,11 @@ essere nella tailnet (app Tailscale, stesso account).
   lo ospita: si prova da un altro dispositivo.
 - Senza il servizio lo script ripiega sul nome della macchina
   (`https://<pc>.<tailnet>.ts.net`).
+- Un PC che ha pubblicato `svc:xmap` una volta resta host anche a script
+  chiuso (la preferenza `AdvertiseServices` resta salvata in `tailscaled`) e
+  da lì `xmap.<tailnet>.ts.net` non si apre più. Su un PC da cui si vuole
+  aprire l'indirizzo del servizio si usa `pnpm serve:tailnet --no-service`:
+  serve solo sul nome della macchina e toglie il PC dagli host del servizio.
 - Un nome fuori da `*.ts.net` (es. `xmap.net`) non è possibile con i certificati
   di Tailscale.
 - Per spegnere: `tailscale serve --service=svc:xmap off` oppure
