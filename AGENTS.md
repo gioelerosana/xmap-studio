@@ -156,21 +156,31 @@ una scelta di stile.
 **L'agente principale è un orchestratore, non un esecutore.** L'utente parla
 con un solo agente principale; quell'agente pianifica, scompone, delega e
 integra, ma il grosso del lavoro sul codice lo svolgono **sotto-agenti con
-modelli inferiori al suo**. Esempio: se l'agente principale è Claude Opus,
-delega a **Sonnet** e **Haiku**, mai ad altre istanze di Opus.
+modelli inferiori al suo**, e l'unico modello ammesso è **Claude Haiku** (vedi
+sotto).
 
 ### Scelta del modello per i sotto-agenti
 
-| Modello | Quando usarlo |
-|---|---|
-| **Haiku** (preferito, costa meno) | lavoro meccanico e ben specificato: rinomini, restyle, migrazioni ripetitive, aggiornamento di import/doc, test su pattern esistenti, ricerche nella codebase |
-| Modello principale | **solo** orchestrazione: piano, contratti condivisi, revisione e integrazione finale |
+**Regola rigida: l'unico modello utilizzabile come sotto-agente è Claude Haiku,
+con reasoning `medium` oppure `high`. Nient'altro.** Né Sonnet, né Opus (nemmeno
+altre istanze del modello principale), né altri provider (Antigravity, Codex, …),
+né Haiku con altri livelli di reasoning (`low`, `max`, …). Un'eccezione richiede
+un'indicazione esplicita dell'utente nella sessione.
 
-I sotto-agenti usano **solo modelli Claude** (Haiku, o Sonnet per lavoro non
-meccanico se l'orchestratore è Opus); altri provider (Antigravity, Codex, …) solo
-se l'utente lo indica esplicitamente. Niente commit/push da parte del
-sotto-agente: la verifica a freddo e il commit restano all'orchestratore (vedi
-sotto).
+| Modello | Reasoning | Quando usarlo |
+|---|---|---|
+| **Claude Haiku** | `medium` | lavoro meccanico e ben specificato: rinomini, restyle, migrazioni ripetitive, aggiornamento di import/doc, test su pattern esistenti, ricerche nella codebase |
+| **Claude Haiku** | `high` | lavoro che richiede più ragionamento ma resta ben delimitato: modifiche non banali a un modulo, test di logica nuova, indagini su un bug circoscritto |
+| Modello principale | — | **solo** orchestrazione: piano, contratti condivisi, revisione e integrazione finale |
+
+Se un compito sembra troppo difficile per Haiku `high`, non si passa a un modello
+più grande: lo si scompone in compiti più piccoli e ben specificati, oppure lo
+svolge direttamente l'orchestratore. Quando lanci un sotto-agente, imposta
+esplicitamente modello (Haiku) e reasoning (`medium` o `high`); non lasciare
+valori di default che potrebbero risolversi in un altro modello.
+
+Niente commit/push da parte del sotto-agente: la verifica a freddo e il commit
+restano all'orchestratore (vedi sotto).
 
 ### Responsabilità dell'orchestratore
 
