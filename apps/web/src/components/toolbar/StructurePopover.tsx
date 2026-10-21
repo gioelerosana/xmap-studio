@@ -210,7 +210,7 @@ export const StructurePopover: React.FC<StructurePopoverProps> = (props) => {
   if (!topic) {
     return (
       <ToolbarButton label="Frecce e struttura" disabled>
-        <Spline className="size-[18px]" />
+        <Spline className="size-4" />
       </ToolbarButton>
     );
   }
@@ -231,7 +231,7 @@ export const StructurePopover: React.FC<StructurePopoverProps> = (props) => {
           aria-expanded={open}
           onClick={toggle}
         >
-          <Spline className="size-[18px]" />
+          <Spline className="size-4" />
         </ToolbarButton>
       )}
     >

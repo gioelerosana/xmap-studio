@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 
 import { createPortal } from 'react-dom';
 import { cn } from '@xmap/ui-kit';
 
-import { FOCUS_RING } from './classes.js';
+import { FOCUS_RING, swatchHairline, swatchSelected } from './classes.js';
 
 // Primitive della barra flottante: tutte impediscono il furto del focus, così i comandi
 // agiscono sulla selezione dell'editor in place senza chiuderlo (vedi map/editorBridge.ts).
@@ -16,7 +16,7 @@ export interface ToolbarButtonProps extends Omit<React.ButtonHTMLAttributes<HTML
   children: React.ReactNode;
 }
 
-/** Bottone quadrato 36px (44px su touch) con icona Lucide `size-[18px]`. */
+/** Bottone quadrato 32px (40px su touch) con icona Lucide `size-4`. */
 export const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarButton(
   { label, active, className, children, onMouseDown, onPointerDown, ...props },
   ref,
@@ -37,7 +37,7 @@ export const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(f
         onMouseDown?.(e);
       }}
       className={cn(
-        'flex size-9 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors coarse:size-11',
+        'flex size-8 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors coarse:size-10',
         'hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-disabled',
         FOCUS_RING,
         active && 'bg-accent text-foreground',
@@ -51,7 +51,42 @@ export const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(f
 });
 
 /** Separatore verticale tra gruppi di comandi. */
-export const ToolbarSeparator: React.FC = () => <div role="separator" aria-orientation="vertical" className="mx-1 h-5 w-px shrink-0 bg-border" />;
+export const ToolbarSeparator: React.FC = () => <div role="separator" aria-orientation="vertical" className="mx-0.5 h-4 w-px shrink-0 bg-border" />;
+
+export interface ToolbarSwatchProps {
+  label: string;
+  /** `null` = "predefinito": pallino pieno `emptyClassName` (default colore del testo). */
+  color: string | null;
+  selected: boolean;
+  disabled?: boolean;
+  onPick: () => void;
+  /** Aspetto del pallino senza colore (es. tratteggiato per "nessun colore del ramo"). */
+  emptyClassName?: string;
+}
+
+/** Pallino di colore cliccabile della barra (24px, 32px su touch): non ruba il focus. */
+export const ToolbarSwatch: React.FC<ToolbarSwatchProps> = ({ label, color, selected, disabled, onPick, emptyClassName }) => (
+  <button
+    type="button"
+    aria-label={label}
+    title={label}
+    aria-pressed={selected}
+    disabled={disabled}
+    onPointerDown={keepFocus}
+    onMouseDown={keepFocus}
+    onClick={onPick}
+    className={cn('flex size-6 shrink-0 items-center justify-center rounded-full disabled:pointer-events-none disabled:opacity-disabled coarse:size-8', FOCUS_RING)}
+  >
+    <span
+      className={cn(
+        'block size-4 rounded-full transition-shadow',
+        selected ? swatchSelected : swatchHairline,
+        !color && (emptyClassName ?? 'bg-foreground'),
+      )}
+      style={color ? { backgroundColor: color } : undefined}
+    />
+  </button>
+);
 
 export interface ToolbarPopoverProps {
   /** Bottone che apre il pannello; riceve lo stato e il toggle. */

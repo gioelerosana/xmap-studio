@@ -72,7 +72,7 @@ export const NotesPopover: React.FC<NotesPopoverProps> = ({ topic, actions }) =>
   if (!topic) {
     return (
       <ToolbarButton label="Note" disabled>
-        <StickyNote className="size-[18px]" />
+        <StickyNote className="size-4" />
       </ToolbarButton>
     );
   }
@@ -88,7 +88,7 @@ export const NotesPopover: React.FC<NotesPopoverProps> = ({ topic, actions }) =>
           aria-expanded={open}
           onClick={toggle}
         >
-          <StickyNote className="size-[18px]" />
+          <StickyNote className="size-4" />
         </ToolbarButton>
       )}
     >

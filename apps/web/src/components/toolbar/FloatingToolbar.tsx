@@ -55,7 +55,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       }}
       style={compact ? undefined : { transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)`, top: TOOLBAR_TOP_GAP }}
       className={cn(
-        'group surface-glass pointer-events-auto absolute left-1/2 z-20 flex max-w-[calc(100%-1rem)] items-center gap-0.5 overflow-x-auto rounded-xl border p-1 shadow-composer',
+        'group surface-glass pointer-events-auto absolute left-1/2 z-20 flex max-w-[calc(100%-1rem)] items-center gap-0.5 overflow-x-auto rounded-xl border p-0.5 shadow-composer',
         HIDE_SCROLLBAR,
         compact && '-translate-x-1/2 bottom-[calc(0.75rem+env(safe-area-inset-bottom))]',
         dragging && 'select-none',
@@ -67,12 +67,12 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           aria-label="Sposta la barra"
           title="Sposta la barra (doppio clic per ripristinare)"
           className={cn(
-            'flex h-9 w-5 shrink-0 touch-none items-center justify-center rounded-control text-muted-foreground hover:text-foreground',
+            'flex h-8 w-4 shrink-0 touch-none items-center justify-center rounded-control text-muted-foreground hover:text-foreground',
             dragging ? 'cursor-grabbing' : 'cursor-grab',
           )}
           {...gripProps}
         >
-          <GripVertical className="size-4" />
+          <GripVertical className="size-3.5" />
         </div>
       )}
 
@@ -98,7 +98,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
         disabled={!hasTopic}
         onClick={() => topic && onOpenLatex(topic.id)}
       >
-        <Sigma className="size-[18px]" />
+        <Sigma className="size-4" />
       </ToolbarButton>
       <NotesPopover topic={topic} actions={actions} />
       <StructurePopover
@@ -129,7 +129,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             onClick={onAddSummaryForSelection}
             className="w-auto gap-1.5 px-2 text-xs"
           >
-            <Braces className="size-[18px]" />
+            <Braces className="size-4" />
             Sommario
           </ToolbarButton>
         </>
