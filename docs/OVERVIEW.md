@@ -188,8 +188,9 @@ Nell'albero a sinistra puoi **cercare**, filtrare per tipo (**Testo/Formule/
 Immagini**) e **trascinare un blocco** su un altro: rilasciando al centro diventa
 un sotto-blocco, sui bordi superiore/inferiore si riordina tra i fratelli.
 
-La barra flottante in alto (spostabile trascinando la maniglia, doppio clic per
-riportarla al centro; in basso sugli schermi stretti) raccoglie l'editing del blocco
+La barra flottante (in alto al centro; trascinandola da un punto qualsiasi si aggancia
+alla posizione più vicina tra alto, basso, lato sinistro e lato destro, dove diventa
+verticale; la scelta è ricordata; fissa in basso sugli schermi stretti) raccoglie l'editing del blocco
 selezionato: grassetto (gli altri stili e il colore del testo in un sottomenu), colore
 del ramo con i pallini sempre visibili, formula LaTeX, note, frecce e struttura
 (relazioni, cornici, sommari), link e il pannello marker ed etichette (marker per

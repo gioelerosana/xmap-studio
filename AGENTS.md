@@ -271,8 +271,9 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
 - gesti sulla mappa (`MapView.tsx`): pan con un dito, pinch a due dita, tap e
   doppio tap; il pinch da trackpad in Safari arriva come `GestureEvent`;
 - non ci sono pannelli laterali: l'editing del blocco passa dalla barra flottante
-  (`components/toolbar/`), spostabile sul desktop e agganciata in basso sotto `sm`;
-  i suoi popover devono restare visibili in entrambe le posizioni;
+  (`components/toolbar/`), agganciabile sul desktop in alto, in basso o in verticale su un
+  lato (`useToolbarPosition.ts`, orientamento via `ToolbarOrientationContext`) e agganciata in basso sotto `sm`;
+  i suoi popover devono restare visibili in tutte le posizioni;
 - la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
   `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
   disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (barra
