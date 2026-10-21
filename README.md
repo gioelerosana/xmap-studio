@@ -27,9 +27,15 @@ Apri un file `.xmind`, modificalo direttamente sulla mappa e salvalo:
 - **Non perdi niente.** Ogni salvataggio viene controllato prima di scrivere su
   disco e lascia un backup; se XMind ha il file aperto, il salvataggio si ferma.
 
+## Provala online
+
+La versione web è su **[xmap.jshep.xyz](https://xmap.jshep.xyz)**: gira tutta nel
+browser, i file restano sul tuo dispositivo, e si può installare come app (PWA) e
+usare offline.
+
 ## Installa
 
-Scarica l'**AppImage** (Linux) o l'**exe portable** (Windows) dalle
+Per il desktop scarica l'**AppImage** (Linux) o l'**exe portable** (Windows) dalle
 [Release](https://github.com/gioelerosana/xmap-studio/releases).
 
 Su Arch Linux:
