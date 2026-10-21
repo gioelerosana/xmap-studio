@@ -21,7 +21,8 @@ function precacheManifest(): Plugin {
       const files = readdirSync(outDir, { recursive: true, withFileTypes: true })
         .filter((entry) => entry.isFile())
         .map((entry) => path.relative(outDir, path.join(entry.parentPath, entry.name)).split(path.sep).join('/'))
-        .filter((file) => file !== 'sw.js' && !file.endsWith('.map'))
+        // `_headers` serve solo a Cloudflare e non viene servito: in `addAll` farebbe fallire l'installazione.
+        .filter((file) => file !== 'sw.js' && file !== '_headers' && !file.endsWith('.map'))
         .sort();
       const hash = createHash('sha256');
       for (const file of files) hash.update(file).update(readFileSync(path.join(outDir, file)));

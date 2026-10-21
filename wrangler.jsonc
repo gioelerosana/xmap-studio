@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "xmap-studio",
+  "compatibility_date": "2026-09-01",
+  // L'app è una SPA tutta lato client: nessun codice Worker, solo asset statici
+  // serviti dalla rete Cloudflare (nessun origin da far cadere). Intestazioni di
+  // cache e sicurezza in apps/web/public/_headers.
+  "assets": {
+    "directory": "./apps/web/dist"
+  },
+  "routes": [{ "pattern": "xmap.jshep.xyz", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": false }
+}
