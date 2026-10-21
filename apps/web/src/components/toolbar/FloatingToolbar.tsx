@@ -14,7 +14,7 @@ import { StructurePopover } from './StructurePopover.js';
 import { TextStyleControls } from './TextStyleControls.js';
 import type { FloatingToolbarProps } from './types.js';
 import { useTextStyleShortcuts } from './useTextStyleShortcuts.js';
-import { useToolbarPosition, TOOLBAR_TOP_GAP } from './useToolbarPosition.js';
+import { useToolbarPosition, TOOLBAR_EDGE_GAP } from './useToolbarPosition.js';
 
 // Nasconde la barra di scorrimento orizzontale (Firefox e WebKit) senza disattivare lo scorrimento.
 const HIDE_SCROLLBAR = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
@@ -40,7 +40,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onStartConnectRelationship,
 }) => {
   const compact = useMediaQuery(COMPACT_QUERY);
-  const { barRef, offset, dock, dragging, gripProps } = useToolbarPosition(!compact);
+  const { barRef, dock, dragging, dragProps } = useToolbarPosition(!compact);
   useTextStyleShortcuts({ topic, isEditingText, actions });
 
   const hasTopic = topic !== null;
@@ -56,7 +56,8 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       onMouseDown={(e) => {
         if (!(e.target instanceof Element && e.target.closest(TEXT_FIELD))) e.preventDefault();
       }}
-      style={compact ? undefined : { transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)`, top: TOOLBAR_TOP_GAP }}
+      style={compact ? undefined : { transform: 'translateX(-50%)', top: TOOLBAR_EDGE_GAP }}
+      {...dragProps}
       className={cn(
         'group surface-glass pointer-events-auto absolute left-1/2 z-20 flex max-w-[calc(100%-1rem)] items-center gap-0.5 overflow-x-auto rounded-xl border p-0.5 shadow-composer',
         HIDE_SCROLLBAR,
@@ -73,7 +74,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             'flex h-8 w-4 shrink-0 touch-none items-center justify-center rounded-control text-muted-foreground hover:text-foreground',
             dragging ? 'cursor-grabbing' : 'cursor-grab',
           )}
-          {...gripProps}
         >
           <GripVertical className="size-3.5" />
         </div>

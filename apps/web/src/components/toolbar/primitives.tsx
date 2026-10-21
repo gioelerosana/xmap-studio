@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { createContext, forwardRef, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@xmap/ui-kit';
 
@@ -7,6 +7,14 @@ import { FOCUS_RING, swatchHairline, swatchSelected } from './classes.js';
 // Primitive della barra flottante: tutte impediscono il furto del focus, così i comandi
 // agiscono sulla selezione dell'editor in place senza chiuderlo (vedi map/editorBridge.ts).
 const keepFocus = (e: React.PointerEvent | React.MouseEvent) => e.preventDefault();
+
+/** Orientamento della barra: `vertical` quando è agganciata a un lato (sinistro o destro). */
+export type ToolbarOrientation = 'horizontal' | 'vertical';
+
+/** Fornito dalla radice della barra (`FloatingToolbar`); i controlli lo leggono per ruotarsi. */
+export const ToolbarOrientationContext = createContext<ToolbarOrientation>('horizontal');
+
+export const useToolbarOrientation = (): ToolbarOrientation => useContext(ToolbarOrientationContext);
 
 export interface ToolbarButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   /** Nome accessibile e tooltip (obbligatorio: il bottone mostra solo l'icona). */
