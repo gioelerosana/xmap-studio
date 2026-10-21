@@ -1,4 +1,5 @@
-import React, { forwardRef, useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@xmap/ui-kit';
 
 import { FOCUS_RING } from './classes.js';
@@ -65,10 +66,29 @@ export interface ToolbarPopoverProps {
   focusable?: boolean;
 }
 
+const PANEL_GAP = 8;
+const VIEWPORT_MARGIN = 8;
+
+interface PanelPlacement {
+  left: number;
+  top?: number;
+  bottom?: number;
+}
+
+const HALF = 0.5;
+
+/** Ascissa sinistra del pannello (larghezza `width`) rispetto al rettangolo del trigger. */
+const alignedLeft = (align: 'start' | 'center' | 'end', anchor: DOMRect, width: number): number => {
+  if (align === 'start') return anchor.left;
+  if (align === 'end') return anchor.right - width;
+  return anchor.left + (anchor.width - width) * HALF;
+};
+
 /**
  * Pannello ancorato a un bottone della barra: si apre sotto il trigger (sopra quando la barra
- * è agganciata in basso, tramite la classe `group-data-[dock=bottom]` sul contenitore),
- * si chiude con clic fuori o Esc.
+ * è agganciata in basso, `data-dock="bottom"` sul contenitore), si chiude con clic fuori o Esc.
+ * Il pannello è reso in un portale con posizione `fixed` calcolata dal trigger: così l'`overflow`
+ * della barra (scorrimento orizzontale su schermi stretti) non lo taglia.
  */
 export const ToolbarPopover: React.FC<ToolbarPopoverProps> = ({
   trigger,
@@ -78,48 +98,76 @@ export const ToolbarPopover: React.FC<ToolbarPopoverProps> = ({
   focusable = false,
 }) => {
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<PanelPlacement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (rootRef.current && e.target instanceof Node && !rootRef.current.contains(e.target)) setOpen(false);
+      if (!(e.target instanceof Node)) return;
+      if (rootRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
       setOpen(false);
     };
+    // La posizione si calcola all'apertura: se la finestra cambia misura il pannello si chiude.
+    const onResize = () => setOpen(false);
     window.addEventListener('pointerdown', onDown);
     window.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onResize);
     };
   }, [open]);
 
-  const close = () => setOpen(false);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const panel = panelRef.current;
+    if (!open || !root || !panel) {
+      setPlacement(null);
+      return;
+    }
+    const anchor = root.getBoundingClientRect();
+    const width = panel.offsetWidth;
+    const height = panel.offsetHeight;
+    const roomBelow = window.innerHeight - anchor.bottom - PANEL_GAP - VIEWPORT_MARGIN;
+    const roomAbove = anchor.top - PANEL_GAP - VIEWPORT_MARGIN;
+    const docked = root.closest<HTMLElement>('[data-dock]')?.dataset.dock === 'bottom';
+    // Lato preferito dall'ancoraggio della barra; si inverte solo se non c'è spazio e l'altro lato ne ha di più.
+    const up = docked ? roomAbove >= height || roomAbove > roomBelow : roomBelow < height && roomAbove > roomBelow;
+    const idealLeft = alignedLeft(align, anchor, width);
+    const left = Math.max(VIEWPORT_MARGIN, Math.min(idealLeft, window.innerWidth - width - VIEWPORT_MARGIN));
+    setPlacement(
+      up ? { left, bottom: window.innerHeight - anchor.top + PANEL_GAP } : { left, top: anchor.bottom + PANEL_GAP },
+    );
+  }, [open, align]);
 
   return (
     <div ref={rootRef} className="relative">
       {trigger({ open, toggle: () => setOpen((v) => !v) })}
-      {open && (
-        <div
-          role="dialog"
-          onPointerDown={focusable ? undefined : keepFocus}
-          onMouseDown={focusable ? undefined : keepFocus}
-          className={cn(
-            'absolute top-full z-40 mt-2 animate-pop-in rounded-xl border bg-popover p-2 text-popover-foreground shadow-dialog',
-            'group-data-[dock=bottom]:bottom-full group-data-[dock=bottom]:top-auto group-data-[dock=bottom]:mb-2 group-data-[dock=bottom]:mt-0',
-            align === 'start' && 'left-0',
-            align === 'center' && 'left-1/2 -translate-x-1/2',
-            align === 'end' && 'right-0',
-            panelClassName,
-          )}
-        >
-          {children(close)}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="dialog"
+            onPointerDown={focusable ? undefined : keepFocus}
+            onMouseDown={focusable ? undefined : keepFocus}
+            style={placement ?? { left: 0, top: 0, visibility: 'hidden' }}
+            className={cn(
+              'fixed z-40 animate-pop-in rounded-xl border bg-popover p-2 text-popover-foreground shadow-dialog',
+              panelClassName,
+            )}
+          >
+            {children(() => setOpen(false))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };
