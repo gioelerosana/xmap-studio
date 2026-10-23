@@ -252,7 +252,21 @@ export async function saveBytes(
   return {};
 }
 
+/** Base64 a blocchi: `String.fromCharCode(...bytes)` su file grandi supera il limite di argomenti. */
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 export function downloadBlob(bytes: Uint8Array, filename: string, mimeType: string): void {
+  // Nel WebView Android un download da `blob:` non arriva a nessuno: salva l'app nativa.
+  if (window.xmapAndroid) {
+    window.xmapAndroid.saveFile(toBase64(bytes), filename, mimeType);
+    return;
+  }
   const blob = new Blob([bytes as any], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
