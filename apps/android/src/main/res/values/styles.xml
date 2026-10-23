@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema chiaro/scuro di sistema: il WebView ne ricava `prefers-color-scheme`. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
+    <color name="app_background">#fcfcfc</color>
+</resources>
