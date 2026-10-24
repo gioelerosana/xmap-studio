@@ -2,6 +2,7 @@ import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import type { AppController, TopicView } from '@xmap/core';
 import type { MapEditing } from '../components/MapView.js';
 import type { SelectionState } from './useSelection.js';
+import type { ImageInsertSource } from './useImageInsert.js';
 import type { AddToast } from './useToasts.js';
 import { TEXT_FIELD } from './constants.js';
 
@@ -15,8 +16,7 @@ interface ClipboardEventsOptions {
   addToast: AddToast;
   setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
   inMemoryClipboard: { current: string | null };
-  handleAddImage: (file: Blob, source?: 'paste' | 'drop') => Promise<void>;
-  handlePasteImageAsSummary: (file: Blob, ids: string[]) => Promise<void>;
+  insertImage: (file: Blob, source: ImageInsertSource) => Promise<void>;
   handleCopyTopic: (topicId?: string) => void;
   handleCutTopic: (topicId?: string) => void;
 }
@@ -35,12 +35,11 @@ export function useClipboardEvents({
   addToast,
   setCollapsedIds,
   inMemoryClipboard,
-  handleAddImage,
-  handlePasteImageAsSummary,
+  insertImage,
   handleCopyTopic,
   handleCutTopic,
 }: ClipboardEventsOptions) {
-  const { selectedTopicIds, selectSingle } = selection;
+  const { selectSingle } = selection;
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -59,11 +58,7 @@ export function useClipboardEvents({
             const file = item.getAsFile();
             if (file) {
               e.preventDefault();
-              if (selectedTopicIds.length > 1 && controller.siblingRange(selectedTopicIds)) {
-                void handlePasteImageAsSummary(file, selectedTopicIds);
-              } else {
-                void handleAddImage(file, 'paste');
-              }
+              void insertImage(file, 'paste');
               return;
             }
           }
@@ -158,7 +153,7 @@ export function useClipboardEvents({
         const file = files[i];
         if (file.type.startsWith('image/')) {
           e.preventDefault();
-          void handleAddImage(file, 'drop');
+          void insertImage(file, 'drop');
           return;
         }
       }
@@ -176,5 +171,5 @@ export function useClipboardEvents({
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [editing, handleAddImage, handlePasteImageAsSummary, selectedTopicIds, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, setCollapsedIds, inMemoryClipboard]);
+  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, setCollapsedIds, inMemoryClipboard]);
 }
