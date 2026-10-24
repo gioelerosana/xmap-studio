@@ -2,6 +2,7 @@ import { relationshipGeometry } from './relationship.js';
 import { SheetDto, TextStyle, TitleRun, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
 import { splitInlineMath } from '../latex/inline.js';
+import { inlineMathFontSize, TITLE_LEADING_RATIO } from '../latex/size.js';
 import { parseRange } from '../model/utils.js';
 import {
   BRANCH_COLORS,
@@ -31,19 +32,24 @@ export function setTextMeasurer(measurer: TextMeasurer | null): void {
   textMeasurer = measurer;
 }
 
+/** Margine (px) sotto la larghezza utile: il browser arrotonda i sub-pixel, meglio andare a capo un po' prima. */
+const LINE_FIT_MARGIN = 1.0;
+/** Spazio verticale sopra e sotto una formula display (`my-0.5` per lato, più il margine). */
+const DISPLAY_MATH_GAP = 4.0;
+/** Riserva verticale che una formula inline aggiunge alla riga in cui si trova. */
+const INLINE_MATH_GAP = 4.0;
+/** Larghezza aggiunta a ogni formula, come margine del contenitore SVG. */
+const MATH_SIDE_PAD = 2.0;
+/** Il sorgente di una formula non renderizzabile si mostra in monospace a 0.85em. */
+const RAW_SOURCE_SCALE = 0.85;
+/** Altezza di riga oltre la dimensione del font, per le righe con caratteri più grandi. */
+const LINE_HEIGHT_EXTRA = 1;
+
 /**
  * Stima della larghezza di un singolo carattere in font proporzionale sans-serif
  * (Inter / sistema) in base alla dimensione del carattere e all'eventuale grassetto.
  */
-function estimateCharWidth(
-  ch: string,
-  fontSize: number,
-  bold: boolean,
-  mathWidths?: Map<string, number>
-): number {
-  const math = mathWidths?.get(ch);
-  if (math !== undefined) return math;
-  if (textMeasurer) return textMeasurer(ch, fontSize, bold);
+function heuristicCharWidth(ch: string, fontSize: number, bold: boolean): number {
   const code = ch.charCodeAt(0);
   let factor = 0.55;
   if (/[ijlI1|!.,:;'" ()\[\]{}t\-]/.test(ch)) {
@@ -63,148 +69,238 @@ function estimateCharWidth(
   return fontSize * factor;
 }
 
-/**
- * Calcola la larghezza stimata di una parola o porzione di testo.
- */
-function estimateSpanWidth(
-  text: string,
-  baseFontSize: number,
-  baseBold: boolean,
-  runs?: TitleRun[],
-  mathWidths?: Map<string, number>
-): number {
-  if (runs && runs.length > 0 && runs.map((r) => r.text).join('') === text) {
-    let sum = 0;
-    for (const r of runs) {
-      const bold = r.bold ?? baseBold;
-      const size = r.fontSizePx ?? baseFontSize;
-      if (textMeasurer) {
-        sum += textMeasurer(r.text, size, bold);
-        continue;
-      }
-      for (const ch of r.text) {
-        sum += estimateCharWidth(ch, size, bold);
-      }
-    }
-    return sum;
-  }
-
-  if (textMeasurer && !(mathWidths && [...text].some((ch) => mathWidths.has(ch)))) {
-    return textMeasurer(text, baseFontSize, baseBold);
-  }
+/** Larghezza di `text` con lo stile dato: misura della UI se installata, altrimenti stima. */
+function measureText(text: string, fontSize: number, bold: boolean): number {
+  if (textMeasurer) return textMeasurer(text, fontSize, bold);
   let sum = 0;
-  for (const ch of text) {
-    sum += estimateCharWidth(ch, baseFontSize, baseBold, mathWidths);
-  }
+  for (const ch of text) sum += heuristicCharWidth(ch, fontSize, bold);
   return sum;
 }
 
-/**
- * Suddivide il testo in righe che non superano `usableW` pixel di larghezza utile.
- * Spezza a parole, o a caratteri per parole singole più lunghe della riga (break-words).
- */
-function wrapTextToLines(
-  text: string,
-  usableW: number,
-  baseFontSize: number,
-  baseBold: boolean,
-  runs?: TitleRun[],
-  mathWidths?: Map<string, number>
-): { lines: Array<{ text: string; width: number }>; maxLineWidth: number } {
-  const lines: Array<{ text: string; width: number }> = [];
-  const paragraphs = text.split('\n');
-  const spaceW = estimateCharWidth(' ', baseFontSize, baseBold);
+/** Unità indivisibile del titolo: un carattere con il suo stile, oppure una formula MathJax. */
+type TitleCell =
+  | { kind: 'char'; ch: string; size: number; bold: boolean }
+  | { kind: 'math'; width: number; height: number; display: boolean };
 
-  for (const para of paragraphs) {
-    if (para.length === 0) {
-      lines.push({ text: '', width: 0 });
+/** Stile di base del blocco: dimensione e grassetto del testo, altezza minima di riga. */
+interface TitleBase {
+  size: number;
+  bold: boolean;
+  lineH: number;
+}
+
+/** Riga del titolo già misurata. */
+interface LineBox {
+  width: number;
+  height: number;
+}
+
+function charCells(source: string, size: number, bold: boolean): TitleCell[] {
+  return [...source].map((ch): TitleCell => ({ kind: 'char', ch, size, bold }));
+}
+
+/**
+ * Formula come la rende RichTitle: l'SVG MathJax a `inlineMathFontSize`. Se non si
+ * renderizza, la UI mostra il sorgente `$…$`, quindi lo si misura come testo.
+ */
+function mathCells(latex: string, size: number, display: boolean): TitleCell[] {
+  try {
+    const rendered = renderLatexToSvg(latex, inlineMathFontSize(size), display);
+    if (!rendered.error) {
+      return [{ kind: 'math', width: rendered.width + MATH_SIDE_PAD, height: rendered.height, display }];
+    }
+  } catch {
+    // LaTeX non valido: si ricade sul sorgente, misurato qui sotto.
+  }
+  const delimiter = display ? '$$' : '$';
+  return charCells(`${delimiter}${latex}${delimiter}`, size * RAW_SOURCE_SCALE, false);
+}
+
+/** Celle di un frammento di testo (con eventuali formule `$…$` / `$$…$$`), nello stile dato. */
+function partCells(source: string, size: number, bold: boolean): TitleCell[] {
+  if (!source.includes('$')) return charCells(source, size, bold);
+  return splitInlineMath(source).flatMap((seg) =>
+    seg.kind === 'text' ? charCells(seg.value, size, bold) : mathCells(seg.value, size, seg.display ?? false)
+  );
+}
+
+/**
+ * Celle del titolo nell'ordine di rendering. I `runs` si usano solo se coincidono
+ * con il testo: ogni run tiene il proprio grassetto e la propria dimensione, come in RichTitle.
+ */
+function titleCells(text: string, base: TitleBase, runs?: TitleRun[]): TitleCell[] {
+  if (!runs || runs.length === 0 || runs.map((r) => r.text).join('') !== text) {
+    return partCells(text, base.size, base.bold);
+  }
+  return runs.flatMap((run) => partCells(run.text, run.fontSizePx ?? base.size, run.bold ?? base.bold));
+}
+
+/** Larghezza di una sequenza di celle: i caratteri consecutivi con lo stesso stile si misurano insieme. */
+function measureCells(cells: readonly TitleCell[]): number {
+  let width = 0;
+  let index = 0;
+  while (index < cells.length) {
+    const cell = cells[index];
+    if (cell.kind === 'math') {
+      width += cell.width;
+      index++;
       continue;
     }
-
-    // Il browser va a capo anche dopo un trattino: lo si tratta come uno spazio (stima per eccesso).
-    const words = para.replace(/-(?=\S)/g, '- ').split(' ');
-    let currentLineText = '';
-    let currentLineW = 0;
-
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      if (word.length === 0) {
-        if (currentLineText.length > 0) {
-          currentLineText += ' ';
-          currentLineW += spaceW;
-        }
-        continue;
-      }
-
-      const wordW = estimateSpanWidth(word, baseFontSize, baseBold, runs, mathWidths);
-
-      if (currentLineText.length === 0) {
-        if (wordW <= usableW) {
-          currentLineText = word;
-          currentLineW = wordW;
-        } else {
-          // Parola singola più lunga della riga: spezza a caratteri (break-words)
-          let chunk = '';
-          let chunkW = 0;
-          for (const ch of word) {
-            const chW = estimateCharWidth(ch, baseFontSize, baseBold, mathWidths);
-            if (chunkW + chW > usableW && chunk.length > 0) {
-              lines.push({ text: chunk, width: chunkW });
-              chunk = ch;
-              chunkW = chW;
-            } else {
-              chunk += ch;
-              chunkW += chW;
-            }
-          }
-          if (chunk.length > 0) {
-            currentLineText = chunk;
-            currentLineW = chunkW;
-          }
-        }
-      } else {
-        if (currentLineW + spaceW + wordW <= usableW) {
-          currentLineText += ' ' + word;
-          currentLineW += spaceW + wordW;
-        } else {
-          lines.push({ text: currentLineText, width: currentLineW });
-          if (wordW <= usableW) {
-            currentLineText = word;
-            currentLineW = wordW;
-          } else {
-            let chunk = '';
-            let chunkW = 0;
-            for (const ch of word) {
-              const chW = estimateCharWidth(ch, baseFontSize, baseBold, mathWidths);
-              if (chunkW + chW > usableW && chunk.length > 0) {
-                lines.push({ text: chunk, width: chunkW });
-                chunk = ch;
-                chunkW = chW;
-              } else {
-                chunk += ch;
-                chunkW += chW;
-              }
-            }
-            if (chunk.length > 0) {
-              currentLineText = chunk;
-              currentLineW = chunkW;
-            } else {
-              currentLineText = '';
-              currentLineW = 0;
-            }
-          }
-        }
-      }
+    let chunk = '';
+    while (index < cells.length) {
+      const next = cells[index];
+      if (next.kind !== 'char' || next.size !== cell.size || next.bold !== cell.bold) break;
+      chunk += next.ch;
+      index++;
     }
+    width += measureText(chunk, cell.size, cell.bold);
+  }
+  return width;
+}
 
-    if (currentLineText.length > 0 || words.length === 0) {
-      lines.push({ text: currentLineText, width: currentLineW });
+function isSpace(cell: TitleCell): boolean {
+  return cell.kind === 'char' && cell.ch === ' ';
+}
+
+/** Parola di un paragrafo e lo spazio che la separa dalla precedente (vuoto dopo un trattino). */
+interface TitleWord {
+  cells: TitleCell[];
+  gap: TitleCell[];
+}
+
+/**
+ * Divide un paragrafo in parole. Il browser va a capo anche dopo un trattino seguito
+ * da testo, e in quel caso non c'è spazio da contare.
+ */
+function splitWords(cells: TitleCell[]): TitleWord[] {
+  const words: TitleWord[] = [];
+  let word: TitleCell[] = [];
+  let gap: TitleCell[] = [];
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    if (isSpace(cell)) {
+      if (word.length > 0) {
+        words.push({ cells: word, gap });
+        word = [];
+        gap = [];
+      }
+      gap.push(cell);
+      continue;
+    }
+    word.push(cell);
+    const next = cells[i + 1];
+    if (cell.kind === 'char' && cell.ch === '-' && next !== undefined && !isSpace(next)) {
+      words.push({ cells: word, gap });
+      word = [];
+      gap = [];
     }
   }
+  if (word.length > 0) words.push({ cells: word, gap });
+  return words;
+}
 
-  const safeLines = lines.length > 0 ? lines : [{ text: '', width: 0 }];
-  const maxLineWidth = safeLines.reduce((max, l) => Math.max(max, l.width), 0);
-  return { lines: safeLines, maxLineWidth };
+/** Stato della riga in costruzione: larghezza, stile più grande e formula più alta che contiene. */
+interface LineState {
+  width: number;
+  size: number;
+  mathH: number;
+  hasWord: boolean;
+}
+
+const EMPTY_LINE: LineState = { width: 0, size: 0, mathH: 0, hasWord: false };
+
+function appendCells(line: LineState, cells: TitleCell[], width: number): LineState {
+  let size = line.size;
+  let mathH = line.mathH;
+  for (const cell of cells) {
+    if (cell.kind === 'char') size = Math.max(size, cell.size);
+    else mathH = Math.max(mathH, cell.height);
+  }
+  return { width: line.width + width, size, mathH, hasWord: true };
+}
+
+/**
+ * Altezza della riga: il minimo del blocco, o quanto serve al carattere più grande
+ * (leading-snug del browser), o la formula inline più alta con la sua riserva.
+ */
+function lineHeight(line: LineState, base: TitleBase): number {
+  const fontH = line.size > 0 ? Math.round(line.size * TITLE_LEADING_RATIO) + LINE_HEIGHT_EXTRA : 0;
+  const mathH = line.mathH > 0 ? line.mathH + INLINE_MATH_GAP : 0;
+  return Math.max(base.lineH, fontH, mathH);
+}
+
+/**
+ * Righe di un paragrafo: a parole, e spezzato a caratteri se una parola è più larga
+ * della riga (break-words). Restituisce sempre almeno una riga.
+ */
+function wrapParagraph(cells: TitleCell[], usableW: number, base: TitleBase): LineBox[] {
+  const limit = usableW - LINE_FIT_MARGIN;
+  const done: LineState[] = [];
+  let line = EMPTY_LINE;
+
+  for (const word of splitWords(cells)) {
+    const wordW = measureCells(word.cells);
+    const gapW = measureCells(word.gap);
+    if (line.hasWord && line.width + gapW + wordW <= limit) {
+      line = appendCells(line, word.cells, gapW + wordW);
+      continue;
+    }
+    if (line.hasWord) {
+      done.push(line);
+      line = EMPTY_LINE;
+    }
+    if (wordW <= limit) {
+      line = appendCells(line, word.cells, wordW);
+      continue;
+    }
+    for (const cell of word.cells) {
+      const cellW = measureCells([cell]);
+      if (line.hasWord && line.width + cellW > limit) {
+        done.push(line);
+        line = EMPTY_LINE;
+      }
+      line = appendCells(line, [cell], cellW);
+    }
+  }
+  done.push(line);
+  return done.map((l) => ({ width: l.width, height: lineHeight(l, base) }));
+}
+
+/**
+ * Paragrafi separati dagli a capo. L'ultimo a capo non apre una riga vuota, come nel browser.
+ */
+function splitParagraphs(cells: TitleCell[]): TitleCell[][] {
+  const paragraphs: TitleCell[][] = [[]];
+  for (const cell of cells) {
+    if (cell.kind === 'char' && cell.ch === '\n') paragraphs.push([]);
+    else paragraphs[paragraphs.length - 1].push(cell);
+  }
+  if (paragraphs[paragraphs.length - 1].length === 0) paragraphs.pop();
+  return paragraphs;
+}
+
+function wrapTextChunk(cells: TitleCell[], usableW: number, base: TitleBase): LineBox[] {
+  return splitParagraphs(cells).flatMap((paragraph) => wrapParagraph(paragraph, usableW, base));
+}
+
+/**
+ * Righe del titolo. Le formule display (`$$…$$`) occupano una riga propria, come
+ * blocchi in RichTitle: il testo prima e dopo di loro va a capo a parte.
+ */
+function wrapTitle(cells: TitleCell[], usableW: number, base: TitleBase): LineBox[] {
+  const lines: LineBox[] = [];
+  let chunk: TitleCell[] = [];
+  for (const cell of cells) {
+    if (cell.kind === 'math' && cell.display) {
+      lines.push(...wrapTextChunk(chunk, usableW, base));
+      chunk = [];
+      lines.push({ width: cell.width, height: cell.height + DISPLAY_MATH_GAP });
+    } else {
+      chunk.push(cell);
+    }
+  }
+  lines.push(...wrapTextChunk(chunk, usableW, base));
+  return lines.length > 0 ? lines : [{ width: 0, height: base.lineH }];
 }
 
 export function estimateNodeSize(
@@ -281,6 +377,7 @@ export function estimateNodeSize(
   const isBranch = node.depth === 1;
   const baseFontSize = node.textStyle?.fontSizePx ?? (isRoot ? 14.0 : 12.0);
   const baseBold = node.textStyle?.bold ?? (isRoot || isBranch);
+  const base: TitleBase = { size: baseFontSize, bold: baseBold, lineH: isRoot ? 20.0 : 18.0 };
 
   const padX = isRoot ? 24.0 : 18.0;
   const noteW = node.hasNotes ? 20.0 : 0.0;
@@ -297,42 +394,9 @@ export function estimateNodeSize(
     usableW = Math.max(maxBlockW - padX - noteW, 20.0);
   }
 
-  // Ogni formula `$…$` diventa un carattere segnaposto indivisibile, largo quanto l'SVG MathJax.
-  const mathWidths = new Map<string, number>();
-  let maxMathH = 0;
-  let measuredText = text;
-  if (text.includes('$')) {
-    const segments = splitInlineMath(text);
-    if (segments.some((seg) => seg.kind === 'math')) {
-      measuredText = segments
-        .map((seg) => {
-          if (seg.kind === 'text') return seg.value;
-          const key = String.fromCharCode(0xe000 + (mathWidths.size % 0x1900));
-          let width = estimateSpanWidth(seg.value, baseFontSize, baseBold) + 2 * baseFontSize * 0.55;
-          try {
-            const rendered = renderLatexToSvg(seg.value, baseFontSize, seg.display ?? false);
-            if (!rendered.error) {
-              width = rendered.width + 2.0;
-              maxMathH = Math.max(maxMathH, rendered.height);
-            }
-          } catch {
-            // LaTeX non valido: la UI mostra il sorgente, si stima come testo.
-          }
-          mathWidths.set(key, width);
-          return key;
-        })
-        .join('');
-    }
-  }
-
-  const { lines, maxLineWidth } = wrapTextToLines(
-    measuredText,
-    usableW,
-    baseFontSize,
-    baseBold,
-    mathWidths.size > 0 ? undefined : node.titleRuns,
-    mathWidths
-  );
+  const lines = wrapTitle(titleCells(text, base, node.titleRuns), usableW, base);
+  const maxLineWidth = lines.reduce((max, line) => Math.max(max, line.width), 0);
+  const textH = lines.reduce((sum, line) => sum + line.height, 0);
 
   let w: number;
   if (hasCustom) {
@@ -350,9 +414,8 @@ export function estimateNodeSize(
     w = Math.max(40.0, Math.min(w, 360.0));
   }
 
-  const lineCount = Math.max(lines.length, 1);
-  const lineH = Math.max(isRoot ? 20.0 : 18.0, maxMathH + 4.0);
-  let h = Math.max(lineCount * lineH + 16.0, 36.0);
+  // Altezza = somma delle righe (ciascuna con il proprio font e le proprie formule) più il padding.
+  let h = Math.max(textH + 16.0, 36.0);
   if ((node.markers && node.markers.length > 0) || (node.labels && node.labels.length > 0)) {
     h += 16.0;
   }

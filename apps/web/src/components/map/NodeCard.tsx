@@ -1,7 +1,7 @@
 import type { MouseEvent, PointerEvent } from 'react';
 import { FileText } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
-import { trunkX, type LayoutNode } from '@xmap/core';
+import { TITLE_LEADING_RATIO, trunkX, type LayoutNode } from '@xmap/core';
 import type { NodeLook } from './nodeLook.js';
 import { RichTitle, textStyleCss } from './RichTitle.js';
 
@@ -47,6 +47,8 @@ export function NodeCard({
   const hasImage = imageUrl !== undefined;
   const isEquation = node.kind === 'equation' || Boolean(node.latex) || Boolean(formulaSvg);
   const isPlainImage = Boolean(hasImage && !isEquation);
+  // Dimensione base del titolo, la stessa che usa la stima del layout (layout.ts).
+  const titleFontPx = node.textStyle?.fontSizePx ?? (isRoot ? 14 : 12);
   // Su riempimento pieno i chip si tingono del colore del testo.
   const chipSolidStyle = look.solid
     ? { backgroundColor: 'color-mix(in oklab, currentColor 18%, transparent)' }
@@ -123,7 +125,7 @@ export function NodeCard({
               ) : (
                 <span
                   className={cn(
-                    'break-words whitespace-normal leading-snug',
+                    'break-words whitespace-pre-wrap leading-snug',
                     isRoot
                       ? 'text-sm font-semibold tracking-tight'
                       : isBranch
@@ -133,13 +135,22 @@ export function NodeCard({
                   style={{
                     ...textStyleCss(node.textStyle, look.textLight),
                     display: '-webkit-box',
-                    WebkitLineClamp: Math.max(Math.floor((node.h - 8) / 16), 1),
+                    // Il blocco è alto almeno quanto le righe stimate (ciascuna ≥ fontPx * leading): il clamp non taglia mai un titolo stimato bene
+                    WebkitLineClamp: Math.max(
+                      Math.floor((node.h - 8) / (titleFontPx * TITLE_LEADING_RATIO)),
+                      1
+                    ),
                     WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
                   }}
                   title={node.displayTitle || node.title}
                 >
-                  <RichTitle text={node.displayTitle || node.title || '(senza titolo)'} runs={node.titleRuns} textLight={look.textLight} />
+                  <RichTitle
+                    text={node.displayTitle || node.title || '(senza titolo)'}
+                    runs={node.titleRuns}
+                    textLight={look.textLight}
+                    fontSizePx={titleFontPx}
+                  />
                 </span>
               )}
 
