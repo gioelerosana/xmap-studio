@@ -285,6 +285,7 @@ export const App: React.FC = () => {
   const menuItems = buildMenuItems(
     { workbook, selectedTopic, selectedTopicId, darkMode, layout: headerLayout },
     {
+      onNewMap: handleNewMap,
       onOpen: handleOpenLocalFile,
       onUndo: () => doUndoRedo('undo'),
       onRedo: () => doUndoRedo('redo'),
@@ -315,6 +316,7 @@ export const App: React.FC = () => {
         isElectron={isElectron}
         isWindowMaximized={isWindowMaximized}
         menuItems={menuItems}
+        onNewMap={handleNewMap}
         onOpen={handleOpenLocalFile}
         onSave={handleSave}
         onUndo={() => doUndoRedo('undo')}
