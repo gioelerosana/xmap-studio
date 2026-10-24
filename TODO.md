@@ -1,0 +1,8 @@
+- Bisogna inerire un bottone (quando un file è aperto) per creare una nuova mappa (accoanto a salva e apri in alto a sinistra)
+- Serve renderizzare il latex con una dimensione più grande, voglio che sia leggermente superiore alla dimensione media dei testi
+- Bisogna fare in modo di poter modificare anche più volte il latex scritto con la notazione $$ nel blocco e non solo la prima volta come accade adesso (penso sia un problema legato proprio al formato del latex inline)
+- Aggiungere nella barra strumenti la possibilità di importare immagini dal computer senza dover trascinare
+- Da rivedere il sistema di ridimensionamento automatico del blocco (a volte quando scrivo e premo invio il blocco rimane piccolo e mi inserisce i ... perchè non riesce a mostrare tutto il testo)
+- Possibilità di aggiungere una immagine dentro il blocco sommario (sbloccare il Ctrl+V per incollare immagini copiate direttamente dentro la mappa)
+- ![](image.png) Non mi piace che quando seleziono si crea confusione tra il bottone di espansione del ramo e lo slider per allargare il blocco
+- chiudere il riquadro del latex (funzione della barra degli strumenti) con semplice invio e spostare la creazione di una nuova riga ne box latex a Shift+Invio
