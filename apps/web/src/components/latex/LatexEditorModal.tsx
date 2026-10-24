@@ -50,17 +50,26 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
     applying,
     handleApplyEquation,
     handleRemoveEquation,
+    inlineMode,
   } = draft;
 
-  const editor = useLatexEditor({ value: latex, onValueChange: setLatex });
+  const canApply = !!latex.trim() && !preview?.error && !applying;
+  const apply = async () => {
+    if (!canApply) return;
+    if (await handleApplyEquation()) onClose();
+  };
+
+  // Invio nel campo applica; Ctrl/Cmd+Invio lo gestisce il dialog (vedi handleDialogKeyDown).
+  const editor = useLatexEditor({ value: latex, onValueChange: setLatex, onSubmit: () => void apply() });
   const { textareaRef } = editor;
 
   const hasEquation = topic.kind === 'equation' || !!topic.latex;
+  // Una formula inline nel titolo non è un'equazione nativa: niente "Aggiorna" né "Rimuovi".
+  const editsEquation = hasEquation && !inlineMode;
   // Con la formula come titolo (`$…$`) il sottotitolo ripeterebbe il LaTeX sotto l'anteprima.
   const subtitle = topic.title.startsWith('$') ? '' : topic.displayTitle || topic.title;
-  const idleLabel = hasEquation ? 'Aggiorna' : 'Applica';
+  const idleLabel = editsEquation ? 'Aggiorna' : 'Applica';
   const applyLabel = applying ? 'Rendering…' : idleLabel;
-  const canApply = !!latex.trim() && !preview?.error && !applying;
 
   // Focus iniziale sul campo, cursore in fondo; alla chiusura il focus torna dov'era.
   useEffect(() => {
@@ -89,11 +98,6 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   }, [latex, textareaRef]);
-
-  const apply = async () => {
-    if (!canApply) return;
-    if (await handleApplyEquation()) onClose();
-  };
 
   const remove = () => {
     if (handleRemoveEquation()) onClose();
@@ -180,12 +184,12 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
           </div>
 
           <p className="text-2xs text-muted-foreground max-sm:hidden coarse:hidden">
-            Digita <span className="font-mono">\</span> per i suggerimenti, <Kbd>Tab</Kbd> li accetta,{' '}
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
+            Digita <span className="font-mono">\</span> per i suggerimenti, <Kbd>Tab</Kbd> li accetta, <Kbd>↵</Kbd>{' '}
+            applica, <KbdGroup>
+              <Kbd>Maiusc</Kbd>
               <Kbd>↵</Kbd>
             </KbdGroup>{' '}
-            applica.
+            va a capo.
           </p>
 
           <SymbolPalette onInsertSnippet={editor.insertSnippet} onInsertText={editor.insertText} />
@@ -193,50 +197,56 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
 
         <div className="flex shrink-0 flex-col gap-3 border-t px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-2xs font-medium text-muted-foreground">Titolo</span>
-              <SegmentedControl
-                size="sm"
-                aria-label="Titolo del blocco"
-                items={TITLE_MODE_ITEMS}
-                activeId={titleMode}
-                onChange={setTitleMode}
-              />
-            </div>
-            {titleMode === 'custom' && (
-              <Input
-                size="sm"
-                aria-label="Titolo mostrato"
-                className="min-w-40 flex-1"
-                value={customTitle}
-                placeholder="Titolo mostrato"
-                onChange={(event) => setCustomTitle(event.target.value)}
-              />
+            {inlineMode ? (
+              <p className="text-2xs font-medium text-muted-foreground">Formula nel testo del blocco</p>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xs font-medium text-muted-foreground">Titolo</span>
+                  <SegmentedControl
+                    size="sm"
+                    aria-label="Titolo del blocco"
+                    items={TITLE_MODE_ITEMS}
+                    activeId={titleMode}
+                    onChange={setTitleMode}
+                  />
+                </div>
+                {titleMode === 'custom' && (
+                  <Input
+                    size="sm"
+                    aria-label="Titolo mostrato"
+                    className="min-w-40 flex-1"
+                    value={customTitle}
+                    placeholder="Titolo mostrato"
+                    onChange={(event) => setCustomTitle(event.target.value)}
+                  />
+                )}
+                <div className="flex items-center gap-2" role="group" aria-label="Colore inchiostro">
+                  <span className="text-2xs font-medium text-muted-foreground">Colore</span>
+                  {INK_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      aria-label={`Inchiostro ${color}`}
+                      aria-pressed={inkColor === color}
+                      onClick={() => setInkColor(color)}
+                      className={cn(
+                        'size-5 shrink-0 rounded-full',
+                        FOCUS_RING,
+                        inkColor === color
+                          ? 'ring-2 ring-primary ring-offset-2 ring-offset-popover'
+                          : 'ring-1 ring-inset ring-border',
+                      )}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </>
             )}
-            <div className="flex items-center gap-2" role="group" aria-label="Colore inchiostro">
-              <span className="text-2xs font-medium text-muted-foreground">Colore</span>
-              {INK_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  aria-label={`Inchiostro ${color}`}
-                  aria-pressed={inkColor === color}
-                  onClick={() => setInkColor(color)}
-                  className={cn(
-                    'size-5 shrink-0 rounded-full',
-                    FOCUS_RING,
-                    inkColor === color
-                      ? 'ring-2 ring-primary ring-offset-2 ring-offset-popover'
-                      : 'ring-1 ring-inset ring-border',
-                  )}
-                  style={{ backgroundColor: color }}
-                />
-              ))}
-            </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {hasEquation && (
+            {editsEquation && (
               <Button variant="ghost-destructive" size="sm" onClick={remove}>
                 Rimuovi formula
               </Button>

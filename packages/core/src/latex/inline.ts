@@ -8,6 +8,24 @@ export interface InlineMathSegment {
 }
 
 /**
+ * Posizione di una formula nel testo sorgente, delimitatori inclusi.
+ * `end` è escluso: `text.slice(start, end)` è la formula com'è scritta.
+ */
+export interface InlineMathLocation {
+  start: number;
+  end: number;
+  latex: string;
+  display: boolean;
+}
+
+/** Segmento con la sua posizione nel testo sorgente (`end` escluso). */
+interface LocatedSegment {
+  segment: InlineMathSegment;
+  start: number;
+  end: number;
+}
+
+/**
  * Suddivide una stringa in segmenti di testo e formule matematiche LaTeX.
  *
  * Supporta la sintassi stile Markdown:
@@ -19,14 +37,80 @@ export interface InlineMathSegment {
  * - Le formule in linea non attraversano ritorni a capo.
  */
 export function splitInlineMath(text: string): InlineMathSegment[] {
+  return locateInlineMath(text).map(({ segment }) => segment);
+}
+
+/** Elenca le formule del testo con la loro posizione, nell'ordine in cui compaiono. */
+export function findInlineMathSegments(text: string): InlineMathLocation[] {
+  return locateInlineMath(text).flatMap(({ segment, start, end }) =>
+    segment.kind === 'math' ? [{ start, end, latex: segment.value, display: segment.display === true }] : [],
+  );
+}
+
+/** Scrive una formula con i delimitatori scelti: `$...$` oppure `$$...$$`. */
+export function formatInlineMath(latex: string, display: boolean): string {
+  return display ? `$$${latex}$$` : `$${latex}$`;
+}
+
+/**
+ * Sostituisce la formula di indice `index` (come in `findInlineMathSegments`) con `latex`,
+ * mantenendo il tipo di delimitatore e il resto del testo.
+ * Lancia un errore se la formula non si rilegge uguale (es. un `$` non sfuggito nel LaTeX).
+ */
+export function replaceInlineMathSegment(text: string, index: number, latex: string): string {
+  const target = findInlineMathSegments(text)[index];
+  if (!target) throw new Error('Formula non trovata nel testo del blocco.');
+  const formula = latex.trim();
+  if (!formula) throw new Error('La formula non può essere vuota.');
+
+  const next = text.slice(0, target.start) + formatInlineMath(formula, target.display) + text.slice(target.end);
+  const written = findInlineMathSegments(next)[index];
+  if (!written || written.start !== target.start || written.latex !== formula || written.display !== target.display) {
+    throw new Error('La formula non può essere scritta nel testo del blocco: controlla i simboli $ e le barre finali.');
+  }
+  return next;
+}
+
+/**
+ * Sostituisce il testo tra `start` e `end` (indici sul testo complessivo dei frammenti) con
+ * `replacement`. Il nuovo testo finisce nel frammento che contiene `start`; gli altri frammenti
+ * perdono solo la parte coperta. Ogni frammento è ricopiato con lo spread, così stile e campi
+ * sconosciuti sopravvivono; i frammenti rimasti vuoti vengono scartati.
+ */
+export function spliceTextRuns<T extends { text: string }>(
+  runs: readonly T[],
+  start: number,
+  end: number,
+  replacement: string,
+): T[] {
+  return runs
+    .map((run, index) => {
+      const runStart = runs.slice(0, index).reduce((sum, previous) => sum + previous.text.length, 0);
+      const runEnd = runStart + run.text.length;
+      const holdsStart = runStart <= start && start < runEnd;
+      const head = run.text.slice(0, clamp(start - runStart, run.text.length));
+      const tail = run.text.slice(clamp(end - runStart, run.text.length));
+      return { ...run, text: head + (holdsStart ? replacement : '') + tail };
+    })
+    .filter((run) => run.text.length > 0);
+}
+
+function clamp(value: number, max: number): number {
+  return Math.min(Math.max(value, 0), max);
+}
+
+// Scansione unica dei segmenti, con le posizioni sorgente: serve sia alla suddivisione sia alla riscrittura.
+function locateInlineMath(text: string): LocatedSegment[] {
   if (!text) return [];
 
-  const segments: InlineMathSegment[] = [];
+  const segments: LocatedSegment[] = [];
   let textBuf = '';
+  // Inizio del testo accumulato: dopo ogni formula riparte dalla sua fine.
+  let textStart = 0;
 
-  const flushText = () => {
+  const flushText = (end: number) => {
     if (textBuf.length > 0) {
-      segments.push({ kind: 'text', value: textBuf });
+      segments.push({ segment: { kind: 'text', value: textBuf }, start: textStart, end });
       textBuf = '';
     }
   };
@@ -88,12 +172,13 @@ export function splitInlineMath(text: string): InlineMathSegment[] {
 
       if (foundClose !== -1) {
         const rawContent = text.slice(i + 2, foundClose);
-        flushText();
+        flushText(i);
         segments.push({
-          kind: 'math',
-          value: rawContent.trim(),
-          display: true,
+          segment: { kind: 'math', value: rawContent.trim(), display: true },
+          start: i,
+          end: foundClose + 2,
         });
+        textStart = foundClose + 2;
         i = foundClose + 2;
         continue;
       } else {
@@ -150,12 +235,13 @@ export function splitInlineMath(text: string): InlineMathSegment[] {
 
       if (foundClose !== -1) {
         const mathContent = text.slice(i + 1, foundClose);
-        flushText();
+        flushText(i);
         segments.push({
-          kind: 'math',
-          value: mathContent,
-          display: false,
+          segment: { kind: 'math', value: mathContent, display: false },
+          start: i,
+          end: foundClose + 1,
         });
+        textStart = foundClose + 1;
         i = foundClose + 1;
         continue;
       } else {
@@ -170,6 +256,6 @@ export function splitInlineMath(text: string): InlineMathSegment[] {
     i++;
   }
 
-  flushText();
+  flushText(n);
   return segments;
 }
