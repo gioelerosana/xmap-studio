@@ -11,6 +11,8 @@ const PAIR = 2;
 interface LatexEditorOptions {
   value: string;
   onValueChange: (next: string) => void;
+  /** Invio senza suggerimenti aperti: applica la formula (Maiusc+Invio va a capo). */
+  onSubmit: () => void;
 }
 
 interface CommandToken {
@@ -43,7 +45,7 @@ function replaceInTextarea(el: HTMLTextAreaElement, start: number, end: number, 
 }
 
 // Logica del campo LaTeX: inserimento di frammenti, rientro, graffe automatiche e suggerimenti.
-export function useLatexEditor({ value, onValueChange }: LatexEditorOptions) {
+export function useLatexEditor({ value, onValueChange, onSubmit }: LatexEditorOptions) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
   const [caret, setCaret] = useState(value.length);
@@ -156,6 +158,13 @@ export function useLatexEditor({ value, onValueChange }: LatexEditorOptions) {
         setDismissedKey(tokenKey);
         return;
       }
+    }
+
+    // Invio applica anche con il campo vuoto o in errore: in quel caso `onSubmit` non fa nulla.
+    if (event.key === 'Enter' && plain) {
+      event.preventDefault();
+      onSubmit();
+      return;
     }
 
     if (event.key === 'Tab' && plain) {
