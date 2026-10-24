@@ -241,7 +241,7 @@ export function NodeCard({
         </g>
       )}
 
-      {/* Indicatore comprimi / espandi: sul connettore a 12px dal bordo destro (5px di respiro dal bordo),
+      {/* Indicatore comprimi / espandi: sul connettore a 20px dal bordo destro (13px di stacco dalla maniglia di larghezza),
           o sotto il blocco per la Tree Chart. Disegnato dopo la maniglia: il suo cerchio resta cliccabile. */}
       {hasChildren && (
         <g
@@ -249,7 +249,7 @@ export function NodeCard({
           transform={
             node.childrenBelow
               ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
-              : `translate(${node.w + 12}, ${node.h / 2})`
+              : `translate(${node.w + 20}, ${node.h / 2})`
           }
           className="text-muted-foreground hover:text-foreground transition-colors"
           onClick={(e) => {
