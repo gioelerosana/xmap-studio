@@ -4,6 +4,9 @@ import type { SelectionState } from './useSelection.js';
 import type { AddToast } from './useToasts.js';
 import { readImageBlob } from './readImageBlob.js';
 
+/** Da dove arriva l'immagine: cambia solo il messaggio di conferma. */
+export type ImageInsertSource = 'paste' | 'drop' | 'picker';
+
 interface ImageInsertOptions {
   controller: AppController;
   selectedTopic: TopicView | null;
@@ -14,7 +17,12 @@ interface ImageInsertOptions {
   setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
 }
 
-/** Inserimento di immagini come blocchi (da incolla o trascinamento) e come sommario. */
+type DecodedImage = Awaited<ReturnType<typeof readImageBlob>>;
+
+/**
+ * Inserimento di immagini da incolla, trascinamento o selettore file. Una sola funzione
+ * decide dove va l'immagine, così i tre canali si comportano allo stesso modo.
+ */
 export function useImageInsert({
   controller,
   selectedTopic,
@@ -24,25 +32,48 @@ export function useImageInsert({
   selection,
   setCollapsedIds,
 }: ImageInsertOptions) {
-  const { setSelectedTopicId, selectSingle } = selection;
+  const { selectedTopicIds, setSelectedTopicId, selectSingle } = selection;
 
-  const handleAddImage = useCallback(
-    async (file: Blob, source: 'paste' | 'drop' = 'paste') => {
+  const insertImage = useCallback(
+    async (file: Blob, source: ImageInsertSource) => {
       try {
+        const image: DecodedImage = await readImageBlob(file);
+        const size = { width: image.width, height: image.height };
+
+        // Un solo sommario selezionato: l'immagine diventa il contenuto del sommario stesso.
+        if (selectedTopic?.group === 'summary' && selectedTopicIds.length === 1) {
+          controller.setTopicImage(selectedTopic.id, image.bytes, image.mimeType, size);
+          refreshState();
+          addToast('success', 'Immagine inserita nel sommario');
+          return;
+        }
+
+        // Più fratelli selezionati: l'immagine diventa il sommario di quell'intervallo.
+        if (selectedTopicIds.length > 1 && controller.siblingRange(selectedTopicIds)) {
+          const { summaryTopicId } = controller.addSummaryImageForSiblings(
+            selectedTopicIds,
+            image.bytes,
+            image.mimeType,
+            size
+          );
+          selectSingle(summaryTopicId);
+          refreshState();
+          addToast('success', source === 'paste' ? 'Immagine incollata come sommario' : 'Immagine aggiunta come sommario');
+          return;
+        }
+
+        // Altrimenti è un nuovo sotto-blocco immagine del blocco selezionato (o della radice).
         const targetParentId =
           selectedTopic?.id ?? allTopics.find((t) => t.depth === 0)?.id ?? allTopics[0]?.id;
         if (!targetParentId) return;
 
-        const { bytes, width, height, mimeType } = await readImageBlob(file);
-        const { newId } = controller.addImageTopic(targetParentId, bytes, mimeType, { width, height });
-
+        const { newId } = controller.addImageTopic(targetParentId, image.bytes, image.mimeType, size);
         setCollapsedIds((prev) => {
           if (!prev.has(targetParentId)) return prev;
           const next = new Set(prev);
           next.delete(targetParentId);
           return next;
         });
-
         setSelectedTopicId(newId);
         refreshState();
         addToast(
@@ -54,25 +85,18 @@ export function useImageInsert({
         addToast('error', `Impossibile aggiungere l'immagine: ${msg}`);
       }
     },
-    [controller, selectedTopic, allTopics, refreshState, addToast, setSelectedTopicId, setCollapsedIds]
+    [
+      controller,
+      selectedTopic,
+      selectedTopicIds,
+      allTopics,
+      refreshState,
+      addToast,
+      setSelectedTopicId,
+      selectSingle,
+      setCollapsedIds,
+    ]
   );
 
-  // Ctrl+V con più blocchi fratelli selezionati: l'immagine diventa il sommario di quella selezione.
-  const handlePasteImageAsSummary = useCallback(
-    async (file: Blob, ids: string[]) => {
-      try {
-        const { bytes, width, height, mimeType } = await readImageBlob(file);
-        const { summaryTopicId } = controller.addSummaryImageForSiblings(ids, bytes, mimeType, { width, height });
-        selectSingle(summaryTopicId);
-        refreshState();
-        addToast('success', 'Immagine incollata come sommario');
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile creare il sommario con l'immagine: ${msg}`);
-      }
-    },
-    [controller, refreshState, addToast, selectSingle]
-  );
-
-  return { handleAddImage, handlePasteImageAsSummary };
+  return { insertImage };
 }

@@ -1,9 +1,28 @@
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { AppController, Layout, TopicView } from '@xmap/core';
 import type { MapEditing } from '../components/MapView.js';
 import { selectionAfterDelete } from '../components/map/navigation.js';
 import type { SelectionState } from './useSelection.js';
+import type { ImageInsertSource } from './useImageInsert.js';
 import type { AddToast } from './useToasts.js';
+
+/**
+ * Prima immagine negli appunti di sistema, o `null` se non c'è. Permesso negato o API assente
+ * non sono errori per l'utente: si ripiega sul testo.
+ */
+async function readClipboardImage(): Promise<Blob | null> {
+  if (!navigator.clipboard?.read) return null;
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find((type) => type.startsWith('image/'));
+      if (imageType) return await item.getType(imageType);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 interface TopicClipboardOptions {
   controller: AppController;
@@ -15,6 +34,7 @@ interface TopicClipboardOptions {
   selection: SelectionState;
   setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
   setEditing: Dispatch<SetStateAction<MapEditing | null>>;
+  insertImage: (file: Blob, source: ImageInsertSource) => Promise<void>;
 }
 
 /** Copia, taglia, incolla e duplica blocchi. Il payload è JSON con marcatore `xmapStudioClipboard`. */
@@ -28,10 +48,10 @@ export function useTopicClipboard({
   selection,
   setCollapsedIds,
   setEditing,
+  insertImage,
 }: TopicClipboardOptions) {
   const { selectSingle } = selection;
   const inMemoryClipboard = useRef<string | null>(null);
-  const [canPaste, setCanPaste] = useState(false);
 
   const handleCopyTopic = useCallback(
     (topicId?: string) => {
@@ -40,7 +60,6 @@ export function useTopicClipboard({
       try {
         const payload = controller.copyTopic(id);
         inMemoryClipboard.current = payload;
-        setCanPaste(true);
         navigator.clipboard?.writeText(payload).catch(() => {});
         addToast('info', 'Blocco copiato');
       } catch (err: unknown) {
@@ -63,7 +82,6 @@ export function useTopicClipboard({
       try {
         const payload = controller.copyTopic(id);
         inMemoryClipboard.current = payload;
-        setCanPaste(true);
         navigator.clipboard?.writeText(payload).catch(() => {});
         const next = currentLayout ? selectionAfterDelete(currentLayout, id) : undefined;
         controller.removeTopic(id);
@@ -98,6 +116,12 @@ export function useTopicClipboard({
 
   const handlePasteTopic = useCallback(
     async (targetParentId?: string) => {
+      const image = await readClipboardImage();
+      if (image) {
+        await insertImage(image, 'paste');
+        return;
+      }
+
       let text = '';
       try {
         text = await navigator.clipboard?.readText();
@@ -106,6 +130,10 @@ export function useTopicClipboard({
       }
       if (!text && inMemoryClipboard.current) {
         text = inMemoryClipboard.current;
+      }
+      if (!text) {
+        addToast('info', 'Niente da incollare');
+        return;
       }
 
       const targetId =
@@ -154,13 +182,16 @@ export function useTopicClipboard({
         }
       }
     },
-    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, setCollapsedIds]
+    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, setCollapsedIds, insertImage]
   );
 
   return {
     inMemoryClipboard,
-    /** Vero se c'è qualcosa da incollare (copia interna o già copiato in questa sessione). */
-    canPaste: canPaste || Boolean(inMemoryClipboard.current),
+    /**
+     * Sempre vero: un'immagine negli appunti di sistema non si legge in modo sincrono, quindi
+     * il comando resta attivo e l'assenza di contenuto si segnala al momento dell'incolla.
+     */
+    canPaste: true,
     handleCopyTopic,
     handleCutTopic,
     handleDuplicateTopic,
