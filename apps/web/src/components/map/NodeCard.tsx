@@ -191,37 +191,7 @@ export function NodeCard({
         </foreignObject>
       )}
 
-      {/* Indicatore comprimi / espandi: bordo destro, o sotto il blocco per la Tree Chart */}
-      {hasChildren && (
-        <g
-          data-collapse-toggle
-          transform={
-            node.childrenBelow
-              ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
-              : `translate(${node.w}, ${node.h / 2})`
-          }
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleCollapse(node.id);
-          }}
-        >
-          <circle r={7} fill="var(--popover)" stroke={node.accent || 'var(--input)'} strokeWidth={1} />
-          {node.collapsed ? (
-            <path
-              d={node.childrenBelow ? 'M -3 -2 L 0 2 L 3 -2' : 'M -2 -3 L 2 0 L -2 3'}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ) : (
-            <path d="M -3 0 L 3 0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
-          )}
-        </g>
-      )}
-      {/* Maniglia di ridimensionamento larghezza blocco (bordo destro, solo blocchi testo) */}
+      {/* Maniglia di ridimensionamento larghezza blocco: pillola centrata sul bordo destro (solo blocchi testo) */}
       {isPrimary && !isPlainImage && !isEquation && !isEditing && (
         <g
           data-print-hide
@@ -239,24 +209,58 @@ export function NodeCard({
           {/* Area di tocco invisibile allargata per touch e mouse agevole */}
           <rect
             x={node.w - (isCoarse ? 12 : 8)}
-            y={hasChildren && !node.childrenBelow ? 0 : Math.max(0, node.h / 2 - (isCoarse ? 20 : 16))}
+            y={Math.max(0, node.h / 2 - (isCoarse ? 20 : 16))}
             width={isCoarse ? 24 : 16}
-            height={hasChildren && !node.childrenBelow ? Math.max(16, node.h / 2 - 4) : (isCoarse ? 40 : 32)}
+            height={isCoarse ? 40 : 32}
             fill="transparent"
             style={{ cursor: 'ew-resize' }}
           />
           {/* Barra/pillola visiva */}
           <rect
             x={node.w - 2}
-            y={hasChildren && !node.childrenBelow ? 4 : node.h / 2 - 10}
+            y={node.h / 2 - 10}
             width={4}
-            height={hasChildren && !node.childrenBelow ? 12 : 20}
+            height={20}
             rx={2}
             fill="var(--primary)"
             stroke="var(--background)"
             strokeWidth={1}
             style={{ cursor: 'ew-resize', pointerEvents: 'none' }}
           />
+        </g>
+      )}
+
+      {/* Indicatore comprimi / espandi: sul connettore a 12px dal bordo destro (5px di respiro dal bordo),
+          o sotto il blocco per la Tree Chart. Disegnato dopo la maniglia: il suo cerchio resta cliccabile. */}
+      {hasChildren && (
+        <g
+          data-collapse-toggle
+          transform={
+            node.childrenBelow
+              ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
+              : `translate(${node.w + 12}, ${node.h / 2})`
+          }
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse(node.id);
+          }}
+        >
+          {/* Area di tocco invisibile più ampia per il touch */}
+          {isCoarse && <circle r={12} fill="transparent" />}
+          <circle r={7} fill="var(--popover)" stroke={node.accent || 'var(--input)'} strokeWidth={1} />
+          {node.collapsed ? (
+            <path
+              d={node.childrenBelow ? 'M -3 -2 L 0 2 L 3 -2' : 'M -2 -3 L 2 0 L -2 3'}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : (
+            <path d="M -3 0 L 3 0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+          )}
         </g>
       )}
 
