@@ -44,7 +44,7 @@ non serve, si usa `text-primary-foreground`.
 | Disabilitato | `disabled:opacity-disabled disabled:pointer-events-none` |
 | Raggi | bottoni `rounded-control` (8px), input/card `rounded-lg` (10px), badge `rounded-sm` (6px), dialog e toolbar flottanti `rounded-xl` (14px) |
 | Ombre | rare: `shadow-composer` (toolbar flottanti, toast), `shadow-dialog` (dialog, menu), `shadow-control` (controlli outline) |
-| Vetro | `surface-glass` per dialog, menu e toolbar flottanti |
+| Vetro | `surface-glass` per menu, tooltip e toolbar flottanti; i dialog sono opachi (`bg-popover`) |
 | Codice, LaTeX, numeri | `font-mono` (cifre tabulari) |
 | Animazioni | `animate-fade-in`, `animate-pop-in`, `animate-slide-in-right`; easing `ease-sheet` |
 | Layout | barra superiore `h-topbar` (48px), sidebar `w-sidebar` (280px) |
@@ -132,7 +132,8 @@ Stato vuoto compatto: `icon`, `title`, `description?`, `action?`.
 ### `Modal`
 Stessa API (`isOpen`, `onClose`, `title`, `description?`, `children`,
 `footer?`, `maxWidth?`), più `size?: 'sm'|'md'|'lg'` (sostituisce `maxWidth`
-quando presente). Dialog in vetro `rounded-xl shadow-dialog`, backdrop
+quando presente). Dialog **opaco** `bg-popover rounded-xl shadow-dialog` (niente
+vetro: il contenuto sotto non deve trasparire), backdrop
 `bg-black/32` con fade, entrata `animate-pop-in`. Footer allineato a destra,
 separato da `border-t`, nessun riempimento grigio. Chiusura con Esc e clic sul
 backdrop; focus iniziale sul dialog.

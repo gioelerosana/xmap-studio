@@ -1,5 +1,6 @@
 /*
- * Dialog modale in vetro.
+ * Dialog modale opaco: niente vetro, il testo della pagina sotto non deve
+ * trasparire e confondersi con il contenuto.
  *
  * Perché un portale e un focus trap minimo: il dialog vive sotto `document.body`
  * per non essere intrappolato da antenati con `transform`/`backdrop-filter`
@@ -108,7 +109,7 @@ export function Modal({
         tabIndex={-1}
         onKeyDown={trapFocus}
         className={cn(
-          'surface-glass flex max-h-[calc(100dvh-2rem)] w-full animate-pop-in flex-col overflow-hidden rounded-xl border text-popover-foreground shadow-dialog outline-none',
+          'flex max-h-[calc(100dvh-2rem)] w-full animate-pop-in flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-dialog outline-none',
           size ? SIZES[size] : maxWidth,
           className,
         )}

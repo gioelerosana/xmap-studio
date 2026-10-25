@@ -187,7 +187,7 @@
   -webkit-app-region: no-drag;
 }
 
-/* Superfici in vetro: dialog, menu, toolbar flottanti (README T3 "Shape and elevation"). */
+/* Superfici in vetro: menu, tooltip, toolbar flottanti (i dialog sono opachi) (README T3 "Shape and elevation"). */
 .surface-glass {
   background-color: color-mix(in oklab, var(--popover) var(--glass-opacity), transparent);
   backdrop-filter: blur(var(--glass-blur));
