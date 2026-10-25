@@ -64,12 +64,21 @@ interface InlineMathProps {
   fontSizePx?: number;
 }
 
+const mathCacheKey = ({ math, display, fontSizePx = 13 }: InlineMathProps) =>
+  `${math}::${fontSizePx}::${display ? 'd' : 'i'}`;
+
 /**
  * Rende una singola formula MathJax in linea o display.
  * Il rendering è memoizzato e asincrono se non già presente in cache.
+ * Il `key` rimonta il componente a ogni cambio di formula: lo stato `rendered`
+ * nasce da `math`, senza il rimontaggio dopo una modifica resterebbe la formula vecchia.
  */
-const InlineMath: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 }) => {
-  const cacheKey = `${math}::${fontSizePx}::${display ? 'd' : 'i'}`;
+const InlineMath: React.FC<InlineMathProps> = (props) => (
+  <InlineMathView key={mathCacheKey(props)} {...props} />
+);
+
+const InlineMathView: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 }) => {
+  const cacheKey = mathCacheKey({ math, display, fontSizePx });
 
   const [rendered, setRendered] = useState<{ svg: string; error: string | null } | null>(() => {
     const cached = inlineSvgCache.get(cacheKey);
