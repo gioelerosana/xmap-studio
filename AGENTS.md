@@ -259,8 +259,10 @@ Ogni task si chiude **sempre** così, senza aspettare che l'utente lo chieda:
 2. committa **tutte** le modifiche del working tree (Conventional Commits, vedi
    §"Git e GitHub"), divise in più commit se toccano argomenti distinti;
 3. `git push -u origin <branch>`;
-4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato e lo
-   stato di `TODO.md` (voci chiuse, voci ancora aperte).
+4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato, lo
+   stato di `TODO.md` (voci chiuse, voci ancora aperte) e il **titolo del PR**
+   da usare, con la release che produrrà al merge (§"Versioni, tag e titolo dei
+   PR").
 
 Non si fa push su `main` né force-push; la Pull Request la apre l'utente o la
 si apre solo su sua richiesta.
@@ -340,8 +342,11 @@ essere nella tailnet (app Tailscale, stesso account).
 xmap-studio/
 ├── package.json / pnpm-workspace.yaml / pnpm-lock.yaml
 ├── AGENTS.md                     # questo file
-├── .github/workflows/release.yml # workflow di release (solo sui tag vX.Y.Z)
-├── .github/workflows/mirror.yml  # copia di `main` su GitLab (mirror)
+├── .github/workflows/
+│   ├── auto-release.yml          # al merge di un PR: versione, tag, release
+│   ├── pr-title.yml              # controllo del titolo dei PR (decide la release)
+│   ├── release.yml               # build e GitHub Release di un tag vYY.MAJOR.MINOR
+│   └── mirror.yml                # copia di `main` su GitLab (mirror)
 ├── LICENSE                       # MIT
 ├── TODO.md                       # backlog dell'utente: la direzione del lavoro
 ├── README.md                     # presentazione per l'utente (breve)
@@ -349,7 +354,7 @@ xmap-studio/
 ├── demo/                         # mappa di prova con equazione applicata
 ├── docs/                         # documentazione tecnica
 ├── packaging/arch/               # PKGBUILD (sviluppo `-git` e `release/`), bump-pkgver.sh
-├── scripts/                      # strumenti di repo (check-release-version.mjs)
+├── scripts/                      # strumenti di repo (release-version.mjs, check-release-version.mjs)
 ├── packages/
 │   ├── core/                     # motore: src/{model,archive,safety,latex,…}, tests/
 │   └── ui-kit/                   # design system
@@ -407,12 +412,38 @@ aggiungere file di build o cache al repository.
   cambiamenti non banali.
 - Non riscrivere la storia di `main`, non fare force-push su `main`.
 
+### Versioni, tag e titolo dei PR
+
+Le versioni sono **`vYY.MAJOR.MINOR`** (anno a due cifre, release di
+funzionalità dell'anno, release di correzioni), e **ogni PR unito in `main`
+produce da solo la sua release**: versione, commit `chore(release): …`, tag e
+GitHub Release li fa `auto-release.yml`. Regole complete in
+[`docs/RELEASE.md`](docs/RELEASE.md) §"Versioning".
+
+Per l'agente questo vuol dire:
+
+- **non toccare mai la versione** (`version` dei `package.json`, `pkgver`) né
+  creare tag nei branch di lavoro: li scrive solo il workflow;
+- **il titolo del PR decide la release**: va in Conventional Commits (tipo in
+  inglese, descrizione in italiano) e il tipo riassume **tutto** il PR:
+  - `feat(...)` se contiene almeno una funzionalità nuova per l'utente → `MAJOR`;
+  - `fix`, `perf`, `refactor`, `style`, `revert`, `build` se cambia solo cose
+    esistenti dell'app → `MINOR`;
+  - `docs`, `ci`, `chore`, `test` se non tocca l'app distribuita → nessuna
+    release;
+- quando apri o aggiorni un PR, scegli il titolo con queste regole (non usare
+  `--fill`, che prende il primo commit) e, se il tipo non basta, aggiungi
+  un'etichetta `release:major`, `release:minor` o `release:none`;
+- se nel corso del lavoro il PR cambia natura (un `fix` che diventa anche una
+  funzionalità), aggiorna il titolo; nel riepilogo all'utente indica il titolo
+  proposto e la release che produrrà.
+
 ### Comandi utili
 
 ```bash
 gh auth status                         # verifica login GitHub
 gh repo view --web                     # apri il repo nel browser
-gh pr create --fill --base main
+gh pr create --base main --title "feat(map): …" --body "…"
 ```
 
 ## Ricette rapide
