@@ -66,9 +66,16 @@ function devServiceWorkerReset(): Plugin {
   };
 }
 
+// Versione dell'app (vYY.MAJOR.MINOR, docs/RELEASE.md): la scrive il workflow di
+// release nei package.json, qui si legge per mostrarla nella UI.
+const appVersion: string = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version;
+
 export default defineConfig({
   // Percorsi relativi: in Electron la UI compilata si carica da file://.
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [react(), precacheManifest(), devServiceWorkerReset()],
   resolve: {
     alias: {

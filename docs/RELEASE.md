@@ -21,6 +21,10 @@ La versione è scritta nel campo `version` di tutti i `package.json` del
 workspace (root, `packages/core`, `packages/ui-kit`, `apps/web`,
 `apps/desktop`) e in `pkgver` di `packaging/arch/release/PKGBUILD`; li allinea
 `node scripts/release-version.mjs set <versione>`.
+Nessun altro punto la ripete a mano: la pagina "Informazioni" dell'app la legge
+da `apps/web/package.json` al build (`__APP_VERSION__` in
+`apps/web/vite.config.ts`), Electron da `apps/desktop/package.json`, i nomi
+degli artefatti da electron-builder.
 
 ### Una release per ogni PR
 
