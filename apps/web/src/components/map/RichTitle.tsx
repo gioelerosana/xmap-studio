@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { splitInlineMath, renderLatexToSvg, type TextStyle, type TitleRun } from '@xmap/core';
+import {
+  inlineMathFontSize,
+  splitInlineMath,
+  renderLatexToSvg,
+  type TextStyle,
+  type TitleRun,
+} from '@xmap/core';
 
 /** Cache per le formule matematiche renderizzate per non ricalcolare MathJax */
 const inlineSvgCache = new Map<string, { svg: string; error: string | null }>();
@@ -39,6 +45,7 @@ export function textStyleCss(style?: TextStyle, textLight?: boolean): React.CSSP
     Boolean
   );
   return {
+    fontSize: style.fontSizePx === undefined ? undefined : `${style.fontSizePx}px`,
     fontWeight: style.bold === undefined ? undefined : style.bold ? 700 : 400,
     fontStyle: style.italic === undefined ? undefined : style.italic ? 'italic' : 'normal',
     textDecoration:
@@ -57,12 +64,21 @@ interface InlineMathProps {
   fontSizePx?: number;
 }
 
+const mathCacheKey = ({ math, display, fontSizePx = 13 }: InlineMathProps) =>
+  `${math}::${fontSizePx}::${display ? 'd' : 'i'}`;
+
 /**
  * Rende una singola formula MathJax in linea o display.
  * Il rendering è memoizzato e asincrono se non già presente in cache.
+ * Il `key` rimonta il componente a ogni cambio di formula: lo stato `rendered`
+ * nasce da `math`, senza il rimontaggio dopo una modifica resterebbe la formula vecchia.
  */
-const InlineMath: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 }) => {
-  const cacheKey = `${math}::${fontSizePx}::${display ? 'd' : 'i'}`;
+const InlineMath: React.FC<InlineMathProps> = (props) => (
+  <InlineMathView key={mathCacheKey(props)} {...props} />
+);
+
+const InlineMathView: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 }) => {
+  const cacheKey = mathCacheKey({ math, display, fontSizePx });
 
   const [rendered, setRendered] = useState<{ svg: string; error: string | null } | null>(() => {
     const cached = inlineSvgCache.get(cacheKey);
@@ -137,17 +153,28 @@ const InlineMath: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 
   );
 };
 
+/** Dimensione base del testo del titolo quando il chiamante non la indica. */
+const DEFAULT_TITLE_FONT_PX = 12;
+
 interface RichTitleProps {
   text: string;
   runs?: TitleRun[];
   textLight?: boolean;
+  /** Dimensione del testo base del blocco (14 radice, 12 gli altri, salvo `textStyle`). */
+  fontSizePx?: number;
 }
 
 /**
  * Titolo di un blocco: testo semplice, frammenti con stile (`runs`),
  * e formule matematiche inline ($...$) e display ($$...$$).
+ * Le formule usano `inlineMathFontSize`, la stessa scala che usa la stima del layout.
  */
-export const RichTitle: React.FC<RichTitleProps> = ({ text, runs, textLight }) => {
+export const RichTitle: React.FC<RichTitleProps> = ({
+  text,
+  runs,
+  textLight,
+  fontSizePx = DEFAULT_TITLE_FONT_PX,
+}) => {
   if (!runs || runs.length === 0) {
     const segments = splitInlineMath(text);
     if (segments.length === 0) return null;
@@ -160,7 +187,12 @@ export const RichTitle: React.FC<RichTitleProps> = ({ text, runs, textLight }) =
           seg.kind === 'text' ? (
             <React.Fragment key={i}>{seg.value}</React.Fragment>
           ) : (
-            <InlineMath key={i} math={seg.value} display={seg.display} fontSizePx={13} />
+            <InlineMath
+              key={i}
+              math={seg.value}
+              display={seg.display}
+              fontSizePx={inlineMathFontSize(fontSizePx)}
+            />
           )
         )}
       </>
@@ -189,7 +221,7 @@ export const RichTitle: React.FC<RichTitleProps> = ({ text, runs, textLight }) =
                   key={j}
                   math={seg.value}
                   display={seg.display}
-                  fontSizePx={run.fontSizePx ?? 13}
+                  fontSizePx={inlineMathFontSize(run.fontSizePx ?? fontSizePx)}
                 />
               )
             )}

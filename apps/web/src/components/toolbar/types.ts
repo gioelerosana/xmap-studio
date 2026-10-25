@@ -22,4 +22,6 @@ export interface FloatingToolbarProps {
   onOpenLatex: (topicId: string) => void;
   /** Avvia il collegamento con freccia: il prossimo clic sulla mappa sceglie il blocco di arrivo. */
   onStartConnectRelationship: (topicId: string) => void;
+  /** Immagine scelta dal selettore file: stesso instradamento dell'incolla (vedi `useImageInsert`). */
+  onInsertImage: (file: Blob) => void;
 }

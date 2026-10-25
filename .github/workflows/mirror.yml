@@ -1,5 +1,7 @@
 # Copia di sicurezza su GitLab: ogni push su `main` di GitHub viene replicato
-# su gitlab.com/JoelShepard/xmap-studio. Gli altri branch e i tag restano solo
+# su gitlab.com/JoelShepard/xmap-studio. I push fatti dai workflow con
+# GITHUB_TOKEN (il commit di release di auto-release.yml) non avviano altri
+# workflow: per quelli il mirror è richiamato da auto-release.yml. Gli altri branch e i tag restano solo
 # su GitHub. Su GitLab il `main` protetto accetta push soltanto dalla deploy key
 # di questo workflow (secret GITLAB_MIRROR_SSH_KEY).
 name: Mirror GitLab
@@ -7,6 +9,7 @@ name: Mirror GitLab
 on:
   push:
     branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -21,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: main
           fetch-depth: 0
       - name: Push su GitLab
         env:

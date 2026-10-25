@@ -1,7 +1,7 @@
 import type { Ref } from 'react';
 import type { WorkbookDto } from '@xmap/core';
 import { Button, HeaderBar, IconButton, Menu, Separator, cn, type MenuItem } from '@xmap/ui-kit';
-import { FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
+import { FilePlus, FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 
 interface AppHeaderProps {
@@ -16,6 +16,7 @@ interface AppHeaderProps {
   isElectron: boolean;
   isWindowMaximized: boolean;
   menuItems: MenuItem[];
+  onNewMap: () => void;
   onOpen: () => void;
   onSave: () => void;
   onUndo: () => void;
@@ -35,6 +36,7 @@ export function AppHeader({
   isElectron,
   isWindowMaximized,
   menuItems,
+  onNewMap,
   onOpen,
   onSave,
   onUndo,
@@ -49,6 +51,11 @@ export function AppHeader({
       headerRef={headerRef}
       leftContent={
         <>
+          {workbook && layout.inlineOpen && (
+            <Button variant="ghost" size="sm" icon={<FilePlus className="size-4" />} onClick={onNewMap} title="Nuova mappa">
+              <span className={cn(!layout.showLabels && 'sr-only')}>Nuova</span>
+            </Button>
+          )}
           {layout.inlineOpen && (
             <Button variant="ghost" size="sm" icon={<FolderOpen className="size-4" />} onClick={onOpen} title="Apri (Ctrl+O)">
               <span className={cn(!layout.showLabels && 'sr-only')}>Apri</span>

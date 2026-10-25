@@ -4,7 +4,7 @@ Questa cartella contiene i file di packaging per costruire e installare **XMap S
 
 La configurazione adotta la convenzione Arch con due package build distinti:
 - **`packaging/arch/PKGBUILD`**: pacchetto `xmap-studio-git` (sviluppo locale). Compila dall'ultimo commit del branch corrente del repository locale.
-- **`packaging/arch/release/PKGBUILD`**: pacchetto `xmap-studio` (release). Compila da un tag di versione git (`vX.Y.Z`).
+- **`packaging/arch/release/PKGBUILD`**: pacchetto `xmap-studio` (release). Compila da un tag di versione git (`vYY.MAJOR.MINOR`, vedi `docs/RELEASE.md`).
 
 ---
 
@@ -19,7 +19,7 @@ makepkg -si
 *(Nota: le modifiche nel working tree non committate non vengono incluse nella build).*
 
 ### Build di release (`xmap-studio`)
-Compila il tag di versione ufficiale (es. `v0.1.0`) dal repository pubblico su GitHub (HTTPS, senza credenziali):
+Compila il tag di versione ufficiale (es. `v26.1.0`) dal repository pubblico su GitHub (HTTPS, senza credenziali):
 ```bash
 cd packaging/arch/release
 makepkg -si
@@ -32,7 +32,7 @@ makepkg -si
 
 - **`pkgver`**:
   - In `packaging/arch/PKGBUILD` (`-git`): calcolato dinamicamente tramite la funzione `pkgver()` nel formato `<version>.r<commit_count>.g<hash>`. Non va modificato a mano.
-  - In `packaging/arch/release/PKGBUILD`: stringa statica SemVer `X.Y.Z` (es. `0.1.0`), priva del prefisso `v`.
+  - In `packaging/arch/release/PKGBUILD`: stringa statica `YY.MAJOR.MINOR` (es. `26.1.0`), priva del prefisso `v`; la aggiorna `auto-release.yml` a ogni release.
 - **`pkgrel`**:
   - Viene azzerato a `1` a ogni cambio di `pkgver`.
   - Va incrementato manualmente (`2`, `3`, ...) quando si modificano solo file di packaging o metadati (launcher shell, dipendenze, file `.desktop`, icone) mantenendo inalterata la versione applicativa upstream.
@@ -44,7 +44,7 @@ Per automatizzare l'aggiornamento e la verifica della versione del pacchetto di 
 ./packaging/arch/bump-pkgver.sh
 
 # Oppure imposta una versione esplicita (rifiuta formati non SemVer)
-./packaging/arch/bump-pkgver.sh 0.2.0
+./packaging/arch/bump-pkgver.sh 26.1.0
 
 # Verifica allineamento (esce con 0 se allineato, 1 se disallineato; utile in CI)
 ./packaging/arch/bump-pkgver.sh --check

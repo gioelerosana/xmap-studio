@@ -1,6 +1,6 @@
 pkgbase = xmap-studio
 	pkgdesc = Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato
-	pkgver = 0.0.2
+	pkgver = 0.0.3
 	pkgrel = 1
 	url = https://github.com/gioelerosana/xmap-studio
 	arch = x86_64
@@ -10,7 +10,7 @@ pkgbase = xmap-studio
 	depends = electron43
 	options = !strip
 	options = !debug
-	source = xmap-studio::git+https://github.com/gioelerosana/xmap-studio.git#tag=v0.0.2
+	source = xmap-studio::git+https://github.com/gioelerosana/xmap-studio.git#tag=v0.0.3
 	source = xmap-studio.sh
 	source = org.joel.xmap_studio.desktop
 	sha256sums = SKIP

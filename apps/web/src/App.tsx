@@ -186,7 +186,7 @@ export const App: React.FC = () => {
 
   const topicActions = useTopicActions({ controller, refreshState, addToast });
 
-  const { handleAddImage, handlePasteImageAsSummary } = useImageInsert({
+  const { insertImage } = useImageInsert({
     controller,
     selectedTopic,
     allTopics,
@@ -213,6 +213,7 @@ export const App: React.FC = () => {
     selection,
     setCollapsedIds,
     setEditing,
+    insertImage,
   });
 
   useClipboardEvents({
@@ -225,8 +226,7 @@ export const App: React.FC = () => {
     addToast,
     setCollapsedIds,
     inMemoryClipboard,
-    handleAddImage,
-    handlePasteImageAsSummary,
+    insertImage,
     handleCopyTopic,
     handleCutTopic,
   });
@@ -285,6 +285,7 @@ export const App: React.FC = () => {
   const menuItems = buildMenuItems(
     { workbook, selectedTopic, selectedTopicId, darkMode, layout: headerLayout },
     {
+      onNewMap: handleNewMap,
       onOpen: handleOpenLocalFile,
       onUndo: () => doUndoRedo('undo'),
       onRedo: () => doUndoRedo('redo'),
@@ -315,6 +316,7 @@ export const App: React.FC = () => {
         isElectron={isElectron}
         isWindowMaximized={isWindowMaximized}
         menuItems={menuItems}
+        onNewMap={handleNewMap}
         onOpen={handleOpenLocalFile}
         onSave={handleSave}
         onUndo={() => doUndoRedo('undo')}
@@ -409,6 +411,7 @@ export const App: React.FC = () => {
                 onAddSummaryForSelection={handleCreateSummary}
                 onOpenLatex={openLatex}
                 onStartConnectRelationship={(id) => setConnectingTopicId(id)}
+                onInsertImage={(file) => void insertImage(file, 'picker')}
               />
 
               {workbook.sheets.length > 1 && (

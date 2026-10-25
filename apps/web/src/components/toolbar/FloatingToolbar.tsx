@@ -1,5 +1,5 @@
-import React from 'react';
-import { Braces, PaintBucket, Sigma } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Braces, ImagePlus, PaintBucket, Sigma } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
 
 import { COMPACT_QUERY, TEXT_FIELD } from '../../app/constants.js';
@@ -41,14 +41,23 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onAddSummaryForSelection,
   onOpenLatex,
   onStartConnectRelationship,
+  onInsertImage,
 }) => {
   const compact = useMediaQuery(COMPACT_QUERY);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const { barRef, dock, dragging, dragOffset, dragPreview, dragProps } = useToolbarPosition(!compact);
   useTextStyleShortcuts({ topic, isEditingText, actions });
 
   const hasTopic = topic !== null;
   const multiple = selectedTopicIds.length > 1;
   const vertical = !compact && (dock === 'left' || dock === 'right');
+
+  const handleImageChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.currentTarget.files?.[0];
+    // Svuotato subito: così la stessa immagine si può scegliere di nuovo.
+    e.currentTarget.value = '';
+    if (file) onInsertImage(file);
+  };
 
   return (
     <>
@@ -126,6 +135,10 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           >
             <Sigma className="size-4" />
           </ToolbarButton>
+          <ToolbarButton label="Inserisci immagine" onClick={() => imageInputRef.current?.click()}>
+            <ImagePlus className="size-4" />
+          </ToolbarButton>
+          <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={handleImageChosen} />
           <NotesPopover topic={topic} actions={actions} />
           <StructurePopover
             topic={topic}

@@ -1,9 +1,18 @@
 import type { MouseEvent, PointerEvent } from 'react';
 import { FileText } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
-import { trunkX, type LayoutNode } from '@xmap/core';
+import { TITLE_LEADING_RATIO, titleBaseFontPx, trunkX, type LayoutNode } from '@xmap/core';
 import type { NodeLook } from './nodeLook.js';
 import { RichTitle, textStyleCss } from './RichTitle.js';
+
+/** Quanto l'alone di selezione sporge dal bordo del blocco: 2,25px dell'anello + metà dei 3px di tratto. */
+const SELECTION_HALO_OUT = 3.75;
+/** Raggio del pulsante comprimi/espandi (bordo compreso: 7 + 0,5). */
+const COLLAPSE_TOGGLE_RADIUS = 7.5;
+/** Distanza del centro del pulsante dal bordo destro del blocco: il cerchio tocca l'alone di selezione. */
+const COLLAPSE_TOGGLE_OFFSET = SELECTION_HALO_OUT + COLLAPSE_TOGGLE_RADIUS;
+/** Quanto l'area della maniglia di larghezza sporge dal bordo del blocco col mouse: non oltre il pulsante. */
+const HANDLE_REACH_OUT = 4;
 
 export interface NodeCardProps {
   node: LayoutNode;
@@ -47,6 +56,8 @@ export function NodeCard({
   const hasImage = imageUrl !== undefined;
   const isEquation = node.kind === 'equation' || Boolean(node.latex) || Boolean(formulaSvg);
   const isPlainImage = Boolean(hasImage && !isEquation);
+  // Dimensione base del titolo, la stessa che usa la stima del layout (layout.ts).
+  const titleFontPx = titleBaseFontPx(node.depth, node.textStyle);
   // Su riempimento pieno i chip si tingono del colore del testo.
   const chipSolidStyle = look.solid
     ? { backgroundColor: 'color-mix(in oklab, currentColor 18%, transparent)' }
@@ -123,7 +134,7 @@ export function NodeCard({
               ) : (
                 <span
                   className={cn(
-                    'break-words whitespace-normal leading-snug',
+                    'break-words whitespace-pre-wrap leading-snug',
                     isRoot
                       ? 'text-sm font-semibold tracking-tight'
                       : isBranch
@@ -133,13 +144,22 @@ export function NodeCard({
                   style={{
                     ...textStyleCss(node.textStyle, look.textLight),
                     display: '-webkit-box',
-                    WebkitLineClamp: Math.max(Math.floor((node.h - 8) / 16), 1),
+                    // Il blocco è alto almeno quanto le righe stimate (ciascuna ≥ fontPx * leading): il clamp non taglia mai un titolo stimato bene
+                    WebkitLineClamp: Math.max(
+                      Math.floor((node.h - 8) / (titleFontPx * TITLE_LEADING_RATIO)),
+                      1
+                    ),
                     WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
                   }}
                   title={node.displayTitle || node.title}
                 >
-                  <RichTitle text={node.displayTitle || node.title || '(senza titolo)'} runs={node.titleRuns} textLight={look.textLight} />
+                  <RichTitle
+                    text={node.displayTitle || node.title || '(senza titolo)'}
+                    runs={node.titleRuns}
+                    textLight={look.textLight}
+                    fontSizePx={titleFontPx}
+                  />
                 </span>
               )}
 
@@ -191,37 +211,7 @@ export function NodeCard({
         </foreignObject>
       )}
 
-      {/* Indicatore comprimi / espandi: bordo destro, o sotto il blocco per la Tree Chart */}
-      {hasChildren && (
-        <g
-          data-collapse-toggle
-          transform={
-            node.childrenBelow
-              ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
-              : `translate(${node.w}, ${node.h / 2})`
-          }
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleCollapse(node.id);
-          }}
-        >
-          <circle r={7} fill="var(--popover)" stroke={node.accent || 'var(--input)'} strokeWidth={1} />
-          {node.collapsed ? (
-            <path
-              d={node.childrenBelow ? 'M -3 -2 L 0 2 L 3 -2' : 'M -2 -3 L 2 0 L -2 3'}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ) : (
-            <path d="M -3 0 L 3 0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
-          )}
-        </g>
-      )}
-      {/* Maniglia di ridimensionamento larghezza blocco (bordo destro, solo blocchi testo) */}
+      {/* Maniglia di ridimensionamento larghezza blocco: pillola centrata sul bordo destro (solo blocchi testo) */}
       {isPrimary && !isPlainImage && !isEquation && !isEditing && (
         <g
           data-print-hide
@@ -236,27 +226,63 @@ export function NodeCard({
             onResetWidth(node.id);
           }}
         >
-          {/* Area di tocco invisibile allargata per touch e mouse agevole */}
+          {/* Area di tocco invisibile allargata per touch e mouse agevole; col mouse sporge poco
+              fuori dal blocco (HANDLE_REACH_OUT), per lasciare spazio al pulsante comprimi/espandi */}
           <rect
             x={node.w - (isCoarse ? 12 : 8)}
-            y={hasChildren && !node.childrenBelow ? 0 : Math.max(0, node.h / 2 - (isCoarse ? 20 : 16))}
-            width={isCoarse ? 24 : 16}
-            height={hasChildren && !node.childrenBelow ? Math.max(16, node.h / 2 - 4) : (isCoarse ? 40 : 32)}
+            y={Math.max(0, node.h / 2 - (isCoarse ? 20 : 16))}
+            width={isCoarse ? 24 : 8 + HANDLE_REACH_OUT}
+            height={isCoarse ? 40 : 32}
             fill="transparent"
             style={{ cursor: 'ew-resize' }}
           />
           {/* Barra/pillola visiva */}
           <rect
             x={node.w - 2}
-            y={hasChildren && !node.childrenBelow ? 4 : node.h / 2 - 10}
+            y={node.h / 2 - 10}
             width={4}
-            height={hasChildren && !node.childrenBelow ? 12 : 20}
+            height={20}
             rx={2}
             fill="var(--primary)"
             stroke="var(--background)"
             strokeWidth={1}
             style={{ cursor: 'ew-resize', pointerEvents: 'none' }}
           />
+        </g>
+      )}
+
+      {/* Indicatore comprimi / espandi: sul connettore, appena fuori dall'area della maniglia di larghezza
+          (col mouse il cerchio tocca l'alone blu della selezione), o sotto il blocco per la Tree Chart.
+          Disegnato dopo la maniglia: il suo cerchio resta cliccabile. */}
+      {hasChildren && (
+        <g
+          data-collapse-toggle
+          transform={
+            node.childrenBelow
+              ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
+              : `translate(${node.w + (isCoarse ? 20 : COLLAPSE_TOGGLE_OFFSET)}, ${node.h / 2})`
+          }
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse(node.id);
+          }}
+        >
+          {/* Area di tocco invisibile più ampia per il touch */}
+          {isCoarse && <circle r={12} fill="transparent" />}
+          <circle r={7} fill="var(--popover)" stroke={node.accent || 'var(--input)'} strokeWidth={1} />
+          {node.collapsed ? (
+            <path
+              d={node.childrenBelow ? 'M -3 -2 L 0 2 L 3 -2' : 'M -2 -3 L 2 0 L -2 3'}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : (
+            <path d="M -3 0 L 3 0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+          )}
         </g>
       )}
 

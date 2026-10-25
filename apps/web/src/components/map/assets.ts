@@ -1,4 +1,4 @@
-import { renderLatexToSvg, type Layout } from '@xmap/core';
+import { inlineMathFontSize, renderLatexToSvg, titleBaseFontPx, type Layout } from '@xmap/core';
 import { FORMULA_COLOR, nodeLook, TEXT_ON_DARK, TEXT_ON_LIGHT } from './nodeLook.js';
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -36,7 +36,7 @@ export function buildFormulaSvgCache(layout: Layout | null, darkMode: boolean): 
     const latex = node.latex;
     if (latex) {
       try {
-        const res = renderLatexToSvg(latex, 16);
+        const res = renderLatexToSvg(latex, inlineMathFontSize(titleBaseFontPx(node.depth, node.textStyle)));
         if (!res.error && res.svg) {
           const look = nodeLook(node, darkMode);
           const color = !look.solid ? FORMULA_COLOR[theme] : look.textLight ? TEXT_ON_DARK : TEXT_ON_LIGHT;

@@ -36,9 +36,11 @@ Ogni `deploy` è atomico: finché non termina si serve la versione precedente.
 
 L'app è servita da **https://xmap.jshep.xyz**: `routes` in `wrangler.jsonc` con
 `custom_domain: true`, e la zona `jshep.xyz` sullo stesso account Cloudflare. Al
-deploy Cloudflare crea da solo record DNS e certificato. `workers.dev` e i
-Preview URL sono spenti. Per un altro dominio serve che la sua zona sia attiva
-sull'account (nameserver di Cloudflare presso il registrar).
+deploy Cloudflare crea da solo record DNS e certificato. `workers.dev` è
+spento; i Preview URL (`preview_urls`) sono accesi e servono a provare le PR:
+l'URL compare nel commento del bot Cloudflare sulla PR (sono pubblici ma con
+hash casuale, `noindex` automatico; per limitarli si usa Cloudflare Access).
+Per un altro dominio serve che la sua zona sia attiva sull'account (nameserver di Cloudflare presso il registrar).
 
 La PWA usa percorsi assoluti (`start_url: "/"`) e va quindi servita dalla radice
 del dominio, come fa il Worker.
@@ -50,6 +52,9 @@ Due strade, entrambe senza toccare il codice:
 - **Workers Builds** (consigliata): dalla dashboard, Workers → `xmap-studio` →
   Settings → Build → collega il repo GitHub. Build command
   `pnpm install --frozen-lockfile && pnpm build:web`, deploy command
-  `npx wrangler deploy`, branch `main`. Nessun segreto su GitHub.
+  `npx wrangler deploy`, branch `main`. Nessun segreto su GitHub. Per le PR
+  la scheda "Base delle anteprime" usa lo stesso build command e
+  `npx wrangler preview`, che richiede il blocco `"previews": {}` in
+  `wrangler.jsonc` (senza, la build della PR fallisce).
 - **GitHub Actions** con `cloudflare/wrangler-action` e un API token
   (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) tra i secret del repo.
