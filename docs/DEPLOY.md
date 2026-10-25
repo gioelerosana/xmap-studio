@@ -50,6 +50,9 @@ Due strade, entrambe senza toccare il codice:
 - **Workers Builds** (consigliata): dalla dashboard, Workers → `xmap-studio` →
   Settings → Build → collega il repo GitHub. Build command
   `pnpm install --frozen-lockfile && pnpm build:web`, deploy command
-  `npx wrangler deploy`, branch `main`. Nessun segreto su GitHub.
+  `npx wrangler deploy`, branch `main`. Nessun segreto su GitHub. Per le PR
+  la scheda "Base delle anteprime" usa lo stesso build command e
+  `npx wrangler preview`, che richiede il blocco `"previews": {}` in
+  `wrangler.jsonc` (senza, la build della PR fallisce).
 - **GitHub Actions** con `cloudflare/wrangler-action` e un API token
   (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) tra i secret del repo.
