@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - run: node --test scripts/
+      - run: node --test scripts/release-version.test.mjs
       - name: Release prevista al merge
         env:
           TITLE: ${{ github.event.pull_request.title }}

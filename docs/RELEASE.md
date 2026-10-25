@@ -68,8 +68,9 @@ Prima del merge di un PR che produce una release:
    etichetta `release:*`; il check "Titolo PR" deve essere verde.
 2. Aggiorna `README.md` (cosa fa l'app) e `docs/OVERVIEW.md` (stack,
    architettura, limiti noti) se cambiano.
-3. `pnpm build` e `pnpm test` verdi; `node --test scripts/` se tocchi gli
-   script di release.
+3. `pnpm build` e `pnpm test` verdi;
+   `node --test scripts/release-version.test.mjs` se tocchi gli script di
+   release.
 4. Collauda l'app con `pnpm dev:desktop` e apri in XMind un file generato
    (vedi [`TESTING.md`](TESTING.md)).
 5. Dopo il merge segui il workflow "Auto release" su GitHub Actions: a fine run

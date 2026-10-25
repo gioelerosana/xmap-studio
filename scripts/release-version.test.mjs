@@ -1,4 +1,4 @@
-// node --test scripts/
+// node --test scripts/release-version.test.mjs
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { bumpFromPr, nextVersion } from './release-version.mjs';
