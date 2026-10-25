@@ -5,6 +5,15 @@ import { TITLE_LEADING_RATIO, titleBaseFontPx, trunkX, type LayoutNode } from '@
 import type { NodeLook } from './nodeLook.js';
 import { RichTitle, textStyleCss } from './RichTitle.js';
 
+/** Quanto l'alone di selezione sporge dal bordo del blocco: 2,25px dell'anello + metà dei 3px di tratto. */
+const SELECTION_HALO_OUT = 3.75;
+/** Raggio del pulsante comprimi/espandi (bordo compreso: 7 + 0,5). */
+const COLLAPSE_TOGGLE_RADIUS = 7.5;
+/** Distanza del centro del pulsante dal bordo destro del blocco: il cerchio tocca l'alone di selezione. */
+const COLLAPSE_TOGGLE_OFFSET = SELECTION_HALO_OUT + COLLAPSE_TOGGLE_RADIUS;
+/** Quanto l'area della maniglia di larghezza sporge dal bordo del blocco col mouse: non oltre il pulsante. */
+const HANDLE_REACH_OUT = 4;
+
 export interface NodeCardProps {
   node: LayoutNode;
   look: NodeLook;
@@ -217,11 +226,12 @@ export function NodeCard({
             onResetWidth(node.id);
           }}
         >
-          {/* Area di tocco invisibile allargata per touch e mouse agevole */}
+          {/* Area di tocco invisibile allargata per touch e mouse agevole; col mouse sporge poco
+              fuori dal blocco (HANDLE_REACH_OUT), per lasciare spazio al pulsante comprimi/espandi */}
           <rect
             x={node.w - (isCoarse ? 12 : 8)}
             y={Math.max(0, node.h / 2 - (isCoarse ? 20 : 16))}
-            width={isCoarse ? 24 : 16}
+            width={isCoarse ? 24 : 8 + HANDLE_REACH_OUT}
             height={isCoarse ? 40 : 32}
             fill="transparent"
             style={{ cursor: 'ew-resize' }}
@@ -241,15 +251,16 @@ export function NodeCard({
         </g>
       )}
 
-      {/* Indicatore comprimi / espandi: sul connettore a 20px dal bordo destro (13px di stacco dalla maniglia di larghezza),
-          o sotto il blocco per la Tree Chart. Disegnato dopo la maniglia: il suo cerchio resta cliccabile. */}
+      {/* Indicatore comprimi / espandi: sul connettore, appena fuori dall'area della maniglia di larghezza
+          (col mouse il cerchio tocca l'alone blu della selezione), o sotto il blocco per la Tree Chart.
+          Disegnato dopo la maniglia: il suo cerchio resta cliccabile. */}
       {hasChildren && (
         <g
           data-collapse-toggle
           transform={
             node.childrenBelow
               ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
-              : `translate(${node.w + 20}, ${node.h / 2})`
+              : `translate(${node.w + (isCoarse ? 20 : COLLAPSE_TOGGLE_OFFSET)}, ${node.h / 2})`
           }
           className="text-muted-foreground hover:text-foreground transition-colors"
           onClick={(e) => {
