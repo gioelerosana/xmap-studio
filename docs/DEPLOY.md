@@ -36,9 +36,11 @@ Ogni `deploy` è atomico: finché non termina si serve la versione precedente.
 
 L'app è servita da **https://xmap.jshep.xyz**: `routes` in `wrangler.jsonc` con
 `custom_domain: true`, e la zona `jshep.xyz` sullo stesso account Cloudflare. Al
-deploy Cloudflare crea da solo record DNS e certificato. `workers.dev` e i
-Preview URL sono spenti. Per un altro dominio serve che la sua zona sia attiva
-sull'account (nameserver di Cloudflare presso il registrar).
+deploy Cloudflare crea da solo record DNS e certificato. `workers.dev` è
+spento; i Preview URL (`preview_urls`) sono accesi e servono a provare le PR:
+l'URL compare nel commento del bot Cloudflare sulla PR (sono pubblici ma con
+hash casuale, `noindex` automatico; per limitarli si usa Cloudflare Access).
+Per un altro dominio serve che la sua zona sia attiva sull'account (nameserver di Cloudflare presso il registrar).
 
 La PWA usa percorsi assoluti (`start_url: "/"`) e va quindi servita dalla radice
 del dominio, come fa il Worker.
