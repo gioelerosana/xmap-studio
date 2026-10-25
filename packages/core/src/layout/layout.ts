@@ -2,7 +2,7 @@ import { relationshipGeometry } from './relationship.js';
 import { SheetDto, TextStyle, TitleRun, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
 import { splitInlineMath } from '../latex/inline.js';
-import { inlineMathFontSize, TITLE_LEADING_RATIO } from '../latex/size.js';
+import { inlineMathFontSize, titleBaseFontPx, TITLE_LEADING_RATIO } from '../latex/size.js';
 import { parseRange } from '../model/utils.js';
 import {
   BRANCH_COLORS,
@@ -321,7 +321,31 @@ export function estimateNodeSize(
   },
   overrideWidth?: number | null
 ): { w: number; h: number } {
-  // 1. Immagini con dimensioni note
+  // 1. Formule LaTeX native (MathJax): il blocco misura la formula come la si disegna
+  // (stessa scala delle formule nel testo), non l'immagine PNG salvata nel file.
+  const effectiveLatex = node.latex;
+  if (effectiveLatex) {
+    try {
+      const rendered = renderLatexToSvg(
+        effectiveLatex,
+        inlineMathFontSize(titleBaseFontPx(node.depth, node.textStyle))
+      );
+      if (!rendered.error) {
+        const fw = Math.max(rendered.width + 36.0, 96.0);
+        let fh = Math.max(rendered.height + 22.0, 38.0);
+        if (
+          node.hasNotes ||
+          (node.markers && node.markers.length > 0) ||
+          (node.labels && node.labels.length > 0)
+        ) {
+          fh += 18.0;
+        }
+        return { w: Math.min(fw, 650.0), h: Math.max(32.0, fh) };
+      }
+    } catch {}
+  }
+
+  // 2. Immagini con dimensioni note
   const imgW = node.imageW;
   const imgH = node.imageH;
   if (imgW !== undefined && imgH !== undefined) {
@@ -351,31 +375,11 @@ export function estimateNodeSize(
     return { w: Math.max(72.0, fw), h: Math.max(32.0, fh) };
   }
 
-  // 2. Formule LaTeX native (MathJax)
-  const effectiveLatex = node.latex;
-  if (effectiveLatex) {
-    try {
-      const rendered = renderLatexToSvg(effectiveLatex, 18);
-      if (!rendered.error) {
-        const fw = Math.max(rendered.width + 36.0, 96.0);
-        let fh = Math.max(rendered.height + 22.0, 38.0);
-        if (
-          node.hasNotes ||
-          (node.markers && node.markers.length > 0) ||
-          (node.labels && node.labels.length > 0)
-        ) {
-          fh += 18.0;
-        }
-        return { w: Math.min(fw, 650.0), h: Math.max(32.0, fh) };
-      }
-    } catch {}
-  }
-
   // 3. Testo ordinario
   const text = node.displayTitle || node.title || '';
   const isRoot = node.depth === 0;
   const isBranch = node.depth === 1;
-  const baseFontSize = node.textStyle?.fontSizePx ?? (isRoot ? 14.0 : 12.0);
+  const baseFontSize = titleBaseFontPx(node.depth, node.textStyle);
   const baseBold = node.textStyle?.bold ?? (isRoot || isBranch);
   const base: TitleBase = { size: baseFontSize, bold: baseBold, lineH: isRoot ? 20.0 : 18.0 };
 

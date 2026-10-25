@@ -91,8 +91,22 @@ describe('stima del titolo con run e formule', () => {
     expect(mismatched).toEqual(plain);
   });
 
+  it("l'equazione nativa misura la formula come la si disegna, non il PNG salvato", () => {
+    const latex = 'E=mc^2';
+    const svg = renderLatexToSvg(latex, inlineMathFontSize(12));
+    const size = estimateNodeSize({ depth: 2, kind: 'equation', latex, imageW: 600, imageH: 300 });
+    expect(size.w).toBeCloseTo(Math.max(svg.width + 36, 96), 5);
+    expect(size.h).toBeCloseTo(Math.max(svg.height + 22, 38), 5);
+  });
+
+  it("l'equazione nativa e la formula nel testo hanno la stessa scala", () => {
+    const small = estimateNodeSize({ depth: 2, kind: 'equation', latex: 'x^2' });
+    const root = estimateNodeSize({ depth: 0, kind: 'equation', latex: 'x^2' });
+    expect(root.h).toBeGreaterThan(small.h);
+  });
+
   it('la scala delle formule segue la dimensione del testo', () => {
-    expect(inlineMathFontSize(12)).toBe(15);
-    expect(inlineMathFontSize(14)).toBe(17.5);
+    expect(inlineMathFontSize(12)).toBe(18);
+    expect(inlineMathFontSize(14)).toBe(21);
   });
 });

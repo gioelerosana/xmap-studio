@@ -1,7 +1,7 @@
 import type { MouseEvent, PointerEvent } from 'react';
 import { FileText } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
-import { TITLE_LEADING_RATIO, trunkX, type LayoutNode } from '@xmap/core';
+import { TITLE_LEADING_RATIO, titleBaseFontPx, trunkX, type LayoutNode } from '@xmap/core';
 import type { NodeLook } from './nodeLook.js';
 import { RichTitle, textStyleCss } from './RichTitle.js';
 
@@ -48,7 +48,7 @@ export function NodeCard({
   const isEquation = node.kind === 'equation' || Boolean(node.latex) || Boolean(formulaSvg);
   const isPlainImage = Boolean(hasImage && !isEquation);
   // Dimensione base del titolo, la stessa che usa la stima del layout (layout.ts).
-  const titleFontPx = node.textStyle?.fontSizePx ?? (isRoot ? 14 : 12);
+  const titleFontPx = titleBaseFontPx(node.depth, node.textStyle);
   // Su riempimento pieno i chip si tingono del colore del testo.
   const chipSolidStyle = look.solid
     ? { backgroundColor: 'color-mix(in oklab, currentColor 18%, transparent)' }
