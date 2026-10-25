@@ -95,5 +95,13 @@ if command -v makepkg >/dev/null 2>&1; then
   (cd "${SCRIPT_DIR}/release" && makepkg --printsrcinfo > .SRCINFO)
   echo "Rigenerato ${SCRIPT_DIR}/release/.SRCINFO"
 else
-  echo "ATTENZIONE: makepkg non trovato, rigenera a mano release/.SRCINFO (makepkg --printsrcinfo > .SRCINFO)." >&2
+  # Senza makepkg (es. runner CI Ubuntu) si aggiornano a testo i soli campi che
+  # dipendono dalla versione: pkgver, pkgrel e il tag nella source git.
+  SRCINFO="${SCRIPT_DIR}/release/.SRCINFO"
+  sed -i -E \
+    -e "s/^(\tpkgver = ).*/\1${TARGET_VER}/" \
+    -e "s/^(\tpkgrel = ).*/\11/" \
+    -e "s/(#tag=v)[0-9]+\.[0-9]+\.[0-9]+/\1${TARGET_VER}/" \
+    "${SRCINFO}"
+  echo "Aggiornato ${SRCINFO} (makepkg non trovato: solo pkgver, pkgrel e tag)"
 fi

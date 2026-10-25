@@ -1,8 +1,9 @@
-# Workflow di release: gira quando si pusha un tag di versione (vX.Y.Z) e
-# quando lo si lancia a mano da GitHub (Actions › Release › Run workflow, su
-# qualunque branch o tag). Nessun workflow per push su branch o pull request.
-#
-#   git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
+# Workflow di release. Parte in tre modi:
+#   - richiamato da auto-release.yml dopo il merge di un PR in main, con il tag
+#     appena creato (input `tag`): è il percorso normale;
+#   - al push manuale di un tag di versione (vYY.MAJOR.MINOR, docs/RELEASE.md):
+#       git tag -a v26.1.0 -m "v26.1.0" && git push origin v26.1.0
+#   - a mano da GitHub (Actions › Release › Run workflow, su branch o tag).
 #
 # Nei lanci manuali su un branch non c'è un tag da confrontare: il controllo
 # tag/versione si salta, build e test girano comunque.
@@ -18,6 +19,12 @@ on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag di versione da compilare e pubblicare (es. v26.1.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -28,6 +35,10 @@ env:
   # Il binario di Electron serve solo agli script di sviluppo: electron-builder
   # scarica da sé quello della piattaforma di destinazione.
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  # Tag da rilasciare: l'input quando il workflow è richiamato (lì `github` è il
+  # contesto del chiamante, non il tag), altrimenti il tag pushato. Vuoto nei
+  # lanci manuali su un branch.
+  RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
 
 jobs:
   verify:
@@ -39,11 +50,13 @@ jobs:
     container: electronuserland/builder:wine
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: ./.github/actions/setup
       - name: Controllo tag/versione
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            node scripts/check-release-version.mjs "$GITHUB_REF_NAME"
+          if [ -n "$RELEASE_TAG" ]; then
+            node scripts/check-release-version.mjs "$RELEASE_TAG"
           else
             echo "Lancio manuale senza tag: controllo tag/versione saltato."
           fi
@@ -65,6 +78,8 @@ jobs:
             pattern: XMap-Studio-*-x86_64.AppImage
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: ./.github/actions/setup
       - run: pnpm ${{ matrix.script }}
       - name: Checksum
@@ -79,7 +94,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.ref_type == 'tag'
+    if: inputs.tag || github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -93,8 +108,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          gh release create "$RELEASE_TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "XMap Studio $GITHUB_REF_NAME" \
+            --title "XMap Studio $RELEASE_TAG" \
             --generate-notes \
             --verify-tag

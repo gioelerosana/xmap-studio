@@ -1,9 +1,9 @@
 // Verifica che il tag di release e le versioni dichiarate nel repository
 // coincidano, prima di compilare artefatti con un nome sbagliato.
 //
-//   node scripts/check-release-version.mjs v0.2.0
+//   node scripts/check-release-version.mjs v26.1.0
 //
-// Il tag deve essere SemVer puro (vX.Y.Z), la `version` di tutti i package.json
+// Il tag deve essere vYY.MAJOR.MINOR (docs/RELEASE.md), la `version` di tutti i package.json
 // del workspace deve essere X.Y.Z e `pkgver` del PKGBUILD di release allineato.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const tag = process.argv[2] ?? '';
 const match = /^v(\d+\.\d+\.\d+)$/.exec(tag);
 if (!match) {
-  console.error(`Tag "${tag}" non valido: atteso vX.Y.Z (es. v0.2.0).`);
+  console.error(`Tag "${tag}" non valido: atteso vYY.MAJOR.MINOR (es. v26.1.0).`);
   process.exit(1);
 }
 const expected = match[1];
