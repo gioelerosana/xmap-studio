@@ -1,7 +1,7 @@
 import type { TopicView, WorkbookDto } from '@xmap/core';
 import type { MenuItem } from '@xmap/ui-kit';
 import {
-  FilePlus,
+  SquarePlus,
   FolderOpen,
   Save,
   Undo2,
@@ -59,7 +59,7 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
   // Azioni dell'header che non ci stanno: in testa al menu ⋮.
   const overflowItems: MenuItem[] = [
     ...(workbook && !layout.inlineOpen
-      ? [{ id: 'new-map', label: 'Nuova mappa', icon: <FilePlus className="size-4" />, onSelect: actions.onNewMap }]
+      ? [{ id: 'new-map', label: 'Nuova mappa', icon: <SquarePlus className="size-4" />, onSelect: actions.onNewMap }]
       : []),
     ...(!layout.inlineOpen ? [{ id: 'open', label: 'Apri…', icon: <FolderOpen className="size-4" />, onSelect: actions.onOpen }] : []),
     ...(workbook && !layout.inlineUndo
