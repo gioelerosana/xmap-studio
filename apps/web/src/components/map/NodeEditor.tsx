@@ -12,6 +12,8 @@ export interface NodeEditorProps {
   w: number;
   h: number;
   isRoot: boolean;
+  /** Dimensione base del testo del blocco in px, la stessa del blocco disegnato (`titleBaseFontPx`). */
+  fontPx: number;
   initialText: string;
   initialRuns?: TitleRun[];
   /** Seleziona tutto il testo all'apertura; altrimenti il cursore va in fondo. */
@@ -309,6 +311,7 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
   w,
   h,
   isRoot,
+  fontPx,
   initialText,
   initialRuns,
   selectAll,
@@ -526,9 +529,9 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       suppressContentEditableWarning
       className={cn(
         'absolute overflow-hidden rounded-[10px] border border-primary bg-card px-2.5 py-1 leading-snug text-foreground shadow-composer outline-none ring-[3px] ring-primary/25 whitespace-pre-wrap break-words',
-        isRoot ? 'text-sm font-semibold tracking-tight' : 'text-xs font-medium'
+        isRoot ? 'font-semibold tracking-tight' : 'font-medium'
       )}
-      style={{ left: x, top: y, width: Math.max(w, 120), minHeight: h }}
+      style={{ left: x, top: y, width: Math.max(w, 120), minHeight: h, fontSize: `${fontPx}px` }}
       onInput={fit}
       onPaste={handlePaste}
       onBlur={() => finish('blur')}

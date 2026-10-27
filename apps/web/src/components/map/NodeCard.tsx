@@ -159,18 +159,16 @@ export function NodeCard({
               ) : (
                 <span
                   className={cn(
-                    'break-words whitespace-pre-wrap leading-snug',
-                    isRoot
-                      ? 'text-sm font-semibold tracking-tight'
-                      : isBranch
-                      ? 'text-xs font-semibold'
-                      : 'text-xs font-normal'
+                    'break-words whitespace-pre-wrap',
+                    isRoot ? 'font-semibold tracking-tight' : isBranch ? 'font-semibold' : 'font-normal'
                   )}
                   style={{
                     ...textStyleCss(node.textStyle, look.textLight),
+                    // Dimensione sempre esplicita e dopo lo stile del blocco (che la lascerebbe `undefined`):
+                    // è quella della stima del layout, così il testo riempie il blocco misurato per lui.
+                    fontSize: `${titleFontPx}px`,
                     fontFamily: node.fontFamily ? themeFontStack(node.fontFamily, 'var(--font-sans)') : undefined,
-                    // `cn` toglie `leading-snug` davanti a `text-sm`/`text-xs`: l'interlinea va data qui,
-                    // uguale a quella della stima del layout, o i font grandi del tema verrebbero tagliati.
+                    // Interlinea uguale a quella della stima del layout, o i font grandi verrebbero tagliati.
                     lineHeight: TITLE_LEADING_RATIO,
                     display: '-webkit-box',
                     // Il blocco è alto almeno quanto le righe stimate (ciascuna ≥ fontPx * leading): il clamp non taglia mai un titolo stimato bene
