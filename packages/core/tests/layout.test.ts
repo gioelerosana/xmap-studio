@@ -10,6 +10,8 @@ import {
   SUMMARY_BRACE_W,
   Layout,
   LayoutNode,
+  estimateNodeSize,
+  setTextMeasurer,
 } from '../src/index.js';
 
 const metrics: NodeMetrics = { measure: () => ({ w: 180, h: 36 }) };
@@ -258,5 +260,23 @@ describe('layout con struttura forzata', () => {
   it('senza override rispetta la structureClass del file', () => {
     const l = layoutSheets([sheet(plain)], new Set(), metrics, opts);
     expect(byId(l, 'r').childrenBelow).toBe(false);
+  });
+});
+
+describe('cache delle dimensioni dei blocchi', () => {
+  it('cambiando la misura del testo le dimensioni si ricalcolano', () => {
+    const node = { depth: 2, title: 'Titolo di prova' };
+    const before = estimateNodeSize(node);
+    setTextMeasurer((text, size) => text.length * size);
+    try {
+      const wide = estimateNodeSize(node);
+      expect(wide.w).toBeGreaterThan(before.w);
+      // Il risultato restituito è una copia: modificarlo non tocca la cache.
+      wide.w = 1;
+      expect(estimateNodeSize(node).w).not.toBe(1);
+    } finally {
+      setTextMeasurer(null);
+    }
+    expect(estimateNodeSize(node)).toEqual(before);
   });
 });

@@ -246,6 +246,12 @@ export class AppController {
       color: options.color,
     });
 
+    // Durante il rendering (asincrono) un undo, un'eliminazione o un'altra mappa
+    // aperta possono aver staccato il blocco: la formula finirebbe su un oggetto
+    // non più nella mappa, in silenzio.
+    if (this.currentWorkbook !== wb || findTopic(wb.content, topicId) !== topic) {
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, 'La mappa è cambiata mentre si preparava la formula: riprova.');
+    }
     wb.archive.resources.set(outcome.resource, png);
     wb.pushHistory();
     return wb.toDto();
@@ -255,6 +261,8 @@ export class AppController {
     const wb = this.ensureWorkbook();
     if (specs.length === 0) throw new XmapError(CODE_INVALID_INPUT, 'Nessuna equazione da applicare.');
 
+    const startContent = wb.content;
+    const startRevision = wb.currentRevision();
     const working = cloneSheets(wb.content);
     const pendingResources: Array<[string, Uint8Array]> = [];
     const errors: { topicId: string; error: string }[] = [];
@@ -285,6 +293,11 @@ export class AppController {
 
     if (errors.length > 0) {
       return { modified: 0, totalLatex: specs.length, errors };
+    }
+    // La copia di lavoro sostituisce il contenuto vivo: se nel frattempo la mappa
+    // è cambiata, quelle modifiche andrebbero perse.
+    if (this.currentWorkbook !== wb || wb.content !== startContent || wb.currentRevision() !== startRevision) {
+      throw new XmapError(CODE_INVALID_INPUT, 'La mappa è cambiata mentre si applicavano le formule: riprova.');
     }
 
     wb.content = working;
@@ -531,10 +544,18 @@ export class AppController {
       const bytes = wb.archive.resources.get(name);
       if (bytes) resources[name] = bytesToBase64(bytes);
     }
+    const attachmentNames = new Set<string>();
+    collectAttachmentRefs(topic, attachmentNames);
+    const attachments: Record<string, string> = {};
+    for (const name of attachmentNames) {
+      const bytes = wb.archive.entries.get(name);
+      if (bytes) attachments[name] = bytesToBase64(bytes);
+    }
     const payload: XmapClipboardPayload = {
       xmapStudioClipboard: XMAP_CLIPBOARD_VERSION,
       topic,
       ...(Object.keys(resources).length > 0 ? { resources } : {}),
+      ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
     };
     return JSON.stringify(payload);
   }
@@ -598,6 +619,20 @@ export class AppController {
       }
     }
     if (added.length > 0) refreshManifest(wb.manifest, added, false);
+    const addedAttachments: string[] = [];
+    if (data.attachments && typeof data.attachments === 'object') {
+      for (const [name, b64] of Object.entries(data.attachments)) {
+        if (!name.startsWith('attachments/') || name.includes('..') || typeof b64 !== 'string') continue;
+        if (wb.archive.entries.has(name)) continue;
+        try {
+          wb.archive.entries.set(name, base64ToBytes(b64));
+          addedAttachments.push(name);
+        } catch {
+          throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: allegato danneggiato.');
+        }
+      }
+    }
+    if (addedAttachments.length > 0) registerEntries(wb.manifest, addedAttachments);
 
     const cloned = cloneTopicSubtree(data.topic);
     if (!parent.children) {
@@ -1021,8 +1056,7 @@ export class AppController {
     structure?: MapStructure
   ): Layout | null {
     if (!this.currentWorkbook) return null;
-    const dto = this.currentWorkbook.toDto();
-    const sheet = dto.sheets[sheetIndex];
+    const sheet = this.currentWorkbook.sheetDto(sheetIndex);
     if (!sheet) return null;
     return layoutSheets([sheet], collapsed, undefined, { ...DEFAULT_LAYOUT_OPTS, structure });
   }
@@ -1175,8 +1209,14 @@ export class AppController {
    * Prepara i byte finali con content.json serializzato, manifest aggiornato e thumbnail rimossa.
    * Esegue la validazione in memoria prima della scrittura.
    */
-  public async prepareArchiveBytes(): Promise<{ bytes: Uint8Array; validation: ValidationReport }> {
+  public async prepareArchiveBytes(): Promise<{
+    bytes: Uint8Array;
+    validation: ValidationReport;
+    /** Revisione serializzata nei byte: va passata a `markSaved` a scrittura avvenuta. */
+    revision: number;
+  }> {
     const wb = this.ensureWorkbook();
+    const revision = wb.currentRevision();
 
     // Si lavora su una copia: se la validazione fallisce il workbook vivo
     // resta intatto (i byte delle entry sono condivisi, mai modificati).
@@ -1205,7 +1245,7 @@ export class AppController {
     const bytes = await buildArchiveBytes(archive);
     const validation = await validateArchiveBytes(bytes);
 
-    return { bytes, validation };
+    return { bytes, validation, revision };
   }
 
   /**
@@ -1217,9 +1257,9 @@ export class AppController {
     return this.ensureWorkbook().originalHash;
   }
 
-  public markSaved(path?: string, contentHash?: string): WorkbookDto {
+  public markSaved(path?: string, contentHash?: string, revision?: number): WorkbookDto {
     const wb = this.ensureWorkbook();
-    wb.markSaved(path, contentHash);
+    wb.markSaved(path, contentHash, revision);
     return wb.toDto();
   }
 
@@ -1242,7 +1282,7 @@ export class AppController {
       }
     }
 
-    const { bytes } = await this.prepareArchiveBytes();
+    const { bytes, revision } = await this.prepareArchiveBytes();
     // Il controllo di conflitto vale solo se si riscrive il file che abbiamo aperto.
     const expectedHash = target === wb.path ? wb.originalHash : undefined;
     const report = await platform.atomicWrite(target, bytes, { makeBackup: true, expectedHash });
@@ -1251,7 +1291,7 @@ export class AppController {
     const writtenBytes = await platform.readFile(target);
     const validation = await validateArchiveBytes(writtenBytes);
     const contentHash = await sha256HexAsync(writtenBytes);
-    wb.markSaved(target, contentHash);
+    wb.markSaved(target, contentHash, revision);
 
     return {
       path: target,
