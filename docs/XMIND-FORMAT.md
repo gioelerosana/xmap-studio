@@ -67,8 +67,8 @@ Regole di serializzazione:
 ## Campi verificati (Fase 0.5)
 
 Estratti dal serializer di XMind 26.03.04129 (vedi
-[`AGENTS.md`](../AGENTS.md) §"Verificare un campo di formato"). Stato e priorità
-sono in [`PRODUCT.md`](PRODUCT.md) §3; qui solo i nomi e le forme.
+[`AGENTS.md`](../AGENTS.md) §"Verificare un campo di formato"); qui solo i nomi
+e le forme.
 
 **Topic** (oltre a quelli della struct sopra):
 

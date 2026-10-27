@@ -3,6 +3,11 @@
 Stack, architettura, formato e note di implementazione in sintesi. Il dettaglio
 è negli altri documenti di questa cartella (vedi [`README.md`](README.md)).
 
+XMap Studio è un'app di mappe mentali libera e open source: l'obiettivo sono
+mappe belle, accurate e affidabili create nell'app. Usa il formato `.xmind` per
+restare compatibile con XMind, ma la compatibilità è un mezzo e non l'obiettivo:
+non si insegue la feature parity (vedi [`AGENTS.md`](../AGENTS.md) §"Visione").
+
 ## 1. Stack
 
 | Livello | Scelta | Perché |
@@ -161,7 +166,7 @@ pnpm install
 pnpm dev:web        # UI nel browser su http://localhost:3000
 pnpm dev:desktop    # app Electron (richiede la build web)
 pnpm build          # build di core + ui-kit + web + desktop
-pnpm test           # test core, round-trip e regressioni di parità
+pnpm test           # test core, round-trip e regressioni
 ```
 
 `pnpm build` compila nell'ordine corretto: `@xmap/core` e `@xmap/ui-kit`
@@ -176,7 +181,7 @@ Per aprire i `.xmind` dal file manager con la versione desktop, associa il MIME
 `Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+Shift+N` aggiungi
 sotto-blocco · `Ctrl+P` stampa / PDF · `Ctrl+,` impostazioni.
 
-Sulla mappa, come in XMind: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello
+Sulla mappa: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello
 (`Maiusc+Invio` prima) · `F2`, `Spazio` o doppio clic per modificare il testo nel
 blocco (o inizia a scrivere) · `Canc` elimina (si annulla con `Ctrl+Z`) · frecce per
 spostarsi · `Ctrl+B`/`Ctrl+I`/`Ctrl+U` grassetto, corsivo, sottolineato (sulla selezione

@@ -118,5 +118,5 @@ Principi:
 ## 6. Fuori scope
 
 Menu contestuale sulla mappa, editing inline, export SVG/PNG della mappa, temi
-personalizzati: sono voci della matrice di parità
-([`PRODUCT.md`](PRODUCT.md) §4 Fase 8).
+personalizzati: fuori dal piano originale della vista mappa, realizzati dopo
+(vedi [`OVERVIEW.md`](OVERVIEW.md)).

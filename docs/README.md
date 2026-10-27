@@ -2,6 +2,9 @@
 
 Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 [`README.md`](../README.md) nella radice; qui c'è il dettaglio per chi sviluppa.
+La visione del progetto (mappe belle, accurate e affidabili; XMind come formato
+di compatibilità, non come modello da pareggiare) è in
+[`AGENTS.md`](../AGENTS.md) §"Visione".
 
 | Documento | Contenuto |
 |---|---|
@@ -12,7 +15,6 @@ Indice della documentazione tecnica. Il punto di partenza per l'utente resta il
 | [`TESTING.md`](TESTING.md) | Test del core TypeScript e verifica in XMind |
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
 | [`DEPLOY.md`](DEPLOY.md) | Pubblicazione della web app su Cloudflare (Workers Static Assets) |
-| [`PRODUCT.md`](PRODUCT.md) | Posizionamento, feature precluse a XMind Free, roadmap |
 | [`MAP-VIEW.md`](MAP-VIEW.md) | Piano della vista mappa ad albero (Fase 7) |
 | [`IOS.md`](IOS.md) | App nativa iOS/iPadOS (wrapper WKWebView) compilata da Linux con xtool |
 | [`DESIGN-SYSTEM.md`](DESIGN-SYSTEM.md) | Design system T3 Code: token, classi Tailwind e API di `@xmap/ui-kit` |

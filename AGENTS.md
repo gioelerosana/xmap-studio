@@ -6,35 +6,42 @@ tecnico vedi [`docs/`](docs/README.md).
 
 ## Cos'è questo progetto
 
-**XMap Studio** è un'app desktop Linux, companion di XMind gratuito.
-Apre un file `.xmind`, mostra la mappa come lista di blocchi, permette di
-**modificare il contenuto** dei blocchi — testo, aggiunta di sotto-blocchi,
-eliminazione, spostamento con drag & drop — e di sostituire il contenuto di un
-blocco con una formula **LaTeX nativa** (MathJax), salvando in modo sicuro.
-Scrive nel formato nativo di XMind, quindi in XMind la formula appare
-renderizzata e cliccandoci sopra si riapre l'editor equazioni con il LaTeX
-corretto.
-
-Obiettivo: fare ciò che XMind gratuito non consente, restando compatibili con il
-formato. Posizionamento, inventario delle feature e roadmap in
-[`docs/PRODUCT.md`](docs/PRODUCT.md).
+**XMap Studio** è un'app di mappe mentali **libera e open source** (MIT) per
+desktop (Linux, Windows) e web. Non è più un companion di XMind gratuito né un
+suo clone: vuole essere **l'alternativa a XMind più curata e più libera**, il
+posto dove le mappe si creano e si modificano, sulla mappa stessa (editing in
+place, drag & drop, scorciatoie), con formule **LaTeX native** (MathJax) e
+salvataggio sicuro.
 
 Niente account, niente telemetria. Apre, mostra, modifica, salva.
 
-### Macro-obiettivo: feature parity con XMind
+### Visione: mappe belle, accurate, affidabili
 
-La direzione del progetto è **pareggiare XMind, e superarlo dove Free è
-bloccato**. Un file aperto qui deve apparire come in XMind (grassetti, forme
-delle relazioni, sommari, colori del tema) e deve potersi modificare **sulla
-mappa** con i gesti di XMind (drag & drop, editing in place, scorciatoie). La
-matrice di parità con lo stato di ogni voce è in
-[`docs/PRODUCT.md`](docs/PRODUCT.md) §4 "Fase 8"; ogni feature nuova:
+Il focus del progetto è **la qualità delle mappe create nell'app**:
 
-1. parte dal riscontro su XMind reale (ricetta §"Verificare un campo di formato
-   su XMind reale": il codice di rendering di XMind è nell'`app.asar`);
-2. passa per *render* → *edit* → *round-trip* (XMind riapre il file salvato e lo
-   mostra uguale);
-3. aggiorna la riga corrispondente della matrice.
+- **belle**: resa grafica curata, tipografia, colori e temi gradevoli, layout
+  ordinati; l'estetica è una feature, non una rifinitura;
+- **accurate**: il contenuto è quello che l'utente ha scritto, formule
+  comprese, senza approssimazioni;
+- **affidabili**: nessun dato si perde, mai (vedi §"Regole non negoziabili").
+
+Il formato resta quello di XMind (`.xmind`, `content.json`): è un formato
+diffuso e documentabile, e usarlo tiene le mappe portabili. Ma la
+**compatibilità con XMind è un mezzo, non l'obiettivo**:
+
+- una mappa XMind dovrebbe aprirsi in XMap Studio, e una mappa salvata qui
+  dovrebbe aprirsi in XMind; è il comportamento atteso, non una promessa di
+  resa identica al 100%;
+- **non si insegue la feature parity con XMind**: una feature si fa se rende
+  le mappe migliori, non perché XMind ce l'ha; dove una scelta di XMind è
+  peggiore, XMap Studio può fare diversamente;
+- le estensioni proprie dell'app vanno scritte in modo che XMind le ignori senza
+  rompersi (campi in più, mai campi esistenti con un significato diverso).
+
+Quando una feature tocca il formato, il riscontro su XMind reale (ricetta
+§"Verificare un campo di formato su XMind reale") resta il modo per scegliere i
+campi giusti e non corrompere i file; non serve invece riprodurre ogni dettaglio
+di come XMind li mostra.
 
 - Stack: monorepo **TypeScript** gestito con **pnpm**:
   - `packages/core` — motore (modello, archivio, sicurezza, LaTeX/MathJax,
@@ -55,8 +62,8 @@ matrice di parità con lo stato di ogni voce è in
 
 [`TODO.md`](TODO.md), nella root, è il **backlog scritto dall'utente**: le
 feature, le correzioni e le idee che vuole nell'app, aggiunte man mano. È la
-fonte primaria di direzione per ogni sessione, più di `docs/PRODUCT.md` (che
-descrive lo stato e la roadmap di prodotto, non le priorità correnti).
+fonte primaria di direzione per ogni sessione; la §"Visione" sopra dice in che
+spirito leggerlo.
 
 **Leggilo sempre a inizio sessione**, prima di pianificare, qualunque sia la
 richiesta.
@@ -76,7 +83,8 @@ sull'app", "cosa facciamo?", un prompt generico o vuoto), **il compito è
    richieste non sostituiscono una voce aperta. Se lo noti, segnalalo nel
    riepilogo;
 4. se non ci sono voci aperte, dillo e proponi i prossimi passi (da
-   `docs/PRODUCT.md` o da quanto osservato), ma **non** iniziarli senza un sì.
+   coerenti con la §"Visione" o da quanto osservato), ma **non** iniziarli
+   senza un sì.
 
 ### Sessione con un compito specifico
 
@@ -245,8 +253,9 @@ Prima di considerare concluso un cambiamento:
 2. `pnpm test` verde
 3. per modifiche alla UI: app avviata e controllata (`pnpm dev:web` /
    `pnpm dev:desktop`)
-4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale in
-   XMind con un file salvato dall'app (vedi [`docs/TESTING.md`](docs/TESTING.md))
+4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale che un
+   file salvato dall'app si apra ancora in XMind senza errori (vedi
+   [`docs/TESTING.md`](docs/TESTING.md)); non serve che appaia identico
 5. voce corrispondente di `TODO.md` spuntata, con nota (vedi §"`TODO.md`: la
    direzione del lavoro")
 6. commit e push del branch, come in §"Chiusura di ogni task"
@@ -450,8 +459,9 @@ gh pr create --base main --title "feat(map): …" --body "…"
 
 ### Verificare un campo di formato su XMind reale
 
-Non serve una licenza Pro né pilotare la GUI: il binario XMind installato
-contiene il serializer di `content.json` e i cataloghi (marker, strutture), e le
+Serve a scegliere i campi giusti quando una feature tocca il formato (vedi
+§"Visione"). Non serve una licenza Pro né pilotare la GUI: il binario XMind
+installato contiene il serializer di `content.json` e i cataloghi (marker, strutture), e le
 mappe salvate sono su disco.
 
 1. **Bundle XMind**: `app.asar` in
@@ -468,12 +478,11 @@ mappe salvate sono su disco.
 3. **Incrocia con i file reali**: `~/.var/app/net.xmind.XMind/config/Xmind/Electron v3/vana/file-cache/**/*.xmind`
    e i backup nel Trash. Estrai `content.json` con `unzip -p FILE.xmind content.json`
    e controlla i campi osservati.
-4. **Aggiorna la doc**: `docs/PRODUCT.md` §3 (stato/campi/provider) e, se cambia
-   lo schema o una regola, `docs/XMIND-FORMAT.md`.
+4. **Aggiorna la doc**: `docs/XMIND-FORMAT.md` (§"Campi verificati" e, se cambia
+   lo schema o una regola, le regole).
 
 Un campo si dice **Confermato** solo se compare nel serializer o in un file
-reale; il *lock* della versione Free, non deducibile offline, resta l'unico
-punto da verificare in UI.
+reale.
 
 ### Aggiungere una regola di formato
 
@@ -494,7 +503,8 @@ punto da verificare in UI.
   via drag & drop sulla mappa, posizione dei blocchi liberi, punti di controllo
   delle relazioni, formattazione parziale (Ctrl+B/I/U), larghezza dei blocchi e
   dimensione delle immagini, copia/incolla/duplica dal menu contestuale.
-  Il tema del foglio si modifica dall'editor "Tema del foglio…" (colori, font, forme, linee; vedi matrice di parità). Inventario aggiornato in
-  [`docs/PRODUCT.md`](docs/PRODUCT.md).
+  Il tema del foglio si modifica dall'editor "Tema del foglio…" (colori, font,
+  forme, linee). Panoramica delle funzioni in
+  [`docs/OVERVIEW.md`](docs/OVERVIEW.md).
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della
   sicurezza dei dati e dell'undo).

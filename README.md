@@ -5,7 +5,7 @@
 <h1 align="center">XMap Studio</h1>
 
 <p align="center">
-  <strong>Le tue mappe XMind, senza i limiti di XMind gratuito.</strong>
+  <strong>Mappe mentali belle, accurate e libere. Open source, compatibili con XMind.</strong>
 </p>
 
 <p align="center">
@@ -15,13 +15,17 @@
 
 ---
 
-Apri un file `.xmind`, modificalo direttamente sulla mappa e salvalo:
-**XMind lo riapre identico**. Niente account, niente telemetria.
+XMap Studio è un'alternativa libera e open source a XMind, pensata per creare
+mappe curate: belle da vedere, precise nel contenuto, sicure da salvare. Usa il
+formato `.xmind`, quindi le tue mappe XMind si aprono qui e quelle create qui si
+aprono anche in XMind. Niente account, niente telemetria.
 
-- **Formule LaTeX native.** Trasformi un blocco in una formula: in XMind appare
-  renderizzata e, cliccandoci sopra, si riapre il suo editor equazioni.
-- **Modifichi sulla mappa, come in XMind.** Testo nel blocco, `Tab` e `Invio`
-  per nuovi blocchi, trascinamento, relazioni, sommari, note e immagini.
+- **Mappe curate.** Temi, colori, forme e tipografia per mappe gradevoli, con
+  un layout ordinato.
+- **Formule LaTeX native.** Trasformi un blocco in una formula, resa con
+  MathJax; anche in XMind appare renderizzata e resta modificabile.
+- **Modifichi sulla mappa.** Testo nel blocco, `Tab` e `Invio` per nuovi
+  blocchi, trascinamento, relazioni, sommari, note e immagini.
 - **Stampi su A4 e A3.** Su un foglio solo o su più fogli da affiancare, e nel
   desktop salvi anche in PDF.
 - **Non perdi niente.** Ogni salvataggio viene controllato prima di scrivere su

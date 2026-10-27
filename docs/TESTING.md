@@ -27,7 +27,10 @@ archivi creati in memoria. Per il formato `.xmind`, verificare almeno:
 
 La validazione automatica non prova il parser XMind reale. Prima di dichiarare
 conclusa una modifica allo schema, aprire in XMind un `.xmind` generato, provare
-a modificare l'equazione e verificare note/allegati quando coinvolti. In
+a modificare l'equazione e verificare note/allegati quando coinvolti. Lo scopo è
+che il file si apra senza errori e senza perdere contenuto: la compatibilità con
+XMind conta, ma non è richiesta una resa identica (vedi
+[`AGENTS.md`](../AGENTS.md) §"Visione"). In
 particolare, resta da verificare a mano un file con allegato e un ramo
 ottenuto da split.
 
