@@ -1,6 +1,6 @@
 {
   "name": "xmap-studio-monorepo",
-  "version": "26.2.0",
+  "version": "26.2.1",
   "license": "MIT",
   "private": true,
   "type": "module",
