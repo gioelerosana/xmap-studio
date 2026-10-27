@@ -58,68 +58,6 @@ di come XMind li mostra.
   mirror di sicurezza in sola lettura del solo `main`, aggiornato a ogni push su
   `main` da `.github/workflows/mirror.yml`: non si pusha lì.
 
-## `TODO.md`: la direzione del lavoro
-
-[`TODO.md`](TODO.md), nella root, è il **backlog scritto dall'utente**: le
-feature, le correzioni e le idee che vuole nell'app, aggiunte man mano. È la
-fonte primaria di direzione per ogni sessione; la §"Visione" sopra dice in che
-spirito leggerlo.
-
-**Leggilo sempre a inizio sessione**, prima di pianificare, qualunque sia la
-richiesta.
-
-### Sessione senza indicazioni precise
-
-Se la sessione parte senza un compito specifico ("vai", "continua", "lavora
-sull'app", "cosa facciamo?", un prompt generico o vuoto), **il compito è
-`TODO.md`**:
-
-1. prendi le voci aperte (`- [ ]`) **dall'alto verso il basso**: l'ordine è la
-   priorità dell'utente. Salta una voce solo se dipende da un'altra ancora
-   aperta o se è bloccata (vedi sotto), e dillo;
-2. lavora su quante voci riesci a portare a "fatto" per davvero; meglio una
-   voce chiusa e verificata che tre a metà;
-3. non inventare lavoro fuori dalla lista: refactoring, pulizie o feature non
-   richieste non sostituiscono una voce aperta. Se lo noti, segnalalo nel
-   riepilogo;
-4. se non ci sono voci aperte, dillo e proponi i prossimi passi (da
-   coerenti con la §"Visione" o da quanto osservato), ma **non** iniziarli
-   senza un sì.
-
-### Sessione con un compito specifico
-
-Fai quello che chiede l'utente. Se corrisponde (anche in parte) a una voce di
-`TODO.md`, trattalo come quella voce e aggiornala alla chiusura. Se il compito
-contraddice una voce, segnalalo invece di scegliere da solo.
-
-### Interpretare una voce
-
-Le voci sono scritte di getto: leggile come intenzione, non come specifica.
-Scegli l'interpretazione più ragionevole e coerente con il resto dell'app e
-dichiarala nel riepilogo. **Chiedi prima** solo se la voce è davvero ambigua
-(interpretazioni che portano a lavoro molto diverso) o se realizzarla
-richiederebbe di violare una regola non negoziabile: le voci di `TODO.md` non
-prevalgono mai su quelle regole.
-
-### Come si aggiorna il file
-
-`TODO.md` è dell'utente. L'agente:
-
-- **spunta** una voce (`- [x]`) solo quando soddisfa la §"Definizione di
-  "fatto"", nello stesso commit della modifica che la chiude;
-- aggiunge in coda alla voce, tra parentesi, una nota breve su cosa è stato
-  fatto, come nelle voci già chiuse;
-- per una voce fatta solo in parte la lascia aperta, con una nota
-  `(parziale: …)` su cosa manca;
-- **non** riscrive, riordina né cancella le voci dell'utente e non ne aggiunge
-  di nuove senza che l'utente lo chieda: i seguiti emersi vanno nel riepilogo.
-
-È un file condiviso "caldo": lo tocca solo l'orchestratore, mai un
-sotto-agente.
-
-Nel riepilogo finale indica quali voci hai chiuso, quali restano aperte e
-perché.
-
 ## Regole non negoziabili
 
 Queste sono le invarianti del progetto. Una modifica che le viola è un bug, non
@@ -198,7 +136,7 @@ restano all'orchestratore (vedi sotto).
 2. **Compiti a file disgiunti.** Ogni sotto-agente riceve un insieme esplicito
    di file/cartelle che può toccare; due agenti in parallelo non modificano lo
    stesso file. File condivisi "caldi" (`package.json`, `pnpm-lock.yaml`,
-   `packages/core/src/index.ts`, `docs/`, `TODO.md`) li tocca solo
+   `packages/core/src/index.ts`, `docs/`) li tocca solo
    l'orchestratore.
 3. **Prompt autosufficienti.** Il sotto-agente parte senza contesto: indica
    obiettivo, file ammessi, contratto da rispettare, regole non negoziabili
@@ -256,9 +194,7 @@ Prima di considerare concluso un cambiamento:
 4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale che un
    file salvato dall'app si apra ancora in XMind senza errori (vedi
    [`docs/TESTING.md`](docs/TESTING.md)); non serve che appaia identico
-5. voce corrispondente di `TODO.md` spuntata, con nota (vedi §"`TODO.md`: la
-   direzione del lavoro")
-6. commit e push del branch, come in §"Chiusura di ogni task"
+5. commit e push del branch, come in §"Chiusura di ogni task"
 
 ### Chiusura di ogni task
 
@@ -268,8 +204,8 @@ Ogni task si chiude **sempre** così, senza aspettare che l'utente lo chieda:
 2. committa **tutte** le modifiche del working tree (Conventional Commits, vedi
    §"Git e GitHub"), divise in più commit se toccano argomenti distinti;
 3. `git push -u origin <branch>`;
-4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato, lo
-   stato di `TODO.md` (voci chiuse, voci ancora aperte) e il **titolo del PR**
+4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato e il
+   **titolo del PR**
    da usare, con la release che produrrà al merge (§"Versioni, tag e titolo dei
    PR").
 
@@ -357,7 +293,6 @@ xmap-studio/
 │   ├── release.yml               # build e GitHub Release di un tag vYY.MAJOR.MINOR
 │   └── mirror.yml                # copia di `main` su GitLab (mirror)
 ├── LICENSE                       # MIT
-├── TODO.md                       # backlog dell'utente: la direzione del lavoro
 ├── README.md                     # presentazione per l'utente (breve)
 ├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata

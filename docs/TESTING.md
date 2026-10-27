@@ -52,7 +52,7 @@ Aprendola in XMind controllare che:
 4. l'immagine sotto "Immagine ridimensionata" sia 240 × 180, il doppio del PNG
    originale (`image.width/height`).
 
-Se tutto torna, le voci corrispondenti di `TODO.md` si possono spuntare.
+Se tutto torna, la verifica è superata.
 
 ## Limiti noti della verifica
 
