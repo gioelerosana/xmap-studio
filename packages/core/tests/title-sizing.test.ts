@@ -106,7 +106,7 @@ describe('stima del titolo con run e formule', () => {
   });
 
   it('la scala delle formule segue la dimensione del testo', () => {
-    expect(inlineMathFontSize(12)).toBe(18);
-    expect(inlineMathFontSize(14)).toBe(21);
+    expect(inlineMathFontSize(12)).toBe(16.2);
+    expect(inlineMathFontSize(14)).toBe(18.9);
   });
 });

@@ -4,7 +4,7 @@
  * testo (`$…$`), alle equazioni del pulsante e alla stima del layout, così blocco e
  * formula combaciano e tutte le formule hanno la stessa dimensione.
  */
-export const INLINE_MATH_SCALE = 1.5;
+export const INLINE_MATH_SCALE = 1.35;
 
 /** Dimensione base del testo di un blocco: 14 px la radice, 12 px gli altri, salvo lo stile del testo. */
 export function titleBaseFontPx(depth: number, textStyle?: { fontSizePx?: number }): number {
