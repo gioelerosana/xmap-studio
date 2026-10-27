@@ -1,0 +1,1 @@
+class e{constructor(){throw new Error("Resvg is only available in Node/Desktop environments. The browser uses Canvas rasterization.")}render(){return{asPng:()=>new Uint8Array}}}const s={Resvg:e};export{e as Resvg,s as default};

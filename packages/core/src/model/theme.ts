@@ -67,7 +67,9 @@ function asBag(value: unknown): Bag | undefined {
 }
 
 function hexFrom(value: unknown): string | undefined {
-  return typeof value === 'string' && HEX_RE.test(value.trim()) ? value.trim() : undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return HEX_RE.test(trimmed) ? trimmed : undefined;
 }
 
 /** `14pt`, `14` o `14px` → pt; `0` è valido solo per gli spessori. */
@@ -99,7 +101,7 @@ function italicFrom(value: unknown): boolean | undefined {
 function prefixed<T extends string>(value: unknown, prefix: string, allowed: readonly T[]): T | undefined {
   if (typeof value !== 'string' || !value.startsWith(prefix)) return undefined;
   const name = value.slice(prefix.length);
-  return allowed.find((a) => a === name);
+  return (allowed as readonly string[]).includes(name) ? (name as T) : undefined;
 }
 
 /** Primo font della lista `fo:font-family`, senza virgolette. */
@@ -202,9 +204,6 @@ function setOrDelete(props: Bag, key: string, value: string | undefined): void {
   else props[key] = value;
 }
 
-const WEIGHT: Record<string, string> = { true: '700', false: '400' };
-const FONT_STYLE: Record<string, string> = { true: 'italic', false: 'normal' };
-
 function applyLevelPatch(props: Bag, patch: ThemeLevelPatch): void {
   if (patch.fill !== undefined) {
     if (patch.fill === null) {
@@ -229,10 +228,10 @@ function applyLevelPatch(props: Bag, patch: ThemeLevelPatch): void {
     );
   }
   if (patch.bold !== undefined) {
-    setOrDelete(props, 'fo:font-weight', patch.bold === null ? undefined : WEIGHT[String(patch.bold)]);
+    setOrDelete(props, 'fo:font-weight', patch.bold === null ? undefined : patch.bold ? '700' : '400');
   }
   if (patch.italic !== undefined) {
-    setOrDelete(props, 'fo:font-style', patch.italic === null ? undefined : FONT_STYLE[String(patch.italic)]);
+    setOrDelete(props, 'fo:font-style', patch.italic === null ? undefined : patch.italic ? 'italic' : 'normal');
   }
   if (patch.shape !== undefined) {
     if (patch.shape !== null && !TOPIC_SHAPES.includes(patch.shape)) throw new Error('Forma del blocco non valida');
@@ -261,19 +260,25 @@ export function setSheetTheme(sheet: Sheet, patch: ThemePatch): boolean {
   const draft: Sheet = { theme: sheet.theme === undefined ? undefined : JSON.parse(before) };
 
   if (patch.branchColors !== undefined || patch.background !== undefined) {
-    const map = ensureProperties(draft, 'map');
-    if (patch.branchColors !== undefined) {
-      if (patch.branchColors === null || patch.branchColors.length === 0) {
-        delete map['multi-line-colors'];
-        delete map['color-list'];
-      } else {
-        const list = patch.branchColors.map((c) => requireHex(c, 'Colore del ramo')).join(' ');
-        map['multi-line-colors'] = list;
-        map['color-list'] = list;
+    const mapExists = Boolean(asBag(asBag(draft.theme)?.map)?.properties);
+    const hasSetting =
+      (patch.branchColors !== undefined && patch.branchColors !== null && patch.branchColors.length > 0) ||
+      (patch.background !== undefined && patch.background !== null);
+    if (mapExists || hasSetting) {
+      const map = ensureProperties(draft, 'map');
+      if (patch.branchColors !== undefined) {
+        if (patch.branchColors === null || patch.branchColors.length === 0) {
+          delete map['multi-line-colors'];
+          delete map['color-list'];
+        } else {
+          const list = patch.branchColors.map((c) => requireHex(c, 'Colore del ramo')).join(' ');
+          map['multi-line-colors'] = list;
+          map['color-list'] = list;
+        }
       }
-    }
-    if (patch.background !== undefined) {
-      setOrDelete(map, 'svg:fill', patch.background === null ? undefined : requireHex(patch.background, 'Sfondo'));
+      if (patch.background !== undefined) {
+        setOrDelete(map, 'svg:fill', patch.background === null ? undefined : requireHex(patch.background, 'Sfondo'));
+      }
     }
   }
   THEME_LEVELS.forEach((level) => {

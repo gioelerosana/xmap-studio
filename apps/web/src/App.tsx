@@ -60,7 +60,7 @@ export const App: React.FC = () => {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Modalità Zen: solo la mappa, senza header, barra flottante e schede dei fogli. Non persiste.
+  // Modalità Zen: solo la mappa, senza header, barra flottante, controlli di navigazione e schede dei fogli. Non persiste.
   const [zenMode, setZenMode] = useState(false);
   const [editing, setEditing] = useState<MapEditing | null>(null);
   // Blocco aperto nell'editor LaTeX centrato; `undefined` = editor chiuso.
@@ -399,6 +399,7 @@ export const App: React.FC = () => {
                 resourceResolver={resolveResource}
                 // In stampa e nell'export immagine la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
                 darkMode={darkMode && !printModalOpen && !imageExportOpen}
+                zen={zen}
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
                 onMoveTopic={handleMove}
@@ -436,7 +437,7 @@ export const App: React.FC = () => {
                 <Button
                   size="xs"
                   variant="ghost-muted"
-                  className="absolute right-2 top-2 z-30 opacity-40 hover:opacity-100 focus-visible:opacity-100"
+                  className="absolute right-2 top-2 z-30 opacity-20 hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
                   title="Esci dalla modalità Zen (Esc, Ctrl+Alt+Z)"
                   onClick={() => setZenMode(false)}
                 >

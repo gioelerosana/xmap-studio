@@ -139,7 +139,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 | Ricerca / filtro nell'albero | sì | **Fatto**: barra di ricerca + filtri per tipo nella colonna sinistra | Media |
 | Apertura dal file manager | sì | **Fatto**: MIME `application/xmind` + `.desktop` con `Exec=… %f`, `HANDLES_OPEN`; una finestra per file | Media |
 | Temi / custom theme | sì | **Fatto** (Fase 8): editor "Tema del foglio…" (menu ⋮) per colori dei rami, sfondo e, per centrale/principali/sotto-blocchi, riempimento, colore e font del testo, forma, linea e spessore verso i figli; scrive in `sheet.theme` solo le chiavi modificate | Bassa |
-| ZEN mode (tutte le rese) | parziale | **Fatto** (Fase 8): "Modalità Zen" (menu ⋮, `Ctrl+Alt+Z`) nasconde header, barra flottante e schede dei fogli e lascia solo la mappa; si esce con Esc (a selezione vuota), `Ctrl+Alt+Z` o il pulsante "Esci da Zen". Solo UI, non persiste e non tocca il file | Bassa |
+| ZEN mode (tutte le rese) | parziale | **Fatto** (Fase 8): "Modalità Zen" (menu ⋮, `Ctrl+Alt+Z`) nasconde header, barra flottante, controlli di navigazione/zoom e schede dei fogli lasciando solo la tela; si esce con Esc (a selezione vuota), `Ctrl+Alt+Z` o il pulsante quasi trasparente "Esci da Zen". Solo UI, non persiste e non tocca il file | Bassa |
 | Set Password | sì | **Fuori scope**: cifratura ZIP, rompe atomicità e validazione | — |
 
 ### 3.6 Trappole trasversali (valide per tutte le fasi)

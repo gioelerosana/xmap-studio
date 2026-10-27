@@ -39,6 +39,7 @@ export const MapView: React.FC<MapViewProps> = ({
   onToggleCollapse,
   resourceResolver,
   darkMode = true,
+  zen = false,
   structure,
   onStructureChange,
   onMoveTopic,
@@ -276,17 +277,19 @@ export const MapView: React.FC<MapViewProps> = ({
         onClearSelection?.();
       }}
     >
-      {/* Controlli zoom flottanti in basso a destra */}
-      <ZoomControls
-        structure={structure}
-        onStructureChange={onStructureChange}
-        zoom={view.k}
-        onZoom={zoomByButton}
-        onFit={fitAnimated}
-      />
+      {/* Controlli zoom flottanti in basso a destra (nascosti in modalità Zen) */}
+      {!zen && (
+        <ZoomControls
+          structure={structure}
+          onStructureChange={onStructureChange}
+          zoom={view.k}
+          onZoom={zoomByButton}
+          onFit={fitAnimated}
+        />
+      )}
 
-      {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse) */}
-      {isCoarse && selectedNode && (
+      {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse), nascosta in modalità Zen */}
+      {!zen && isCoarse && selectedNode && (
         <div
           ref={toolbarRef}
           data-map-ui

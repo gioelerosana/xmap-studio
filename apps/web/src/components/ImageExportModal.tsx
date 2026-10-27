@@ -47,7 +47,11 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
   // La mappa si ridisegna in chiaro all'apertura (App.tsx): il clone per l'anteprima si
   // cattura dopo un breve intervallo, come nella stampa.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setPreviewHtml('');
+      setError(null);
+      return;
+    }
     setError(null);
     const capture = () => setPreviewHtml(getPrintableMapClone()?.innerHtml ?? '');
     capture();

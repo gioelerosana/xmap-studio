@@ -93,6 +93,9 @@ const COLOR_PROPS = [
   'text-decoration-color',
 ] as const;
 
+const ALL_COLOR_PROPS = [...SVG_COLOR_PROPS, ...COLOR_PROPS] as const;
+const CSS_FUNCTION_RE = /var\(|color-mix\(|oklch\(/;
+
 /** Valori che non cambiano il risultato se omessi. */
 const NEUTRAL_VALUES = new Set(['', 'none', 'normal', 'auto', '0px', 'visible', '1']);
 
@@ -138,7 +141,7 @@ function inlineComputedStyles(root: Element, resolveColor: (value: string) => st
       const keepZero = prop.startsWith('border-') && prop.endsWith('-width');
       if (keepZero ? value !== '' : !NEUTRAL_VALUES.has(value)) declarations.push(`${prop}:${value}`);
     }
-    const colorProps = el instanceof SVGElement ? [...SVG_COLOR_PROPS, ...COLOR_PROPS] : COLOR_PROPS;
+    const colorProps = el instanceof SVGElement ? ALL_COLOR_PROPS : COLOR_PROPS;
     for (const prop of colorProps) {
       const value = computed.getPropertyValue(prop).trim();
       if (value) declarations.push(`${prop}:${resolveColor(value)}`);
@@ -150,7 +153,7 @@ function inlineComputedStyles(root: Element, resolveColor: (value: string) => st
     }
     // Gli attributi di presentazione possono contenere var()/color-mix(): lo stile inline li sostituisce.
     for (const attr of ['fill', 'stroke', 'stop-color', 'color']) {
-      if (/var\(|color-mix\(|oklch\(/.test(el.getAttribute(attr) ?? '')) el.removeAttribute(attr);
+      if (CSS_FUNCTION_RE.test(el.getAttribute(attr) ?? '')) el.removeAttribute(attr);
     }
     el.setAttribute('style', declarations.join(';'));
   }
@@ -159,6 +162,7 @@ function inlineComputedStyles(root: Element, resolveColor: (value: string) => st
 interface ExportScene {
   bounds: WorldRect;
   contentXml: string;
+  defsXml?: string;
   background: string;
 }
 
@@ -183,12 +187,14 @@ function captureScene(layout: Layout | null): ExportScene {
   document.body.appendChild(host);
 
   try {
-    inlineComputedStyles(printable.clone, createColorResolver());
+    const resolveColor = createColorResolver();
+    inlineComputedStyles(printable.clone, resolveColor);
     const canvasColor = getComputedStyle(host).getPropertyValue('--map-canvas').trim() || '#ffffff';
-    const background = createColorResolver()(canvasColor);
+    const background = resolveColor(canvasColor);
     return {
       bounds,
       contentXml: new XMLSerializer().serializeToString(printable.clone),
+      defsXml: printable.defs ? new XMLSerializer().serializeToString(printable.defs) : undefined,
       background,
     };
   } finally {
@@ -226,6 +232,7 @@ export async function renderMapImage(options: MapImageOptions): Promise<MapImage
   const svgText = buildSvgDocument({
     bounds: scene.bounds,
     contentXml: scene.contentXml,
+    defsXml: scene.defsXml,
     background: transparent ? null : scene.background,
     title,
   });

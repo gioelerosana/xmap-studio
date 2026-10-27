@@ -1,0 +1,5 @@
+/home/ubuntu/xmap-studio/apps/android/build/classes/com/gioelerosana/xmapstudio/MainActivity.class
+/home/ubuntu/xmap-studio/apps/android/build/classes/com/gioelerosana/xmapstudio/MainActivity$Bridge.class
+/home/ubuntu/xmap-studio/apps/android/build/classes/com/gioelerosana/xmapstudio/MainActivity$1.class
+/home/ubuntu/xmap-studio/apps/android/build/classes/com/gioelerosana/xmapstudio/MainActivity$AppClient.class
+/home/ubuntu/xmap-studio/apps/android/build/classes/com/gioelerosana/xmapstudio/MainActivity$ChromeClient.class

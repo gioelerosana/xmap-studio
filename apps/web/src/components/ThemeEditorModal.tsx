@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   BRANCH_COLORS,
   BRANCH_LINES,
@@ -125,7 +125,7 @@ const BRANCH_PALETTE_PRESETS: readonly BranchPalettePreset[] = [
 
 /** Restituisce `choice` solo se è uno dei valori ammessi: niente cast sugli input del menu. */
 function choiceFromId<T extends string>(choices: readonly T[], id: string): T | undefined {
-  return choices.find((choice) => choice === id);
+  return (choices as readonly string[]).includes(id) ? (id as T) : undefined;
 }
 
 /** Il menu mostra il valore attuale anche se non è tra le opzioni standard. */
@@ -220,8 +220,17 @@ const ColorField: React.FC<ColorFieldProps> = ({
       setDraft(undefined);
       onCommitRef.current(input.value);
     };
+    const handleResetDraft = (): void => {
+      setDraft(undefined);
+    };
     input.addEventListener('change', handleChange);
-    return () => input.removeEventListener('change', handleChange);
+    input.addEventListener('cancel', handleResetDraft);
+    input.addEventListener('blur', handleResetDraft);
+    return () => {
+      input.removeEventListener('change', handleChange);
+      input.removeEventListener('cancel', handleResetDraft);
+      input.removeEventListener('blur', handleResetDraft);
+    };
   }, []);
 
   return (
@@ -293,10 +302,34 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
     applyPatch({ levels: { [level]: patch } });
   };
 
-  const sheetOptions: SelectOption[] = sheets.map((item, position) => ({
-    value: String(position),
-    label: item.title,
-  }));
+  const activePresetId = useMemo(
+    () => BRANCH_PALETTE_PRESETS.find((preset) => sameColors(palette, preset.colors))?.id,
+    [palette],
+  );
+
+  const sheetOptions: SelectOption[] = useMemo(
+    () =>
+      sheets.map((item, position) => ({
+        value: String(position),
+        label: item.title,
+      })),
+    [sheets],
+  );
+
+  const fontOptions = useMemo(
+    () => withCurrentOption(FONT_OPTIONS, style.fontFamily, (family) => family),
+    [style.fontFamily],
+  );
+
+  const sizeOptions = useMemo(
+    () => withCurrentOption(SIZE_OPTIONS, sizeKey, (value) => `${value} pt`),
+    [sizeKey],
+  );
+
+  const lineWidthOptions = useMemo(
+    () => withCurrentOption(LINE_WIDTH_OPTIONS, lineWidthKey, (value) => `${value} pt`),
+    [lineWidthKey],
+  );
 
   return (
     <Modal
@@ -343,7 +376,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                 <button
                   key={preset.id}
                   type="button"
-                  aria-pressed={sameColors(palette, preset.colors)}
+                  aria-pressed={preset.id === activePresetId}
                   onClick={() => applyPatch({ branchColors: [...preset.colors] })}
                   className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent aria-pressed:bg-accent"
                 >
@@ -418,7 +451,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
               <Field label="Font">
                 <Select
                   size="sm"
-                  options={withCurrentOption(FONT_OPTIONS, style.fontFamily, (family) => family)}
+                  options={fontOptions}
                   value={style.fontFamily ?? AUTO}
                   onChange={(event) =>
                     applyLevel({ fontFamily: event.target.value === AUTO ? null : event.target.value })
@@ -429,7 +462,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
               <Field label="Dimensione">
                 <Select
                   size="sm"
-                  options={withCurrentOption(SIZE_OPTIONS, sizeKey, (value) => `${value} pt`)}
+                  options={sizeOptions}
                   value={sizeKey ?? AUTO}
                   onChange={(event) =>
                     applyLevel({ fontSizePt: event.target.value === AUTO ? null : Number(event.target.value) })
@@ -483,7 +516,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
               <Field label="Spessore della linea">
                 <Select
                   size="sm"
-                  options={withCurrentOption(LINE_WIDTH_OPTIONS, lineWidthKey, (value) => `${value} pt`)}
+                  options={lineWidthOptions}
                   value={lineWidthKey ?? AUTO}
                   onChange={(event) =>
                     applyLevel({ lineWidthPt: event.target.value === AUTO ? null : Number(event.target.value) })

@@ -61,6 +61,8 @@ export interface MapViewProps {
   onToggleCollapse: (topicId: string) => void;
   resourceResolver: (src: string) => Uint8Array | null;
   darkMode?: boolean;
+  /** Modalità Zen: nasconde controlli di navigazione/zoom per mostrare solo la tela. */
+  zen?: boolean;
   structure: MapStructure;
   onStructureChange: (structure: MapStructure) => void;
   /** Rilascio di un blocco trascinato sulla mappa; stessa firma di `onMove` dell'albero. */

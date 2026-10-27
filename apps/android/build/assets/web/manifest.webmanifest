@@ -1,0 +1,23 @@
+{
+  "name": "XMap Studio",
+  "short_name": "XMap",
+  "description": "Modifica le mappe XMind e inserisci formule LaTeX native.",
+  "lang": "it",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#252525",
+  "theme_color": "#252525",
+  "icons": [
+    { "src": "/icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": { "application/vnd.xmind.workbook": [".xmind"] }
+    }
+  ]
+}
