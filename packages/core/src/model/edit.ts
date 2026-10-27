@@ -3,12 +3,14 @@ import {
   Boundary,
   CHILD_GROUPS,
   ChildGroup,
+  Notes,
   Relationship,
   Sheet,
   Summary,
   Topic,
 } from './types.js';
 import {
+  findTopic,
   formatRange,
   newTopicId,
   parseRange,
@@ -161,10 +163,11 @@ export function setNotes(topic: Topic, text: string): void {
     delete topic.notesDisplay;
     return;
   }
-  topic.notes = {
-    plain: { content: text },
-    realHTML: { content: notesHtml(text) },
-  };
+  // Aggiorna le parti testuali dell'oggetto esistente: le sue chiavi sconosciute restano.
+  const notes: Notes = topic.notes ?? {};
+  notes.plain = { ...notes.plain, content: text };
+  notes.realHTML = { ...notes.realHTML, content: notesHtml(text) };
+  topic.notes = notes;
 }
 
 export function setNotesDisplay(topic: Topic, display?: 'icon' | 'block' | null): void {
@@ -355,12 +358,19 @@ function removeOrphanSummaryRefs(topic: Topic, removedIds: Set<string>): void {
   }
 }
 
+interface DetachedTopic {
+  topic: Topic;
+  sheetIndex: number;
+  group: ChildGroup;
+}
+
 /**
- * Stacca e restituisce il topic specificato (insieme ai suoi discendenti).
- * La radice di una sheet non è eliminabile (restituisce undefined).
+ * Stacca il blocco `id` dal suo genitore, aggiornando i range del genitore, ma non tocca
+ * relazioni né riferimenti: ci pensa chi chiama. Restituisce `undefined` se non lo trova
+ * (o se è la radice).
  */
-export function removeTopic(sheets: Sheet[], id: string): Topic | undefined {
-  for (const sheet of sheets) {
+function detachTopic(sheets: Sheet[], id: string): DetachedTopic | undefined {
+  for (const [sheetIndex, sheet] of sheets.entries()) {
     if (!sheet.rootTopic || sheet.rootTopic.id === id) {
       continue;
     }
@@ -376,25 +386,42 @@ export function removeTopic(sheets: Sheet[], id: string): Topic | undefined {
     if (!list || last.index >= list.length) {
       return undefined;
     }
-    const [removed] = list.splice(last.index, 1);
+    const [topic] = list.splice(last.index, 1);
     if (list.length === 0) {
       delete parent.children?.[last.group];
     }
-
-    // Raccoglie tutti gli ID rimossi
-    const removedIds = new Set<string>();
-    walkTopic(removed, (t) => {
-      if (t.id) removedIds.add(t.id);
-    });
-
-    pruneRelationships(sheet, removedIds);
-
-    if (sheet.rootTopic) {
-      removeOrphanSummaryRefs(sheet.rootTopic, removedIds);
-    }
-    return removed;
+    return { topic, sheetIndex, group: last.group };
   }
   return undefined;
+}
+
+/** Id del blocco e di tutti i suoi discendenti. */
+function collectTopicIds(topic: Topic): Set<string> {
+  const ids = new Set<string>();
+  walkTopic(topic, (t) => {
+    if (t.id) ids.add(t.id);
+  });
+  return ids;
+}
+
+/**
+ * Stacca e restituisce il topic specificato (insieme ai suoi discendenti).
+ * La radice di una sheet non è eliminabile (restituisce undefined).
+ */
+export function removeTopic(sheets: Sheet[], id: string): Topic | undefined {
+  const detached = detachTopic(sheets, id);
+  if (!detached) {
+    return undefined;
+  }
+  const sheet = sheets[detached.sheetIndex];
+  const removedIds = collectTopicIds(detached.topic);
+
+  pruneRelationships(sheet, removedIds);
+
+  if (sheet.rootTopic) {
+    removeOrphanSummaryRefs(sheet.rootTopic, removedIds);
+  }
+  return detached.topic;
 }
 
 /** Rimuove le relazioni che hanno un estremo tra gli ID dati. */
@@ -526,6 +553,35 @@ export class MoveError extends XmapError {
   }
 }
 
+/**
+ * Riordino fra fratelli dello stesso gruppo: i range di bordi e sommari sono
+ * posizionali e restano com'erano, così nessuno si svuota (staccando e
+ * reinserendo, un bordo sul solo blocco spostato verrebbe eliminato).
+ * Restituisce `false` se i due blocchi non sono fratelli.
+ */
+function reorderSiblings(sheets: Sheet[], id: string, targetId: string, placement: 'before' | 'after'): boolean {
+  for (const sheet of sheets) {
+    if (!sheet.rootTopic) continue;
+    const sourcePath: PathItem[] = [];
+    if (!findPath(sheet.rootTopic, id, sourcePath)) continue;
+    const targetPath: PathItem[] = [];
+    if (!findPath(sheet.rootTopic, targetId, targetPath)) return false;
+    const from = sourcePath[sourcePath.length - 1];
+    const to = targetPath[targetPath.length - 1];
+    if (!from || !to || from.group !== to.group || sourcePath.length !== targetPath.length) return false;
+    const sourceParent = descend(sheet.rootTopic, sourcePath.slice(0, -1));
+    const targetParent = descend(sheet.rootTopic, targetPath.slice(0, -1));
+    const list = sourceParent.children?.[from.group];
+    if (sourceParent !== targetParent || !list) return false;
+    const [moved] = list.splice(from.index, 1);
+    let insertIdx = placement === 'after' ? to.index + 1 : to.index;
+    if (from.index < insertIdx) insertIdx--;
+    list.splice(insertIdx, 0, moved);
+    return true;
+  }
+  return false;
+}
+
 export function moveTopic(
   sheets: Sheet[],
   id: string,
@@ -583,44 +639,53 @@ export function moveTopic(
     throw new MoveError('no_siblings', 'La radice non ha fratelli con cui riordinarsi.');
   }
 
-  // Stacca il topic sorgente
-  const detached = removeTopic(sheets, id);
-  if (!detached) {
+  if ((placement === 'before' || placement === 'after') && reorderSiblings(sheets, id, targetId, placement)) {
+    return;
+  }
+
+  // Stacca il sorgente senza toccare relazioni: sono lo stesso foglio o vanno potate sotto.
+  const source = detachTopic(sheets, id);
+  if (!source) {
     throw new MoveError('not_found', 'Impossibile staccare il blocco da spostare.');
+  }
+  const detached = source.topic;
+  if (sheetIndexOf(sheets, targetId) !== source.sheetIndex) {
+    // Le relazioni non attraversano i fogli: quelle che toccano il sottoalbero si perdono.
+    pruneRelationships(sheets[source.sheetIndex], collectTopicIds(detached));
   }
 
   if (placement === 'into') {
-    for (const sheet of sheets) {
-      if (sheet.rootTopic) {
-        let target: Topic | undefined;
-        walkTopic(sheet.rootTopic, (t) => {
-          if (t.id === targetId) target = t;
-        });
-        if (target) {
-          if (!target.children) target.children = {};
-          if (!target.children.attached) target.children.attached = [];
-          target.children.attached.push(detached);
-          return;
-        }
-      }
+    const target = findTopic(sheets, targetId);
+    if (!target) {
+      throw new MoveError('not_found', 'Blocco bersaglio non trovato.');
     }
-  } else {
-    // Inserisci prima o dopo target
-    for (const sheet of sheets) {
-      if (!sheet.rootTopic) continue;
-      const path: PathItem[] = [];
-      if (findPath(sheet.rootTopic, targetId, path)) {
-        const last = path[path.length - 1];
-        const parent = descend(sheet.rootTopic, path.slice(0, -1));
-        const list = parent.children?.[last.group];
-        if (list) {
-          const insertIdx = placement === 'after' ? last.index + 1 : last.index;
-          list.splice(insertIdx, 0, detached);
-          return;
-        }
-      }
-    }
+    if (!target.children) target.children = {};
+    if (!target.children.attached) target.children.attached = [];
+    // Il figlio va in coda: gli indici dei figli esistenti non cambiano, nessun range da spostare.
+    target.children.attached.push(detached);
+    return;
   }
+
+  // Inserisci prima o dopo target
+  for (const sheet of sheets) {
+    if (!sheet.rootTopic) continue;
+    const path: PathItem[] = [];
+    if (!findPath(sheet.rootTopic, targetId, path)) continue;
+    const last = path[path.length - 1];
+    const parent = descend(sheet.rootTopic, path.slice(0, -1));
+    const list = parent.children?.[last.group];
+    if (!list) {
+      throw new MoveError('not_found', 'Blocco bersaglio non trovato.');
+    }
+    const insertIdx = placement === 'after' ? last.index + 1 : last.index;
+    list.splice(insertIdx, 0, detached);
+    // I range di bordi e sommari indicizzano i figli `attached`: vanno spostati se l'inserimento li precede.
+    if (last.group === 'attached') {
+      shiftRangesOnInsert(parent, insertIdx);
+    }
+    return;
+  }
+  throw new MoveError('not_found', 'Blocco bersaglio non trovato.');
 }
 
 export function addRelationship(
