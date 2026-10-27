@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { Minus, Plus, X } from 'lucide-react';
 import { Button, IconButton, Input, Kbd, KbdGroup, SegmentedControl, cn } from '@xmap/ui-kit';
 
 import { INK_COLORS, TITLE_MODE_ITEMS } from './constants.js';
@@ -8,7 +8,7 @@ import { LatexPreview } from './LatexPreview.js';
 import { SuggestionList } from './SuggestionList.js';
 import { SymbolPalette } from './SymbolPalette.js';
 import type { LatexEditorModalProps } from './types.js';
-import { useEquationDraft } from './useEquationDraft.js';
+import { SCALE_MAX, SCALE_MIN, SCALE_STEP, clampScale, useEquationDraft } from './useEquationDraft.js';
 import { useLatexEditor } from './useLatexEditor.js';
 
 const FOCUSABLE_SELECTOR =
@@ -46,6 +46,8 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
     setCustomTitle,
     inkColor,
     setInkColor,
+    scalePercent,
+    setScalePercent,
     preview,
     applying,
     handleApplyEquation,
@@ -221,6 +223,42 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
                     onChange={(event) => setCustomTitle(event.target.value)}
                   />
                 )}
+                <div className="flex items-center gap-2" role="group" aria-label="Dimensione della formula">
+                  <span className="text-2xs font-medium text-muted-foreground">Dimensione</span>
+                  <IconButton
+                    label="Riduci dimensione"
+                    size="sm"
+                    disabled={scalePercent <= SCALE_MIN}
+                    onClick={() => setScalePercent(clampScale(scalePercent - SCALE_STEP))}
+                  >
+                    <Minus />
+                  </IconButton>
+                  <Input
+                    size="sm"
+                    type="number"
+                    inputMode="numeric"
+                    aria-label="Dimensione in percentuale"
+                    className="w-16 text-center"
+                    min={SCALE_MIN}
+                    max={SCALE_MAX}
+                    step={SCALE_STEP}
+                    value={scalePercent}
+                    onChange={(event) => {
+                      const next = event.target.valueAsNumber;
+                      if (Number.isFinite(next)) setScalePercent(Math.min(SCALE_MAX, Math.max(1, Math.round(next))));
+                    }}
+                    onBlur={() => setScalePercent(clampScale(scalePercent))}
+                  />
+                  <span className="text-2xs text-muted-foreground">%</span>
+                  <IconButton
+                    label="Aumenta dimensione"
+                    size="sm"
+                    disabled={scalePercent >= SCALE_MAX}
+                    onClick={() => setScalePercent(clampScale(scalePercent + SCALE_STEP))}
+                  >
+                    <Plus />
+                  </IconButton>
+                </div>
                 <div className="flex items-center gap-2" role="group" aria-label="Colore inchiostro">
                   <span className="text-2xs font-medium text-muted-foreground">Colore</span>
                   {INK_COLORS.map((color) => (

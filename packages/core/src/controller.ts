@@ -226,6 +226,8 @@ export class AppController {
       titleMode?: TitleMode;
       fontSizePx?: number;
       color?: string;
+      /** Fattore di ingrandimento della formula rispetto alla dimensione del testo (1 = normale). */
+      scale?: number;
     } = {}
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
@@ -235,7 +237,8 @@ export class AppController {
     }
 
     const fontPx = options.fontSizePx ?? fontSizePx(topic);
-    const emPx = fontPx ? fontPx * 1.25 : 23.33;
+    const scale = options.scale !== undefined && options.scale > 0 ? options.scale : 1;
+    const emPx = (fontPx ? fontPx * 1.25 : 23.33) * scale;
 
     const { outcome, png } = await applyEquation(topic, latex, {
       emPx,

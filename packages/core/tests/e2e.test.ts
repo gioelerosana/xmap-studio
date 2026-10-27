@@ -145,3 +145,20 @@ describe('XMap Studio Core - Lossless Round-Trip & Invariants', () => {
     expect(root.x).toBe(20);
   });
 });
+
+describe('Dimensione dell\'equazione', () => {
+  it('scala la formula con l\'opzione scale', async () => {
+    const buffer = fs.readFileSync(DEMO_FILE);
+    const controller = new AppController();
+    await controller.open(buffer, DEMO_FILE);
+    const id = controller.workbook()!.sheets[0].topics[1].id;
+
+    const normal = await controller.apply(id, 'x^2+y^2');
+    const base = normal.sheets[0].topics.find((t) => t.id === id)!;
+    const big = await controller.apply(id, 'x^2+y^2', { scale: 1.5 });
+    const scaled = big.sheets[0].topics.find((t) => t.id === id)!;
+
+    expect(scaled.imageW! / base.imageW!).toBeGreaterThan(1.4);
+    expect(scaled.imageW! / base.imageW!).toBeLessThan(1.6);
+  });
+});
