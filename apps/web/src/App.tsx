@@ -7,6 +7,7 @@ import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
 import { LatexEditorModal } from './components/latex/LatexEditorModal.js';
 import { ExportModal } from './components/ExportModal.js';
 import { PrintModal } from './components/PrintModal.js';
+import { ImageExportModal } from './components/ImageExportModal.js';
 import { ThemeEditorModal } from './components/ThemeEditorModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
@@ -54,6 +55,7 @@ export const App: React.FC = () => {
 
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [imageExportOpen, setImageExportOpen] = useState(false);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -302,6 +304,7 @@ export const App: React.FC = () => {
       onSaveAs: handleSaveAs,
       onExport: () => setExportModalOpen(true),
       onPrint: () => setPrintModalOpen(true),
+      onExportImage: () => setImageExportOpen(true),
       onEditTheme: () => setThemeModalOpen(true),
       onZen: () => setZenMode(true),
       onImport: () => setImportModalOpen(true),
@@ -394,8 +397,8 @@ export const App: React.FC = () => {
                 onCancelEdit={() => setEditing(null)}
                 onToggleCollapse={handleToggleCollapse}
                 resourceResolver={resolveResource}
-                // In stampa la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
-                darkMode={darkMode && !printModalOpen}
+                // In stampa e nell'export immagine la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
+                darkMode={darkMode && !printModalOpen && !imageExportOpen}
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
                 onMoveTopic={handleMove}
@@ -486,6 +489,13 @@ export const App: React.FC = () => {
         onClose={() => setPrintModalOpen(false)}
         layout={currentLayout}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+      />
+      <ImageExportModal
+        isOpen={imageExportOpen}
+        onClose={() => setImageExportOpen(false)}
+        layout={currentLayout}
+        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+        onSaved={(message) => addToast('success', message)}
       />
       <ThemeEditorModal
         isOpen={themeModalOpen && workbook !== null}

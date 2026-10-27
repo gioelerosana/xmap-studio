@@ -122,9 +122,9 @@ non toccano lo schema: leggiamo il modello già in memoria.
 
 | Feature | Lock Free | Stato | Priorità |
 |---|---|---|---|
-| Export SVG | sì | Rinviato: l'anteprima grafica (Fase 6) disegna il layout, ma l'export SVG su file resta da fare | Media |
+| Export SVG | sì | **Fatto**: "Esporta immagine PNG / SVG…" (`ImageExportModal`, `export/mapImage.ts`) clona la mappa in tema chiaro, risolve gli stili calcolati (`var()`/`oklch` → rgb) e compone un SVG autonomo con `buildSvgDocument` (core); i caratteri restano per nome | Media |
 | Export Markdown / OPML | sì | **Fatto** (Fase 2): `exporters/markdown.ts`, `exporters/opml.ts`, un `#` per sheet, `$latex$`/note/etichette; OPML con `_note`/`_equation`/`_labels` | **Alta** |
-| Export PNG senza watermark | watermark in Free | Fattibile (il layout della Fase 6 è la base) | Media |
+| Export PNG senza watermark | watermark in Free | **Fatto**: stesso SVG rasterizzato su canvas a 1×/2×/3× (`computeRasterSize` limita lato 8192 px e 64 Mpx), sfondo opaco o trasparente, nessuna dipendenza | Media |
 | Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `exporters/import.ts`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
 | Merge di file `.xmind` | sì | **Fatto** (Fase 2): `AppController.mergeWorkbook`, sheet accodate con id riassegnati | Media |
 | Split mappa per ramo principale | sì | **Fatto** (Fase 2): `AppController.splitTopic`, ramo → mappa autonoma validata | Bassa |
@@ -218,7 +218,7 @@ dipendenze), `ExportModal`/`ImportModal` in `apps/web`.
 `$…$` native), **merge** di file `.xmind` (sheet accodate con id e riferimenti
 riassegnati, risorse e allegati copiati) e **split** di un ramo in una mappa
 autonoma validata. L'**export SVG della mappa** e il **PNG senza watermark**
-usano il layout della Fase 6 e restano da completare come export su file.
+sono fatti ("Esporta immagine PNG / SVG…", dal DOM della mappa in tema chiaro).
 
 ### Fase 3 — Struttura visibile
 **Feature:** Relationship, Boundary, Summary, callout e floating topic con
@@ -272,7 +272,7 @@ nulla in XMind e ha complessità di layout alta.
 **Stato:** **fatto** in versione base: `layout/layout.ts` calcola il tidy tree
 (orizzontale) in modo puro, `MapView` disegna nodi e connettori, colore del
 ramo incluso. Restano marker,
-relazioni/archi curvi e l'export SVG su file.
+relazioni/archi curvi (l'export SVG/PNG su file è fatto).
 
 ### Fase 7 — Vista mappa ad albero (la feature centrale)
 **Idea:** promuovere la resa grafica a **vista primaria** dell'app: albero
@@ -332,7 +332,7 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Outliner, presentazione (Pitch), focus su un ramo | 🟡 | outliner sì |
 | Export | Markdown, OPML, testo | ✅ | |
 | | Stampa e PDF della mappa (A4/A3, più pagine) | ✅ | anteprima delle pagine, sempre in tema chiaro; PDF solo nel desktop |
-| | PNG/SVG della mappa | ⬜ | |
+| | PNG/SVG della mappa | ✅ | sempre in tema chiaro, sfondo opaco o trasparente, PNG a 1×/2×/3×; riapertura in XMind non applicabile (non scrive nel `.xmind`) |
 
 **Ordine di attacco:** prima ciò che rende la mappa leggibile come in XMind
 (stile testo, relazioni, boundary, linee del tema), poi l'editing diretto sulla
@@ -399,7 +399,7 @@ l'arrivo di nuove feature:
 6. **Fase 4 — media**: fatta la parte allegati; Audio Notes fuori scope.
 7. **Fase 5 — produttività**: fatto task, outliner, ricerca/filtro, colore del
    ramo; temi/rich text da fare.
-8. **Fase 6 — anteprima grafica**: fatta in versione base; export SVG su file e
+8. **Fase 6 — anteprima grafica**: fatta in versione base; export SVG/PNG su file fatto,
    resa di marker/relazioni da completare.
 9. **Fase 7 — vista mappa ad albero**: completata! Piano in
    [`MAP-VIEW.md`](MAP-VIEW.md). Layout ad albero puro (`packages/core/src/layout/`), vista interattiva

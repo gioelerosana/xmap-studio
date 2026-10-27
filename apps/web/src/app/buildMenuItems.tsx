@@ -17,6 +17,7 @@ import {
   Trash2,
   Info,
   Printer,
+  Image as ImageIcon,
   Palette,
   Maximize2,
 } from 'lucide-react';
@@ -39,6 +40,7 @@ export interface MenuActions {
   onSaveAs: () => void;
   onExport: () => void;
   onPrint: () => void;
+  onExportImage: () => void;
   onEditTheme: () => void;
   onZen: () => void;
   onImport: () => void;
@@ -86,6 +88,7 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
     ...overflowItems,
     { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', separatorBefore: overflowItems.length > 0, onSelect: actions.onSaveAs },
     { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: actions.onExport },
+    { id: 'export-image', label: 'Esporta immagine PNG / SVG…', icon: <ImageIcon className="size-4" />, onSelect: actions.onExportImage },
     { id: 'zen', label: 'Modalità Zen', icon: <Maximize2 className="size-4" />, shortcut: 'Ctrl+Alt+Z', onSelect: actions.onZen },
     { id: 'print', label: 'Stampa…', icon: <Printer className="size-4" />, shortcut: 'Ctrl+P', onSelect: actions.onPrint },
     { id: 'sheet-theme', label: 'Tema del foglio…', icon: <Palette className="size-4" />, onSelect: actions.onEditTheme },
