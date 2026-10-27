@@ -8,7 +8,7 @@
 
 _pkgname=xmap-studio
 pkgname=$_pkgname-git
-pkgver=26.1.0.r231.g0246755
+pkgver=26.2.0.r251.g773b086
 pkgrel=1
 pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato (development build)'
 url='https://github.com/gioelerosana/xmap-studio'
