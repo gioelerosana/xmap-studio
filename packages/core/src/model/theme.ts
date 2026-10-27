@@ -53,8 +53,8 @@ const MEASURE_RE = /^\s*([0-9]*\.?[0-9]+)\s*(pt|px)?\s*$/i;
 const QUOTES_RE = /^["']|["']$/g;
 /** Separatore della lista di colori: in `"#FF6B6B #FF9F69"` divide sugli spazi. */
 const SPACES_RE = /\s+/;
-/** Peso da cui un font conta come grassetto (XMind usa 600 per i rami principali). */
-const BOLD_MIN_WEIGHT = 600;
+/** Peso da cui un font conta come grassetto: il 600 dei rami principali (semi-grassetto) resta normale. */
+const BOLD_MIN_WEIGHT = 700;
 /** Rapporto px → pt (1pt = 4/3 px). */
 const PT_PER_PX = 3 / 4;
 /** Dimensioni e spessori si scrivono arrotondati al decimo di pt. */

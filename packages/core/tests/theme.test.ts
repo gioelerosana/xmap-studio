@@ -89,7 +89,7 @@ describe('Tema del foglio: lettura', () => {
       lineWidthPt: 3,
     });
     // `inherited` non è un valore: il livello resta al default della vista.
-    expect(theme.levels.main).toEqual({ fontSizePt: 18, bold: true });
+    expect(theme.levels.main).toEqual({ fontSizePt: 18, bold: false });
     expect(theme.levels.sub).toEqual({ fontSizePt: 14, bold: false, lineWidthPt: 2 });
   });
 
@@ -204,12 +204,12 @@ describe('Tema del foglio: vista e round-trip', () => {
     const node = (id: string) => layout.nodes.find((n) => n.id === id);
     expect(node('a')?.accent).toBe('#FF6B6B');
     expect(node('b')?.accent).toBe('#FF9F69');
-    // 36pt = 48px; il blocco ne tiene conto.
-    expect(node('r')?.textStyle).toEqual({ fontSizePx: 48, bold: true });
+    // 36pt = 36px; il blocco ne tiene conto.
+    expect(node('r')?.textStyle).toEqual({ fontSizePx: 36, bold: true });
     expect(node('r')?.fontFamily).toBe('Nunito');
     expect(node('r')?.branchLine).toBe('roundedElbow');
     expect(node('r')?.branchLineWidth).toBe(4);
-    expect(node('a1')?.textStyle).toEqual({ fontSizePx: 14 * (4 / 3), bold: false });
+    expect(node('a1')?.textStyle).toEqual({ fontSizePx: 14, bold: false });
     expect(node('r')!.h).toBeGreaterThan(node('a')!.h);
   });
 
