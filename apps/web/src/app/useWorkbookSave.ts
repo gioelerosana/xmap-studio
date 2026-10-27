@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
 import { sha256HexAsync, type AppController, type WorkbookDto } from '@xmap/core';
 import { saveLocalXmindFile, confirmForceSave } from '../adapters/fileSystem.js';
 import type { AddToast } from './useToasts.js';
@@ -26,12 +26,16 @@ export function useWorkbookSave({
   refreshState,
   addToast,
 }: WorkbookSaveOptions) {
+  // Un salvataggio alla volta: due scritture sovrapposte dello stesso file
+  // supererebbero entrambe il controllo dell'hash.
+  const savingRef = useRef(false);
   const writeWorkbook = useCallback(
     async (force: boolean, saveAs: boolean): Promise<boolean> => {
-      if (!workbook) return false;
+      if (!workbook || savingRef.current) return false;
+      savingRef.current = true;
       setBusy(true);
       try {
-        const { bytes, validation } = await controller.prepareArchiveBytes();
+        const { bytes, validation, revision } = await controller.prepareArchiveBytes();
         const hasDesktopPath = isElectron && workbook.path !== null;
         const expectedHash =
           !saveAs && (hasDesktopPath || Boolean(fileHandle))
@@ -50,33 +54,34 @@ export function useWorkbookSave({
             if (!selected) return false;
             savePath = selected;
           }
-          const payload = Array.from(bytes);
-          let outcome = await window.electronAPI.saveAtomic(savePath, payload, { expectedHash, force });
+          let outcome = await window.electronAPI.saveAtomic(savePath, bytes, { expectedHash, force });
           if (!outcome.ok && outcome.code === 'xmind_running') {
             if (!confirmForceSave(outcome.processes ?? [])) {
               addToast('warning', 'Salvataggio annullato.');
               return false;
             }
-            outcome = await window.electronAPI.saveAtomic(savePath, payload, { expectedHash, force: true });
+            outcome = await window.electronAPI.saveAtomic(savePath, bytes, { expectedHash, force: true });
           }
           if (!outcome.ok) {
             addToast('error', `Errore durante il salvataggio: ${outcome.message}`);
             return false;
           }
-          controller.markSaved(savePath, contentHash);
+          controller.markSaved(savePath, contentHash, revision);
           refreshState();
           addToast('success', `Salvato (${bytes.length.toLocaleString('it-IT')} byte)`);
           return true;
         }
 
-        const handle = await saveLocalXmindFile(
+        const written = await saveLocalXmindFile(
           bytes,
           suggestedName,
           saveAs ? undefined : fileHandle,
           expectedHash
         );
-        if (handle) setFileHandle(handle);
-        controller.markSaved(undefined, contentHash);
+        // Dialogo annullato: niente è stato scritto, la mappa resta da salvare.
+        if (!written) return false;
+        if (written.handle) setFileHandle(written.handle);
+        controller.markSaved(undefined, contentHash, revision);
         refreshState();
         addToast('success', `Mappa salvata (${validation.resourceRefs} risorse registrate)`);
         return true;
@@ -84,6 +89,7 @@ export function useWorkbookSave({
         addToast('error', `Errore durante il salvataggio: ${err.message}`);
         return false;
       } finally {
+        savingRef.current = false;
         setBusy(false);
       }
     },

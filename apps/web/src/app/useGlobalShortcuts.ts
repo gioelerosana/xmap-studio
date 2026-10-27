@@ -45,9 +45,13 @@ export function useGlobalShortcuts({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (!mod) return;
+      if (!mod || e.defaultPrevented || e.isComposing) return;
       const key = e.key.toLowerCase();
       const inField = (e.target as Element | null)?.closest?.(TEXT_FIELD);
+      // Con un dialogo aperto (editor LaTeX, conferme, …) le azioni sulla mappa
+      // sotto di lui non partono: valgono solo salvataggio, impostazioni e Zen.
+      const inDialog = document.querySelector('[role="dialog"]') !== null;
+      if (inDialog && !(key === 's' || key === ',' || (e.altKey && e.code === 'KeyZ'))) return;
       // Ctrl+Alt+Z: modalità Zen (prima di Ctrl+Z, che è l'annulla).
       if (e.altKey && (key === 'z' || e.code === 'KeyZ')) {
         e.preventDefault();

@@ -27,14 +27,11 @@ export function useMapShortcuts({
       if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
 
       const key = e.key.toLowerCase();
+      // Ctrl+] (sommario) è una scorciatoia globale (useGlobalShortcuts): gestirla
+      // anche qui creava due sommari con un solo tasto.
       if (e.shiftKey && key === 'l') {
         e.preventDefault();
         handlers.current.onOpenLatex(selectedTopicId);
-      } else if (key === ']' || e.code === 'BracketRight') {
-        if (handlers.current.onAddSummary) {
-          e.preventDefault();
-          handlers.current.onAddSummary();
-        }
       }
     };
     window.addEventListener('keydown', onKey);
