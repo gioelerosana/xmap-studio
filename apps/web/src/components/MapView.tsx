@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { titleBaseFontPx, type Layout, type LayoutNode } from '@xmap/core';
 import { Braces, CornerDownLeft, Edit3, Network, Plus, Trash2 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
@@ -134,6 +134,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!effectiveLayout || !editing) return null;
     return effectiveLayout.nodes.find((n) => n.id === editing.id) || null;
   }, [effectiveLayout, editing]);
+  const editingId = editing?.id;
 
   useRevealNode({ viewport, editing, editingNode });
   useMapShortcuts({ selectedTopicId, editing, handlers });
@@ -148,6 +149,36 @@ export const MapView: React.FC<MapViewProps> = ({
   const resourceUrls = useMemo(() => buildResourceUrls(layout, resourceResolver), [layout, resourceResolver]);
   const formulaSvgCache = useMemo(() => buildFormulaSvgCache(layout, darkMode), [layout, darkMode]);
 
+  // Callback stabili (solo ref e setter): i NodeCard memoizzati non si ri-renderizzano a ogni cambio di selezione.
+  const selectNode = useCallback((node: LayoutNode, e: React.MouseEvent<SVGGElement>) => {
+    e.stopPropagation();
+    if (handlers.current.isConnectingRelationship) {
+      handlers.current.onConnectRelationshipTarget?.(node.id);
+      return;
+    }
+    setSelectedRelationshipId(undefined);
+    const isMulti = e.shiftKey || e.ctrlKey || e.metaKey;
+    handlers.current.onSelectTopic(
+      node.id,
+      isMulti ? { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey } : undefined
+    );
+  }, []);
+  const activateNode = useCallback((node: LayoutNode, e: React.MouseEvent<SVGGElement>) => {
+    e.stopPropagation();
+    // I blocchi di testo si modificano in place (anche su touch), le formule nell'editor LaTeX.
+    if (editingRef.current?.id === node.id) return;
+    if (node.kind === 'text' && handlers.current.onStartEdit) {
+      handlers.current.onStartEdit(node.id);
+    } else if (node.kind === 'equation') {
+      handlers.current.onOpenLatex(node.id);
+    }
+  }, []);
+  const toggleCollapse = useCallback((topicId: string) => handlers.current.onToggleCollapse(topicId), []);
+  const resetWidth = useCallback(
+    (topicId: string) => handlers.current.onResizeTopicWidth?.(topicId, null),
+    []
+  );
+
   // Contenuto pesante dell'SVG: dipende solo da layout/selezione/tema, non da zoom
   // e pan, così durante i gesti React non lo ricostruisce.
   const content = useMemo(() => {
@@ -155,30 +186,6 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!l) return null;
     const selectedSet = new Set(selectedTopicIds && selectedTopicIds.length > 0 ? selectedTopicIds : []);
     if (selectedTopicId) selectedSet.add(selectedTopicId);
-
-    const selectNode = (node: LayoutNode, e: React.MouseEvent<SVGGElement>) => {
-      e.stopPropagation();
-      if (handlers.current.isConnectingRelationship) {
-        handlers.current.onConnectRelationshipTarget?.(node.id);
-        return;
-      }
-      setSelectedRelationshipId(undefined);
-      const isMulti = e.shiftKey || e.ctrlKey || e.metaKey;
-      handlers.current.onSelectTopic(
-        node.id,
-        isMulti ? { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey } : undefined
-      );
-    };
-    const activateNode = (node: LayoutNode, e: React.MouseEvent<SVGGElement>) => {
-      e.stopPropagation();
-      // I blocchi di testo si modificano in place (anche su touch), le formule nell'editor LaTeX.
-      if (editingRef.current?.id === node.id) return;
-      if (node.kind === 'text' && handlers.current.onStartEdit) {
-        handlers.current.onStartEdit(node.id);
-      } else if (node.kind === 'equation') {
-        handlers.current.onOpenLatex(node.id);
-      }
-    };
 
     return (
       <>
@@ -215,14 +222,14 @@ export const MapView: React.FC<MapViewProps> = ({
             look={nodeLook(node, darkMode)}
             isSelected={selectedSet.has(node.id)}
             isPrimary={node.id === selectedTopicId}
-            isEditing={editingRef.current?.id === node.id}
+            isEditing={editingId === node.id}
             formulaSvg={formulaSvgCache.get(node.id)}
             imageUrl={node.imageSrc ? resourceUrls.get(node.imageSrc) : undefined}
             isCoarse={isCoarse}
             onSelect={selectNode}
             onActivate={activateNode}
-            onToggleCollapse={(topicId) => handlers.current.onToggleCollapse(topicId)}
-            onResetWidth={(topicId) => handlers.current.onResizeTopicWidth?.(topicId, null)}
+            onToggleCollapse={toggleCollapse}
+            onResetWidth={resetWidth}
             onStartResize={startResize}
           />
         ))}
@@ -244,7 +251,7 @@ export const MapView: React.FC<MapViewProps> = ({
         </g>
       </>
     );
-  }, [effectiveLayout, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld, isCoarse, startResize]);
+  }, [effectiveLayout, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld, isCoarse, startResize, selectNode, activateNode, toggleCollapse, resetWidth, editingId]);
 
   if (!layout || layout.nodes.length === 0) {
     return (
