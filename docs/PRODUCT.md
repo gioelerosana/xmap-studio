@@ -138,7 +138,7 @@ non toccano lo schema: leggiamo il modello già in memoria.
 | Outliner (vista testo) | sì | **Rimosso dalla UI** (resta `export::to_outline`) | Media |
 | Ricerca / filtro nell'albero | sì | **Fatto**: barra di ricerca + filtri per tipo nella colonna sinistra | Media |
 | Apertura dal file manager | sì | **Fatto**: MIME `application/xmind` + `.desktop` con `Exec=… %f`, `HANDLES_OPEN`; una finestra per file | Media |
-| Temi / custom theme | sì | Parziale (Fase 5): colore di ramo (`svg:fill`); l'editor di temi resta da fare | Bassa |
+| Temi / custom theme | sì | **Fatto** (Fase 8): editor "Tema del foglio…" (menu ⋮) per colori dei rami, sfondo e, per centrale/principali/sotto-blocchi, riempimento, colore e font del testo, forma, linea e spessore verso i figli; scrive in `sheet.theme` solo le chiavi modificate | Bassa |
 | ZEN mode (tutte le rese) | parziale | Solo UI | Bassa |
 | Set Password | sì | **Fuori scope**: cifratura ZIP, rompe atomicità e validazione | — |
 
@@ -319,9 +319,9 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | Struttura | Sommari (graffa + topic) e boundary | 🟡 | sommari resi e creabili su più fratelli (Ctrl+]), anche incollando un'immagine (Ctrl+V) con più fratelli selezionati; boundary da disegnare; round-trip in XMind dell'immagine su sommario da verificare |
 | | Logic Chart, Tree Chart | ✅ | |
 | | Mind map bilanciata, org chart, fishbone, timeline, matrice | ⬜ | oggi rese come Logic Chart |
-| Stile | Tema del foglio (colori, forme dei blocchi, linee dei rami) | 🟡 | colori dei rami; forme/linee dal tema da fare |
+| Stile | Tema del foglio (colori, forme dei blocchi, linee dei rami) | 🟡 | `model/theme.ts`: resi e modificabili (editor "Tema del foglio…") colori dei rami, riempimento, font, dimensione, grassetto/corsivo, forme rettangolo/arrotondata/ellisse/sottolineata, linee e spessori per centrale/principali/sotto-blocchi; sfondo solo scritto (l'app segue chiaro/scuro); stili di blocchi liberi, sommari, callout e altre forme XMind conservati ma non resi; round-trip in XMind da verificare |
 | | Forma, riempimento e bordo del singolo blocco | 🟡 | riempimento fatto |
-| | Linee dei rami a gomito/curve come da tema | ⬜ | |
+| | Linee dei rami a gomito/curve come da tema | ✅ | curva, dritta, gomito, gomito arrotondato (`line-class` del genitore) e spessore (`line-width`); la Tree Chart resta a tronco |
 | Contenuto | Equazioni LaTeX native (MathJax) | ✅ | supera Free |
 | | Formule `$…$` in linea nel testo del blocco | ✅ | solo resa nell'app: nel file resta testo, XMind mostra il sorgente |
 | | Larghezza del blocco (`customWidth`) e dimensione delle immagini trascinabili | ✅ | maniglie sul blocco selezionato; round-trip in XMind da verificare |

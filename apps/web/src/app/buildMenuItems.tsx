@@ -17,6 +17,7 @@ import {
   Trash2,
   Info,
   Printer,
+  Palette,
 } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 
@@ -37,6 +38,7 @@ export interface MenuActions {
   onSaveAs: () => void;
   onExport: () => void;
   onPrint: () => void;
+  onEditTheme: () => void;
   onImport: () => void;
   onExportEquation: (format: 'svg' | 'png') => void;
   onAttach: () => void;
@@ -83,6 +85,7 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
     { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', separatorBefore: overflowItems.length > 0, onSelect: actions.onSaveAs },
     { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: actions.onExport },
     { id: 'print', label: 'Stampa…', icon: <Printer className="size-4" />, shortcut: 'Ctrl+P', onSelect: actions.onPrint },
+    { id: 'sheet-theme', label: 'Tema del foglio…', icon: <Palette className="size-4" />, onSelect: actions.onEditTheme },
     { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="size-4" />, onSelect: actions.onImport },
     {
       id: 'export-svg',

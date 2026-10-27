@@ -107,6 +107,22 @@ arrangeableLayerOrder, zones, extensions, theme, relationships`.
 attributedTitle?, controlPoints?{"0","1"}, lineEndPoints?{"0","1"},
 flexibleControlPoints?, style? }` (riferimenti per id a livello sheet).
 
+**Tema del foglio** (`sheet.theme`, osservato nei file salvati da XMind 26.x):
+oggetto di sezioni `{ id, properties }` (`map`, `centralTopic`, `mainTopic`,
+`subTopic`, `floatingTopic`, `summaryTopic`, `calloutTopic`, `importantTopic`,
+`minorTopic`, `expiredTopic`, `boundary`, `summary`, `relationship`, `zone`,
+`level3`, …) più chiavi scalari (`colorThemeId`, `skeletonThemeId`). Le
+proprietà usano le chiavi di `style.properties`; `"inherited"` vuol dire "lo
+decide il livello sopra". `map.properties` porta lo sfondo (`svg:fill`) e i
+colori dei rami principali in `multi-line-colors` (stessa lista in
+`color-list`), separati da spazi. Un riempimento c'è solo se `svg:fill` è un
+colore e `fill-pattern` non è `none`. Forme: `shape-class` =
+`org.xmind.topicShape.<nome>`; linee verso i figli: `line-class` =
+`org.xmind.branchConnection.<nome>`. L'editor dei temi
+(`packages/core/src/model/theme.ts`) scrive solo le chiavi che cambia, nelle
+sezioni `map`, `centralTopic`, `mainTopic`, `subTopic` (creandole con un `id`
+se mancano): tutto il resto del tema resta com'è.
+
 **Extension provider** (enum autorevole nel binario):
 `org.xmind.ui.mathJax`, `org.xmind.ui.audionotes`, `org.xmind.ui.webVideo`,
 `org.xmind.ui.spreadsheet` (Matrix), `org.xmind.ui.grid`,
@@ -211,7 +227,7 @@ Se una sola fallisce, il file di destinazione non viene toccato.
 
 ## Riferimenti nel codice
 
-- Modello: `packages/core/src/model/` (`types.ts`, `utils.ts`, `edit.ts`)
+- Modello: `packages/core/src/model/` (`types.ts`, `utils.ts`, `edit.ts`, tema in `theme.ts`)
 - Applicazione equazione: `packages/core/src/latex/equation.ts`
 - Manifest e validazione: `packages/core/src/safety/` (`manifest.ts`, `validate.ts`)
 - Archivio e scrittura atomica: `packages/core/src/archive/` (`archive.ts`, `atomic.ts`)

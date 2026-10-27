@@ -4,6 +4,7 @@ import { cn } from '@xmap/ui-kit';
 import { TITLE_LEADING_RATIO, titleBaseFontPx, trunkX, type LayoutNode } from '@xmap/core';
 import type { NodeLook } from './nodeLook.js';
 import { RichTitle, textStyleCss } from './RichTitle.js';
+import { themeFontStack } from './themeFont.js';
 
 /** Quanto l'alone di selezione sporge dal bordo del blocco: 2,25px dell'anello + metà dei 3px di tratto. */
 const SELECTION_HALO_OUT = 3.75;
@@ -11,6 +12,20 @@ const SELECTION_HALO_OUT = 3.75;
 const COLLAPSE_TOGGLE_RADIUS = 7.5;
 /** Distanza del centro del pulsante dal bordo destro del blocco: il cerchio tocca l'alone di selezione. */
 const COLLAPSE_TOGGLE_OFFSET = SELECTION_HALO_OUT + COLLAPSE_TOGGLE_RADIUS;
+/** Raggio degli angoli del blocco per la forma del tema (default: rettangolo arrotondato). */
+function cornerRadius(node: LayoutNode): number {
+  switch (node.shape) {
+    case 'rect':
+      return 2;
+    case 'ellipse':
+      return node.h / 2;
+    case 'underline':
+      return 4;
+    default:
+      return node.depth === 0 ? 12 : 10;
+  }
+}
+
 /** Quanto l'area della maniglia di larghezza sporge dal bordo del blocco col mouse: non oltre il pulsante. */
 const HANDLE_REACH_OUT = 4;
 
@@ -56,6 +71,8 @@ export function NodeCard({
   const hasImage = imageUrl !== undefined;
   const isEquation = node.kind === 'equation' || Boolean(node.latex) || Boolean(formulaSvg);
   const isPlainImage = Boolean(hasImage && !isEquation);
+  const rx = cornerRadius(node);
+  const isUnderline = node.shape === 'underline';
   // Dimensione base del titolo, la stessa che usa la stima del layout (layout.ts).
   const titleFontPx = titleBaseFontPx(node.depth, node.textStyle);
   // Su riempimento pieno i chip si tingono del colore del testo.
@@ -79,7 +96,7 @@ export function NodeCard({
           y={-2.25}
           width={node.w + 4.5}
           height={node.h + 4.5}
-          rx={12.25}
+          rx={rx + 2.25}
           fill="none"
           stroke="color-mix(in oklab, var(--primary) 24%, transparent)"
           strokeWidth={3}
@@ -93,12 +110,20 @@ export function NodeCard({
         className="transition-[filter] duration-150 group-hover:brightness-110"
         width={node.w}
         height={node.h}
-        rx={isRoot ? 12 : 10}
+        rx={rx}
         fill={look.fill}
-        stroke={isSelected ? 'var(--primary)' : look.stroke}
+        stroke={isSelected ? 'var(--primary)' : isUnderline ? 'none' : look.stroke}
         strokeWidth={isSelected ? 1.5 : 1}
         style={{ filter: look.solid ? 'drop-shadow(0 1px 3px rgba(0,0,0,0.18))' : undefined }}
       />
+      {isUnderline && (
+        <path
+          d={`M 0 ${node.h} L ${node.w} ${node.h}`}
+          stroke={look.stroke}
+          strokeWidth={node.depth <= 1 ? 3 : 2}
+          strokeLinecap="round"
+        />
+      )}
 
       {/* Immagine allegata se presente */}
       {hasImage && !formulaSvg && (
@@ -143,6 +168,10 @@ export function NodeCard({
                   )}
                   style={{
                     ...textStyleCss(node.textStyle, look.textLight),
+                    fontFamily: node.fontFamily ? themeFontStack(node.fontFamily, 'var(--font-sans)') : undefined,
+                    // `cn` toglie `leading-snug` davanti a `text-sm`/`text-xs`: l'interlinea va data qui,
+                    // uguale a quella della stima del layout, o i font grandi del tema verrebbero tagliati.
+                    lineHeight: TITLE_LEADING_RATIO,
                     display: '-webkit-box',
                     // Il blocco è alto almeno quanto le righe stimate (ciascuna ≥ fontPx * leading): il clamp non taglia mai un titolo stimato bene
                     WebkitLineClamp: Math.max(

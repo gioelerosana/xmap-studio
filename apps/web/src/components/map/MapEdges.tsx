@@ -14,7 +14,7 @@ export function MapEdges({ layout: l }: { layout: Layout }) {
           d={`M ${t.x} ${t.y1} L ${t.x} ${t.y2}`}
           fill="none"
           stroke={l.nodes[t.parent]?.accent || 'var(--map-link)'}
-          strokeWidth={2}
+          strokeWidth={l.nodes[t.parent]?.branchLineWidth ?? 2}
           strokeLinecap="round"
         />
       ))}
@@ -31,7 +31,7 @@ export function MapEdges({ layout: l }: { layout: Layout }) {
             d={edgePathD(edge, p, c)}
             fill="none"
             stroke={c.accent || 'var(--map-link)'}
-            strokeWidth={c.depth <= 1 ? 3 : 2}
+            strokeWidth={p.branchLineWidth ?? (c.depth <= 1 ? 3 : 2)}
             strokeLinecap="round"
           />
         );

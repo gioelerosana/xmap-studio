@@ -6,6 +6,7 @@ import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
 import { LatexEditorModal } from './components/latex/LatexEditorModal.js';
 import { ExportModal } from './components/ExportModal.js';
 import { PrintModal } from './components/PrintModal.js';
+import { ThemeEditorModal } from './components/ThemeEditorModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import { AppMark } from './components/AppMark.js';
@@ -52,6 +53,7 @@ export const App: React.FC = () => {
 
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [themeModalOpen, setThemeModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -293,6 +295,7 @@ export const App: React.FC = () => {
       onSaveAs: handleSaveAs,
       onExport: () => setExportModalOpen(true),
       onPrint: () => setPrintModalOpen(true),
+      onEditTheme: () => setThemeModalOpen(true),
       onImport: () => setImportModalOpen(true),
       onExportEquation: handleExportEquation,
       onAttach: handleAttach,
@@ -459,6 +462,20 @@ export const App: React.FC = () => {
         onClose={() => setPrintModalOpen(false)}
         layout={currentLayout}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+      />
+      <ThemeEditorModal
+        isOpen={themeModalOpen && workbook !== null}
+        onClose={() => setThemeModalOpen(false)}
+        sheets={workbook?.sheets ?? []}
+        initialSheetIndex={activeSheetIndex}
+        onApply={(sheetIndex, patch) => {
+          try {
+            controller.setSheetTheme(sheetIndex, patch);
+            refreshState();
+          } catch (err) {
+            addToast('error', err instanceof Error ? err.message : String(err));
+          }
+        }}
       />
       <ImportModal
         isOpen={importModalOpen}
