@@ -18,6 +18,7 @@ import {
   Info,
   Printer,
   Palette,
+  Maximize2,
 } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 
@@ -39,6 +40,7 @@ export interface MenuActions {
   onExport: () => void;
   onPrint: () => void;
   onEditTheme: () => void;
+  onZen: () => void;
   onImport: () => void;
   onExportEquation: (format: 'svg' | 'png') => void;
   onAttach: () => void;
@@ -84,6 +86,7 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
     ...overflowItems,
     { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', separatorBefore: overflowItems.length > 0, onSelect: actions.onSaveAs },
     { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: actions.onExport },
+    { id: 'zen', label: 'Modalità Zen', icon: <Maximize2 className="size-4" />, shortcut: 'Ctrl+Alt+Z', onSelect: actions.onZen },
     { id: 'print', label: 'Stampa…', icon: <Printer className="size-4" />, shortcut: 'Ctrl+P', onSelect: actions.onPrint },
     { id: 'sheet-theme', label: 'Tema del foglio…', icon: <Palette className="size-4" />, onSelect: actions.onEditTheme },
     { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="size-4" />, onSelect: actions.onImport },
