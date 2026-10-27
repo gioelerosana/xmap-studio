@@ -91,8 +91,9 @@ check run e tiene aggiornato nel PR un commento «Anteprima Cloudflare», con lo
 stato di ogni URL (logica in `scripts/preview-url.mjs`, test in
 `scripts/preview-url.test.mjs`).
 
-Il trigger `check_run` vale solo per i workflow presenti su `main`: dopo il merge
-del PR che lo introduce, ogni PR successivo riceve il commento.
+Il workflow parte con `pull_request` (non `check_run`, che vale solo per i
+workflow presenti su `main`): aspetta la build del commit, poi aggiorna il
+commento. Funziona quindi già nel PR che lo introduce.
 
 ### Se il commento dice «dietro Cloudflare Access»
 
