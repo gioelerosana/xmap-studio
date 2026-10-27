@@ -28,8 +28,6 @@ import {
 } from './types.js';
 
 const MAX_HISTORY = 200;
-/** Posizione sentinella: lo stato su disco non è più nella cronologia. */
-const UNREACHABLE = -1;
 
 export class OpenWorkbook {
   public path: string | null;
@@ -37,9 +35,21 @@ export class OpenWorkbook {
   public archive: RawArchive;
   public content: Sheet[];
   public manifest: Record<string, unknown>;
-  public history: Sheet[][];
+  /**
+   * Snapshot serializzati (JSON) del contenuto: una sola `JSON.stringify` per
+   * modifica invece di stringify + parse, e molta meno memoria di un albero di oggetti.
+   */
+  public history: string[];
+  /**
+   * Revisione di ogni snapshot, unica per tutta la vita del workbook: lo stato
+   * salvato si riconosce dalla revisione, non dalla posizione, che cambia con
+   * troncamenti, scorrimento della cronologia e fusioni (`replaceHistoryTop`).
+   */
+  private revisions: number[];
+  private nextRevision: number;
+  /** Revisione scritta su disco; `null` se nessuno snapshot coincide più con il file. */
+  private savedRevision: number | null;
   public pos: number;
-  public savedPos: number;
   public xmindRunning: string[];
   public originalHash: string;
 
@@ -55,17 +65,25 @@ export class OpenWorkbook {
     this.path = path;
     this.fileName = fileName;
     this.archive = archive;
-    this.content = cloneSheets(content);
+    const snapshot = JSON.stringify(content);
+    this.content = JSON.parse(snapshot) as Sheet[];
     this.manifest = manifest;
-    this.history = [cloneSheets(content)];
+    this.history = [snapshot];
+    this.revisions = [0];
+    this.nextRevision = 1;
+    this.savedRevision = 0;
     this.pos = 0;
-    this.savedPos = 0;
     this.xmindRunning = xmindRunning;
     this.originalHash = originalHash;
   }
 
   public isDirty(): boolean {
-    return this.pos !== this.savedPos;
+    return this.revisions[this.pos] !== this.savedRevision;
+  }
+
+  /** Revisione dello stato corrente: da passare a `markSaved` se nel frattempo si è continuato a modificare. */
+  public currentRevision(): number {
+    return this.revisions[this.pos];
   }
 
   public canUndo(): boolean {
@@ -77,18 +95,20 @@ export class OpenWorkbook {
   }
 
   public pushHistory(): void {
-    // Troncamento se siamo tornati indietro: se lo stato salvato stava nel
-    // ramo redo scartato, non è più raggiungibile e nessuna posizione futura
-    // può coincidere con il disco.
+    const snapshot = JSON.stringify(this.content);
+    // Nessun cambiamento reale (es. stesso stile riapplicato): niente passo di
+    // undo vuoto e la mappa non diventa "modificata".
+    if (snapshot === this.history[this.pos]) return;
+    // Troncamento se siamo tornati indietro: il ramo redo si scarta.
     if (this.pos + 1 < this.history.length) {
       this.history.splice(this.pos + 1);
-      if (this.savedPos > this.pos) this.savedPos = UNREACHABLE;
+      this.revisions.splice(this.pos + 1);
     }
-    this.history.push(cloneSheets(this.content));
+    this.history.push(snapshot);
+    this.revisions.push(this.nextRevision++);
     if (this.history.length > MAX_HISTORY) {
       this.history.shift();
-      // Se lo stato salvato esce dalla cronologia diventa irraggiungibile.
-      this.savedPos = this.savedPos > 0 ? this.savedPos - 1 : UNREACHABLE;
+      this.revisions.shift();
     }
     this.pos = this.history.length - 1;
   }
@@ -99,58 +119,50 @@ export class OpenWorkbook {
       this.pushHistory();
       return;
     }
-    this.history[this.pos] = cloneSheets(this.content);
+    const snapshot = JSON.stringify(this.content);
+    if (snapshot === this.history[this.pos]) return;
+    this.history[this.pos] = snapshot;
+    // Contenuto nuovo, revisione nuova: se lo snapshot era quello salvato, ora non lo è più.
+    this.revisions[this.pos] = this.nextRevision++;
   }
 
   public undo(): void {
     if (this.canUndo()) {
       this.pos--;
-      this.content = cloneSheets(this.history[this.pos]);
+      this.content = JSON.parse(this.history[this.pos]) as Sheet[];
     }
   }
 
   public redo(): void {
     if (this.canRedo()) {
       this.pos++;
-      this.content = cloneSheets(this.history[this.pos]);
+      this.content = JSON.parse(this.history[this.pos]) as Sheet[];
     }
   }
 
-  public markSaved(newPath?: string, newHash?: string): void {
+  /**
+   * Segna come salvata la revisione `revision` (default: quella corrente). Chi
+   * salva in modo asincrono passa la revisione dei byte scritti, così le
+   * modifiche fatte durante la scrittura restano "non salvate".
+   */
+  public markSaved(newPath?: string, newHash?: string, revision?: number): void {
     if (!newHash) throw new XmapError(CODE_INVALID_INPUT, 'Hash del file salvato mancante.');
     if (newPath) {
       this.path = newPath;
       this.fileName = newPath.split(/[\\/]/).pop() || newPath;
     }
     this.originalHash = newHash;
-    this.savedPos = this.pos;
+    this.savedRevision = revision ?? this.currentRevision();
+  }
+
+  /** DTO di un solo foglio: per il layout della mappa non serve ricostruire gli altri. */
+  public sheetDto(index: number): SheetDto | undefined {
+    const sheet = this.content[index];
+    return sheet ? buildSheetDto(sheet, index) : undefined;
   }
 
   public toDto(): WorkbookDto {
-    const sheetsDto: SheetDto[] = this.content.map((sheet, index) => {
-      const topics: TopicView[] = [];
-      if (sheet.rootTopic) {
-        collectTopicViews(sheet.rootTopic, index, undefined, 0, 'root', [], topics);
-      }
-
-      const relationships: RelationshipView[] = (sheet.relationships || []).map((rel) => ({
-        id: rel.id || '',
-        end1Id: rel.end1Id || '',
-        end2Id: rel.end2Id || '',
-        title: rel.title || '',
-        style: resolveRelationshipStyle(sheet, rel),
-        controlPoints: readControlPoints(rel),
-      }));
-
-      return {
-        index,
-        id: sheet.id,
-        title: (sheet.rootTopic ? topicTitle(sheet.rootTopic) : '') || sheet.title || `Foglio ${index + 1}`,
-        topics,
-        relationships,
-        theme: readSheetTheme(sheet),
-      };
-    });
+    const sheetsDto: SheetDto[] = this.content.map((sheet, index) => buildSheetDto(sheet, index));
 
     return {
       path: this.path,
@@ -162,6 +174,31 @@ export class OpenWorkbook {
       xmindRunning: this.xmindRunning,
     };
   }
+}
+
+function buildSheetDto(sheet: Sheet, index: number): SheetDto {
+  const topics: TopicView[] = [];
+  if (sheet.rootTopic) {
+    collectTopicViews(sheet.rootTopic, index, undefined, 0, 'root', [], topics);
+  }
+
+  const relationships: RelationshipView[] = (sheet.relationships || []).map((rel) => ({
+    id: rel.id || '',
+    end1Id: rel.end1Id || '',
+    end2Id: rel.end2Id || '',
+    title: rel.title || '',
+    style: resolveRelationshipStyle(sheet, rel),
+    controlPoints: readControlPoints(rel),
+  }));
+
+  return {
+    index,
+    id: sheet.id,
+    title: (sheet.rootTopic ? topicTitle(sheet.rootTopic) : '') || sheet.title || `Foglio ${index + 1}`,
+    topics,
+    relationships,
+    theme: readSheetTheme(sheet),
+  };
 }
 
 export function cloneSheets(sheets: Sheet[]): Sheet[] {

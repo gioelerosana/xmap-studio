@@ -8,6 +8,8 @@ export interface XmapClipboardPayload {
   topic: Topic;
   /** Risorse del sottoalbero (`resources/<nome>` → base64), per incollare in un altro file. */
   resources?: Record<string, string>;
+  /** Allegati del sottoalbero (`attachments/<nome>` → base64): senza, il file di destinazione non si salverebbe. */
+  attachments?: Record<string, string>;
 }
 
 /** Nomi `resources/…` referenziati dalle immagini del sottoalbero. */

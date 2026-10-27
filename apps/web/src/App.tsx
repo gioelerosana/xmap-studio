@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Minimize2 } from 'lucide-react';
 import { Banner, Button, Modal, ToastContainer } from '@xmap/ui-kit';
-import { AppController, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
+import { AppController, DEFAULT_LAYOUT_OPTS, layoutSheets, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
 import { MapView, type MapEditing } from './components/MapView.js';
 import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
 import { LatexEditorModal } from './components/latex/LatexEditorModal.js';
@@ -46,7 +46,6 @@ export const App: React.FC = () => {
 
   const selection = useSelection();
   const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
-  const { headerRef, layout: headerLayout } = useAdaptiveHeader(Boolean(workbook));
   const { toasts, addToast, removeToast } = useToasts();
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -62,6 +61,8 @@ export const App: React.FC = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Modalità Zen: solo la mappa, senza header, barra flottante, controlli di navigazione e schede dei fogli. Non persiste.
   const [zenMode, setZenMode] = useState(false);
+  // In Zen l'header si smonta: al ritorno va osservato il nuovo elemento.
+  const { headerRef, layout: headerLayout } = useAdaptiveHeader(Boolean(workbook), !zenMode);
   const [editing, setEditing] = useState<MapEditing | null>(null);
   // Blocco aperto nell'editor LaTeX centrato; `undefined` = editor chiuso.
   const [latexTopicId, setLatexTopicId] = useState<string | undefined>();
@@ -83,6 +84,12 @@ export const App: React.FC = () => {
     [selectSingle]
   );
 
+  // Undo di un import come nuovo foglio (o di un'unione) può togliere il foglio attivo: si torna all'ultimo rimasto.
+  const sheetCount = workbook?.sheets.length ?? 0;
+  useEffect(() => {
+    if (sheetCount > 0 && activeSheetIndex >= sheetCount) setActiveSheetIndex(sheetCount - 1);
+  }, [sheetCount, activeSheetIndex]);
+
   const currentSheet = workbook?.sheets[activeSheetIndex];
   const allTopics = useMemo(() => currentSheet?.topics || [], [currentSheet]);
   const selectedTopic = useMemo(
@@ -94,10 +101,11 @@ export const App: React.FC = () => {
   const mapStructure: MapStructure = settings.mapStructure;
   const setMapStructure = useCallback((structure: MapStructure) => updateSettings({ mapStructure: structure }), [updateSettings]);
 
+  // Layout dal DTO già in stato: niente seconda ricostruzione del foglio nel controller.
   const currentLayout = useMemo<Layout | null>(() => {
-    if (!workbook) return null;
-    return controller.mapLayout(activeSheetIndex, collapsedIds, mapStructure);
-  }, [controller, workbook, activeSheetIndex, collapsedIds, mapStructure]);
+    if (!currentSheet) return null;
+    return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: mapStructure });
+  }, [currentSheet, collapsedIds, mapStructure]);
 
   const siblingRangeInfo = useMemo(() => {
     const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);

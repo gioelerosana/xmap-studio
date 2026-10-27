@@ -9,13 +9,13 @@ declare global {
         | { status: 'error'; message: string }
       >;
       platform: () => Promise<string>;
-      openFileDialog: () => Promise<{ path: string; name: string; bytes: number[] } | null>;
-      openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: number[] } | null>;
-      openFile: (options?: { description?: string; extensions?: string[] }) => Promise<{ path: string; name: string; bytes: number[] } | null>;
+      openFileDialog: () => Promise<{ path: string; name: string; bytes: Uint8Array } | null>;
+      openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: Uint8Array } | null>;
+      openFile: (options?: { description?: string; extensions?: string[] }) => Promise<{ path: string; name: string; bytes: Uint8Array } | null>;
       saveFileDialog: (suggestedName?: string) => Promise<string | null>;
       saveBytes: (
         suggestedName: string,
-        bytes: number[],
+        bytes: Uint8Array,
         options?: { description?: string; extensions?: string[]; targetPath?: string; force?: boolean }
       ) => Promise<
         | { path: string }
@@ -24,14 +24,14 @@ declare global {
       >;
       saveAtomic: (
         filePath: string,
-        bytes: number[],
+        bytes: Uint8Array,
         options?: { expectedHash?: string; force?: boolean }
       ) => Promise<
         | { ok: true; backup?: string; bytes: number }
         | { ok: false; code: string; message: string; processes?: string[] }
       >;
       checkXMindRunning: () => Promise<string[]>;
-      printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<number[]>;
+      printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<Uint8Array>;
       minimize: () => void;
       maximize: () => void;
       close: () => void;

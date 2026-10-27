@@ -116,12 +116,61 @@ interface ParsedRunItem {
   extra: Record<string, unknown>;
 }
 
+/** Chiavi che l'app legge e scrive nei frammenti: le altre sono di XMind e si conservano. */
+const MODELLED_FRAGMENT_KEYS = new Set([
+  'text',
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'color',
+  'fontSizePx',
+  'fo:font-weight',
+  'fo:font-style',
+  'fo:text-decoration',
+  'fo:color',
+  'fo:font-size',
+]);
+
+/** Frammenti di `attributedTitle` così come sono nel file, con le chiavi che l'app non modella. */
+function previousFragments(topic: Topic): Bag[] {
+  const raw: unknown = topic.attributedTitle;
+  return Array.isArray(raw) ? raw.filter(isBag) : [];
+}
+
+function unknownFragmentKeys(fragment: Bag): Bag {
+  return Object.fromEntries(
+    Object.entries(fragment).filter(([k]) => !MODELLED_FRAGMENT_KEYS.has(k))
+  );
+}
+
+/** Chiavi sconosciute presenti con lo stesso valore su tutti i frammenti. */
+function sharedUnknownKeys(fragments: Bag[]): Bag {
+  if (fragments.length === 0) return {};
+  const [first, ...rest] = fragments.map(unknownFragmentKeys);
+  return Object.fromEntries(
+    Object.entries(first).filter(([k, v]) =>
+      rest.every((f) => Object.hasOwn(f, k) && JSON.stringify(f[k]) === JSON.stringify(v))
+    )
+  );
+}
+
+/**
+ * Chiavi sconosciute da riportare sui `count` frammenti nuovi: con lo stesso numero di frammenti
+ * quelle del frammento in posizione corrispondente, altrimenti solo quelle comuni a tutti.
+ */
+function carriedUnknownKeys(previous: Bag[], count: number): Bag[] {
+  if (previous.length === count) return previous.map(unknownFragmentKeys);
+  const shared = sharedUnknownKeys(previous);
+  return Array.from({ length: count }, () => shared);
+}
+
 /**
  * Imposta il titolo e la formattazione parziale (`attributedTitle`) del blocco.
  * - Scrive `title` = concatenazione del testo dei frammenti.
  * - `attributedTitle` = frammenti normalizzati (unisce frammenti adiacenti con stile identico;
  *   se nessun frammento ha stile, rimuove `attributedTitle` e lascia solo `title`).
- * - Preserva le chiavi sconosciute dei frammenti.
+ * - Preserva le chiavi sconosciute dei frammenti, anche quelle già presenti nel file (es. `fo:font-family`).
  * - Rimuove `titleUnedited`.
  */
 export function setTitleRuns(topic: Topic, runs: TitleRun[]): void {
@@ -191,22 +240,7 @@ export function setTitleRuns(topic: Topic, runs: TitleRun[]): void {
 
     const extra: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(raw)) {
-      if (
-        ![
-          'text',
-          'bold',
-          'italic',
-          'underline',
-          'strikethrough',
-          'color',
-          'fontSizePx',
-          'fo:font-weight',
-          'fo:font-style',
-          'fo:text-decoration',
-          'fo:color',
-          'fo:font-size',
-        ].includes(k)
-      ) {
+      if (!MODELLED_FRAGMENT_KEYS.has(k)) {
         extra[k] = v;
       }
     }
@@ -223,6 +257,12 @@ export function setTitleRuns(topic: Topic, runs: TitleRun[]): void {
       extra,
     });
   }
+
+  // Le chiavi non modellate del file (es. fo:font-family) sopravvivono alla riscrittura del titolo.
+  const carried = carriedUnknownKeys(previousFragments(topic), parsedItems.length);
+  parsedItems.forEach((item, i) => {
+    item.extra = { ...carried[i], ...item.extra };
+  });
 
   // Unisce frammenti adiacenti con stile identico.
   const merged: ParsedRunItem[] = [];

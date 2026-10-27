@@ -16,13 +16,13 @@ export interface HeaderLayout {
  * meno usate passano nel menu ⋮ (vedi HEADER_LEVEL). Si misura lo spazio reale,
  * non la viewport: conta anche la dimensione del testo impostata nel sistema.
  */
-export function useAdaptiveHeader(hasWorkbook: boolean) {
+export function useAdaptiveHeader(hasWorkbook: boolean, visible: boolean = true) {
   const headerRef = useRef<HTMLElement>(null);
   const [headerLevel, setHeaderLevel] = useState(0);
   const [, forceHeaderMeasure] = useReducer((n: number) => n + 1, 0);
   // Cambiano i pulsanti presenti: si riparte dal livello pieno. Va prima della misura,
   // così i due aggiornamenti si compongono invece di annullarsi.
-  useLayoutEffect(() => setHeaderLevel(0), [hasWorkbook]);
+  useLayoutEffect(() => setHeaderLevel(0), [hasWorkbook, visible]);
   useLayoutEffect(() => {
     const el = headerRef.current;
     if (el && el.scrollWidth > el.clientWidth + 1 && headerLevel < HEADER_LEVEL.max) {
@@ -45,7 +45,7 @@ export function useAdaptiveHeader(hasWorkbook: boolean) {
     ro.observe(el);
     for (const child of el.children) ro.observe(child);
     return () => ro.disconnect();
-  }, []);
+  }, [visible]);
 
   const layout: HeaderLayout = {
     showLabels: headerLevel < HEADER_LEVEL.iconsOnly,

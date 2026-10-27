@@ -1,5 +1,7 @@
 import { sha256HexAsync, validateArchiveBytes } from '@xmap/core';
 
+const BLOB_URL_REVOKE_DELAY_MS = 1000;
+
 export interface FileHandleHolder {
   handle?: FileSystemFileHandle;
 }
@@ -115,7 +117,8 @@ export async function saveLocalXmindFile(
   suggestedName: string = 'map.xmind',
   existingHandle?: FileSystemFileHandle,
   expectedHash?: string
-): Promise<FileSystemFileHandle | undefined> {
+): Promise<{ handle?: FileSystemFileHandle } | null> {
+  // `null` solo se l'utente annulla il dialogo: il file non è stato scritto.
   // Se abbiamo un handle esistente e possiamo scrivere
   if (existingHandle && 'createWritable' in existingHandle) {
     try {
@@ -129,7 +132,7 @@ export async function saveLocalXmindFile(
       const writable = await (existingHandle as any).createWritable();
       await writable.write(bytes);
       await writable.close();
-      return existingHandle;
+      return { handle: existingHandle };
     } catch (err) {
       if (err instanceof FileConflictError) throw err;
       // Procedi con showSaveFilePicker o download
@@ -153,15 +156,15 @@ export async function saveLocalXmindFile(
       const writable = await handle.createWritable();
       await writable.write(bytes);
       await writable.close();
-      return handle;
+      return { handle };
     } catch (err: any) {
-      if (err.name === 'AbortError') return undefined;
+      if (err.name === 'AbortError') return null;
     }
   }
 
   // Fallback download browser
   downloadBlob(bytes, suggestedName, 'application/vnd.xmind.workbook');
-  return undefined;
+  return {};
 }
 
 class FileConflictError extends Error {
@@ -217,11 +220,10 @@ export async function saveBytes(
 
   const api = (window as any).electronAPI;
   if (api?.saveBytes) {
-    const payload = Array.from(bytes);
-    let res = await api.saveBytes(suggestedName, payload, options);
+    let res = await api.saveBytes(suggestedName, bytes, options);
     if (res && 'ok' in res && res.code === 'xmind_running') {
       if (!confirmForceSave(res.processes ?? [])) return null;
-      res = await api.saveBytes(suggestedName, payload, {
+      res = await api.saveBytes(suggestedName, bytes, {
         ...options,
         targetPath: res.path,
         force: true,
@@ -261,5 +263,6 @@ export function downloadBlob(bytes: Uint8Array, filename: string, mimeType: stri
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revocare subito può annullare il download in Firefox e Safari.
+  setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_REVOKE_DELAY_MS);
 }

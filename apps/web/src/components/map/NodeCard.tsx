@@ -1,4 +1,4 @@
-import type { MouseEvent, PointerEvent } from 'react';
+import { memo, type MouseEvent, type PointerEvent } from 'react';
 import { FileText } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
 import { TITLE_LEADING_RATIO, titleBaseFontPx, trunkX, type LayoutNode } from '@xmap/core';
@@ -49,8 +49,80 @@ export interface NodeCardProps {
   onStartResize: (e: PointerEvent<SVGElement>, node: LayoutNode, type: 'width' | 'image') => void;
 }
 
+type Fields = Readonly<Record<string, unknown>>;
+
+function isRecord(value: unknown): value is Fields {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Confronta due oggetti sulla unione delle chiavi (un campo mancante vale come
+ * `undefined`), senza allocare: gira per ogni blocco a ogni render della mappa.
+ */
+function everyKeyEqual(a: Fields, b: Fields, equal: (x: unknown, y: unknown) => boolean): boolean {
+  for (const key in a) {
+    if (!equal(a[key], b[key])) return false;
+  }
+  for (const key in b) {
+    if (!(key in a) && b[key] !== undefined) return false;
+  }
+  return true;
+}
+
+function strictEqual(a: unknown, b: unknown): boolean {
+  return a === b;
+}
+
+/** Elemento di un array (es. `labels`, `titleRuns`): oggetti piatti confrontati chiave per chiave. */
+function itemEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  return isRecord(a) && isRecord(b) && everyKeyEqual(a, b, strictEqual);
+}
+
+function sameArray(a: readonly unknown[], b: readonly unknown[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!itemEqual(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+/** Campo di LayoutNode: primitivi per `===`, array ed oggetti piatti strutturalmente. */
+function fieldEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) return sameArray(a, b);
+  return isRecord(a) && isRecord(b) && everyKeyEqual(a, b, strictEqual);
+}
+
+/** Dopo ogni modifica il layout è nuovo: i blocchi invariati vanno riconosciuti per contenuto. */
+function layoutNodeEqual(a: LayoutNode, b: LayoutNode): boolean {
+  return a === b || everyKeyEqual(a as unknown as Fields, b as unknown as Fields, fieldEqual);
+}
+
+function lookEqual(a: NodeLook, b: NodeLook): boolean {
+  return a.fill === b.fill && a.stroke === b.stroke && a.text === b.text && a.textLight === b.textLight && a.solid === b.solid;
+}
+
+function nodeCardPropsEqual(prev: NodeCardProps, next: NodeCardProps): boolean {
+  return (
+    prev.onSelect === next.onSelect &&
+    prev.onActivate === next.onActivate &&
+    prev.onToggleCollapse === next.onToggleCollapse &&
+    prev.onResetWidth === next.onResetWidth &&
+    prev.onStartResize === next.onStartResize &&
+    prev.isSelected === next.isSelected &&
+    prev.isPrimary === next.isPrimary &&
+    prev.isEditing === next.isEditing &&
+    prev.formulaSvg === next.formulaSvg &&
+    prev.imageUrl === next.imageUrl &&
+    prev.isCoarse === next.isCoarse &&
+    lookEqual(prev.look, next.look) &&
+    layoutNodeEqual(prev.node, next.node)
+  );
+}
+
 /** Singolo blocco della mappa: card, contenuto (testo, formula o immagine), indicatori e maniglie. */
-export function NodeCard({
+function NodeCardView({
   node,
   look,
   isSelected,
@@ -347,3 +419,5 @@ export function NodeCard({
     </g>
   );
 }
+
+export const NodeCard = memo(NodeCardView, nodeCardPropsEqual);

@@ -115,8 +115,14 @@ export function useClipboardEvents({
       }
     };
 
+    // Testo selezionato nella pagina (note, popover, …): copia e taglia restano quelli nativi.
+    const hasTextSelection = () => {
+      const sel = window.getSelection();
+      return Boolean(sel && !sel.isCollapsed && sel.toString().trim().length > 0);
+    };
+
     const onCopy = (e: ClipboardEvent) => {
-      if (editing) return;
+      if (editing || hasTextSelection()) return;
       if (document.querySelector('[role="dialog"]')) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
@@ -127,7 +133,7 @@ export function useClipboardEvents({
     };
 
     const onCut = (e: ClipboardEvent) => {
-      if (editing) return;
+      if (editing || hasTextSelection()) return;
       if (document.querySelector('[role="dialog"]')) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;

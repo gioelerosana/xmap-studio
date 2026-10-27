@@ -45,11 +45,11 @@ export function useWorkbookFiles({ controller, isElectron, adoptWorkbook, addToa
   const openFromPath = useCallback(
     async (filePath: string) => {
       if (!window.electronAPI) return;
-      const res = await window.electronAPI.openFilePath(filePath);
-      if (!res) return;
       try {
+        const res = await window.electronAPI.openFilePath(filePath);
+        if (!res) return;
         await requestWorkbookReplacement(async () => {
-          const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
+          const dto = await controller.open(res.bytes, res.path, res.name);
           adoptWorkbook(dto);
           addToast('success', `Aperto: ${res.name}`);
         });
@@ -66,7 +66,7 @@ export function useWorkbookFiles({ controller, isElectron, adoptWorkbook, addToa
         const res = await window.electronAPI.openFileDialog();
         if (!res) return;
         await requestWorkbookReplacement(async () => {
-          const dto = await controller.open(new Uint8Array(res.bytes), res.path, res.name);
+          const dto = await controller.open(res.bytes, res.path, res.name);
           adoptWorkbook(dto);
           addToast('success', `Mappa aperta: ${res.name}`);
         });
@@ -137,10 +137,14 @@ export function useWorkbookFiles({ controller, isElectron, adoptWorkbook, addToa
 
   // Drop di un file sulla schermata vuota: nessuna richiesta di salvataggio, la mappa è la prima.
   const openDroppedFile = async (file: File) => {
-    const buffer = await file.arrayBuffer();
-    const dto = await controller.open(new Uint8Array(buffer), undefined, file.name);
-    adoptWorkbook(dto);
-    addToast('success', `Aperto ${file.name}`);
+    try {
+      const buffer = await file.arrayBuffer();
+      const dto = await controller.open(new Uint8Array(buffer), undefined, file.name);
+      adoptWorkbook(dto);
+      addToast('success', `Aperto ${file.name}`);
+    } catch (err: unknown) {
+      addToast('error', `Impossibile aprire ${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleConfirmReplacement = async (action: ReplacementAction) => {

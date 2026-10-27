@@ -9,6 +9,9 @@ const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
 // Accetta "XMap-Studio-26.2.0-portable-x64.exe"; rifiuta "XMap-Studio-26.2.0-x86_64.AppImage".
 const WINDOWS_ASSET = /^XMap-Studio-\d+\.\d+\.\d+-portable-x64\.exe$/;
 const CHECKSUMS_ASSET = 'SHA256SUMS-windows.txt';
+// Senza timeout il pulsante "Controllo in corso…" resterebbe bloccato su una rete che non risponde.
+const API_TIMEOUT_MS = 15_000;
+const DOWNLOAD_TIMEOUT_MS = 300_000;
 
 export type UpdateOutcome =
   | { status: 'unsupported'; message: string }
@@ -36,10 +39,25 @@ export function compareVersions(a: string, b: string): number {
   return Array.from({ length }, (_, index) => (left[index] ?? 0) - (right[index] ?? 0)).find((diff) => diff !== 0) ?? 0;
 }
 
-async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(url, init);
+async function fetchOk(url: string, timeoutMs: number, init?: RequestInit): Promise<Response> {
+  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok) throw new Error(`GitHub ha risposto ${response.status} per ${new URL(url).pathname}.`);
   return response;
+}
+
+/** Messaggio per l'utente: il timeout di AbortSignal arriva con un testo in inglese. */
+function describeError(error: unknown): string {
+  if (error instanceof Error && error.name === 'TimeoutError') return 'GitHub non ha risposto in tempo: riprova più tardi.';
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Pulizia best effort: un errore qui non deve coprire quello originale. */
+function removeQuietly(file: string): void {
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    // Nulla da fare: conta l'errore che ha interrotto il salvataggio.
+  }
 }
 
 /** Scarica solo da asset della release del repository, mai da URL arbitrari. */
@@ -52,7 +70,7 @@ function trustedAsset(release: Release, match: (name: string) => boolean): Relea
 async function expectedSha256(release: Release, fileName: string): Promise<string> {
   const asset = trustedAsset(release, (name) => name === CHECKSUMS_ASSET);
   if (!asset) throw new Error('La release non ha il file dei checksum: download annullato.');
-  const text = await (await fetchOk(asset.browser_download_url)).text();
+  const text = await (await fetchOk(asset.browser_download_url, API_TIMEOUT_MS)).text();
   const line = text.split('\n').find((row) => row.trim().endsWith(fileName));
   // Separa hash e nome: "ab12… file.exe" → ["ab12…", "file.exe"].
   const hash = line?.trim().split(/\s+/)[0]?.toLowerCase();
@@ -62,14 +80,19 @@ async function expectedSha256(release: Release, fileName: string): Promise<strin
 }
 
 async function downloadVerified(url: string, target: string, sha256: string): Promise<void> {
-  const response = await fetchOk(url);
+  const response = await fetchOk(url, DOWNLOAD_TIMEOUT_MS);
   const bytes = Buffer.from(await response.arrayBuffer());
   const actual = crypto.createHash('sha256').update(bytes).digest('hex');
   if (actual !== sha256) throw new Error('Il file scaricato non corrisponde al checksum: scartato.');
   // Il file parziale non deve mai sembrare un'installazione completa.
   const partial = `${target}.part`;
-  fs.writeFileSync(partial, bytes);
-  fs.renameSync(partial, target);
+  try {
+    fs.writeFileSync(partial, bytes);
+    fs.renameSync(partial, target);
+  } catch (error) {
+    removeQuietly(partial);
+    throw error;
+  }
 }
 
 /**
@@ -83,7 +106,7 @@ export async function checkAndDownloadUpdate(): Promise<UpdateOutcome> {
   }
   try {
     const release = (await (
-      await fetchOk(LATEST_URL, { headers: { Accept: 'application/vnd.github+json' } })
+      await fetchOk(LATEST_URL, API_TIMEOUT_MS, { headers: { Accept: 'application/vnd.github+json' } })
     ).json()) as Release;
     // "v26.2.0" → "26.2.0".
     const version = release.tag_name.replace(/^v/, '');
@@ -98,6 +121,6 @@ export async function checkAndDownloadUpdate(): Promise<UpdateOutcome> {
     shell.showItemInFolder(target);
     return { status: 'downloaded', version, path: target };
   } catch (error) {
-    return { status: 'error', message: error instanceof Error ? error.message : String(error) };
+    return { status: 'error', message: describeError(error) };
   }
 }

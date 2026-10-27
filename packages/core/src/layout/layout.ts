@@ -33,6 +33,8 @@ let textMeasurer: TextMeasurer | null = null;
  */
 export function setTextMeasurer(measurer: TextMeasurer | null): void {
   textMeasurer = measurer;
+  // Le dimensioni in cache valgono solo per la misura con cui sono state calcolate.
+  nodeSizeCache.clear();
 }
 
 /** Margine (px) sotto la larghezza utile: il browser arrotonda i sub-pixel, meglio andare a capo un po' prima. */
@@ -52,14 +54,18 @@ const LINE_HEIGHT_EXTRA = 1;
  * Stima della larghezza di un singolo carattere in font proporzionale sans-serif
  * (Inter / sistema) in base alla dimensione del carattere e all'eventuale grassetto.
  */
+const NARROW_CHARS = new Set('ijlI1|!.,:;\'" ()[]{}t-');
+const SEMI_NARROW_CHARS = new Set('frksJ');
+const WIDE_CHARS = new Set('mwMW%@&_#+=');
+
 function heuristicCharWidth(ch: string, fontSize: number, bold: boolean): number {
   const code = ch.charCodeAt(0);
   let factor = 0.55;
-  if (/[ijlI1|!.,:;'" ()\[\]{}t\-]/.test(ch)) {
+  if (NARROW_CHARS.has(ch)) {
     factor = 0.28;
-  } else if ('frksJ'.includes(ch)) {
+  } else if (SEMI_NARROW_CHARS.has(ch)) {
     factor = 0.42;
-  } else if ('mwMW%@&_#+='.includes(ch)) {
+  } else if (WIDE_CHARS.has(ch)) {
     factor = 0.85;
   } else if (code >= 0x4e00 && code <= 0x9fff) {
     // Ideogrammi CJK
@@ -311,25 +317,65 @@ function wrapTitle(cells: TitleCell[], usableW: number, base: TitleBase): LineBo
   return lines.length > 0 ? lines : [{ width: 0, height: base.lineH }];
 }
 
-export function estimateNodeSize(
-  node: {
-    depth: number;
-    kind?: string;
-    latex?: string;
-    title?: string;
-    displayTitle?: string;
-    textStyle?: TextStyle;
-    titleRuns?: TitleRun[];
-    fontFamily?: string;
-    hasNotes?: boolean;
-    markers?: string[];
-    labels?: string[];
-    imageW?: number;
-    imageH?: number;
-    customWidth?: number;
-  },
-  overrideWidth?: number | null
-): { w: number; h: number } {
+/** Ingresso di `estimateNodeSize`: i soli campi del blocco che ne determinano la dimensione. */
+export interface NodeSizeInput {
+  depth: number;
+  kind?: string;
+  latex?: string;
+  title?: string;
+  displayTitle?: string;
+  textStyle?: TextStyle;
+  titleRuns?: TitleRun[];
+  fontFamily?: string;
+  hasNotes?: boolean;
+  markers?: string[];
+  labels?: string[];
+  imageW?: number;
+  imageH?: number;
+  customWidth?: number;
+}
+
+/**
+ * Dimensioni già calcolate, per chiave dei campi che le determinano: misurare e
+ * mandare a capo un titolo costa, e a ogni modifica il layout rimisura tutti i
+ * blocchi, quasi tutti invariati. Si svuota quando cambia la misura del testo.
+ */
+const nodeSizeCache = new Map<string, { w: number; h: number }>();
+const NODE_SIZE_CACHE_MAX = 20000;
+
+function nodeSizeKey(node: NodeSizeInput, overrideWidth: number | null | undefined): string {
+  return JSON.stringify([
+    node.depth,
+    node.kind,
+    node.latex,
+    node.title,
+    node.displayTitle,
+    node.textStyle,
+    node.titleRuns,
+    node.fontFamily,
+    node.hasNotes,
+    node.markers?.length ?? 0,
+    node.labels?.length ?? 0,
+    node.imageW,
+    node.imageH,
+    node.customWidth,
+    overrideWidth === undefined ? '-' : overrideWidth,
+  ]);
+}
+
+export function estimateNodeSize(node: NodeSizeInput, overrideWidth?: number | null): { w: number; h: number } {
+  const key = nodeSizeKey(node, overrideWidth);
+  const hit = nodeSizeCache.get(key);
+  if (hit) return { w: hit.w, h: hit.h };
+  const size = computeNodeSize(node, overrideWidth);
+  if (nodeSizeCache.size >= NODE_SIZE_CACHE_MAX) nodeSizeCache.clear();
+  nodeSizeCache.set(key, size);
+  return { w: size.w, h: size.h };
+}
+
+function computeNodeSize(
+  node: NodeSizeInput,
+  overrideWidth?: number | null): { w: number; h: number } {
   // 1. Formule LaTeX native (MathJax): il blocco misura la formula come la si disegna
   // (stessa scala delle formule nel testo), non l'immagine PNG salvata nel file.
   const effectiveLatex = node.latex;
@@ -442,8 +488,15 @@ export function estimateNodeSize(
 }
 
 export class EstimatedMetrics implements NodeMetrics {
+  /** Ogni blocco si misura più volte per layout (dimensioni, posizionamento): una sola stima per nodo. */
+  private readonly measured = new WeakMap<MapNode, { w: number; h: number }>();
+
   measure(node: MapNode): { w: number; h: number } {
-    return estimateNodeSize(node);
+    const hit = this.measured.get(node);
+    if (hit) return hit;
+    const size = estimateNodeSize(node);
+    this.measured.set(node, size);
+    return size;
   }
 }
 
@@ -713,11 +766,15 @@ export function layoutSheets(
   }
 
   // Risoluzione relationships dopo l'eventuale traslazione dei topic liberi.
+  const indexById = new Map<string, number>();
+  out.nodes.forEach((n, i) => {
+    if (!indexById.has(n.id)) indexById.set(n.id, i);
+  });
   for (const sheet of sheets) {
     for (const rel of sheet.relationships) {
-      const fromIdx = out.nodes.findIndex((n) => n.id === rel.end1Id);
-      const toIdx = out.nodes.findIndex((n) => n.id === rel.end2Id);
-      if (fromIdx === -1 || toIdx === -1) continue;
+      const fromIdx = indexById.get(rel.end1Id);
+      const toIdx = indexById.get(rel.end2Id);
+      if (fromIdx === undefined || toIdx === undefined) continue;
       const accent = out.nodes[fromIdx].accent || out.nodes[toIdx].accent;
       out.relationships.push({
         id: rel.id,

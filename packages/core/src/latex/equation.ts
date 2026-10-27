@@ -1,5 +1,5 @@
 import { CODE_LATEX, XmapError } from '../errors.js';
-import { MATHJAX_PROVIDER, Topic } from '../model/types.js';
+import { Image, MATHJAX_PROVIDER, Topic } from '../model/types.js';
 import { sha256Hex } from '../archive/archive.js';
 import { renderLatexToSvg } from './mathjax.js';
 import { svgToPng } from './raster.js';
@@ -78,13 +78,13 @@ export async function applyEquation(
     content: { content: trimmed },
   });
 
-  // Oggetto image annidato (Regola 1 e 5)
-  topic.image = {
-    src: `xap:${resource}`,
-    width,
-    height,
-    isMathJaxImage: true,
-  };
+  // Oggetto image annidato (Regola 1 e 5). Si aggiorna quello esistente: align e chiavi sconosciute restano.
+  const image: Image = topic.image ?? {};
+  image.src = `xap:${resource}`;
+  image.width = width;
+  image.height = height;
+  image.isMathJaxImage = true;
+  topic.image = image;
 
   if (titleMode.kind === 'formula_only') {
     topic.title = '';

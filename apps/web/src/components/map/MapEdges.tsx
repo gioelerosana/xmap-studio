@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { Layout } from '@xmap/core';
 import { computeTrunks, edgePathD, summaryPathD } from './geometry.js';
 
 /** Tronchi, connettori e graffe dei sommari: disegnati sotto i blocchi. */
-export function MapEdges({ layout: l }: { layout: Layout }) {
+function MapEdgesView({ layout: l }: { layout: Layout }) {
   const trunks = useMemo(() => computeTrunks(l), [l]);
   return (
     <>
@@ -56,3 +56,6 @@ export function MapEdges({ layout: l }: { layout: Layout }) {
     </>
   );
 }
+
+// Dipende solo dal layout: un cambio di selezione non ridisegna tutti i connettori.
+export const MapEdges = memo(MapEdgesView);

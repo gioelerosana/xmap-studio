@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { OpenWorkbook, Sheet } from '../src/index.js';
+import { AppController, OpenWorkbook, Sheet } from '../src/index.js';
+import { minimalXmind } from './helpers.js';
 
 function workbook(): OpenWorkbook {
   const sheets: Sheet[] = [{ id: 's', rootTopic: { id: 'root', title: 'R' } }];
@@ -46,5 +47,44 @@ describe('OpenWorkbook dirty flag', () => {
       wb.undo();
       expect(wb.isDirty()).toBe(true);
     }
+  });
+
+  it('una modifica senza cambiamenti non crea un passo di undo né sporca la mappa', () => {
+    const wb = workbook();
+    edit(wb, 'A');
+    wb.markSaved(undefined, 'hash');
+    edit(wb, 'A');
+    expect(wb.isDirty()).toBe(false);
+    expect(wb.history).toHaveLength(2);
+  });
+
+  it('fondere una modifica nello snapshot salvato lo rende di nuovo da salvare', () => {
+    const wb = workbook();
+    edit(wb, 'A');
+    wb.markSaved(undefined, 'hash');
+    wb.content[0].rootTopic!.title = 'A2';
+    wb.replaceHistoryTop();
+    expect(wb.isDirty()).toBe(true);
+  });
+
+  it('le modifiche fatte durante un salvataggio asincrono restano da salvare', async () => {
+    const ctrl = new AppController();
+    await ctrl.open(await minimalXmind(), null, 'x.xmind');
+    ctrl.setTopicTitle('a', 'Prima');
+    const { revision } = await ctrl.prepareArchiveBytes();
+    // Il blocco cambia mentre i byte sono in scrittura.
+    ctrl.setTopicTitle('a', 'Durante');
+    expect(ctrl.markSaved(undefined, 'hash', revision).dirty).toBe(true);
+    ctrl.undo();
+    expect(ctrl.isDirty()).toBe(false);
+  });
+
+  it('rinominare un blocco appena creato dopo averlo salvato sporca la mappa', async () => {
+    const ctrl = new AppController();
+    await ctrl.open(await minimalXmind(), null, 'x.xmind');
+    const { newId } = ctrl.addTopic('r', 'Nuovo blocco');
+    ctrl.markSaved(undefined, 'hash');
+    const dto = ctrl.setTopicTitle(newId, 'Rinominato', { mergeWithPrevious: true });
+    expect(dto.dirty).toBe(true);
   });
 });

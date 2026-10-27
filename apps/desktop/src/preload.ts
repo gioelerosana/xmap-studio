@@ -16,20 +16,23 @@ export type UpdateOutcome =
   | { status: 'downloaded'; version: string; path: string }
   | { status: 'error'; message: string };
 
+/** File letto dal main process; `bytes` arriva come Uint8Array (structured clone di IPC). */
+export type OpenedFile = { path: string; name: string; bytes: Uint8Array };
+
 export interface ElectronAPI {
   /** Windows: controlla GitHub e scarica l'exe portable più recente nei Download. */
   checkAndDownloadUpdate: () => Promise<UpdateOutcome>;
   platform: () => Promise<string>;
-  openFileDialog: () => Promise<{ path: string; name: string; bytes: number[] } | null>;
-  openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: number[] } | null>;
+  openFileDialog: () => Promise<OpenedFile | null>;
+  openFilePath: (filePath: string) => Promise<OpenedFile | null>;
   openFile: (options?: {
     description?: string;
     extensions?: string[];
-  }) => Promise<{ path: string; name: string; bytes: number[] } | null>;
+  }) => Promise<OpenedFile | null>;
   saveFileDialog: (suggestedName?: string) => Promise<string | null>;
   saveBytes: (
     suggestedName: string,
-    bytes: number[],
+    bytes: Uint8Array,
     options?: {
       description?: string;
       extensions?: string[];
@@ -39,11 +42,11 @@ export interface ElectronAPI {
   ) => Promise<SaveBytesOutcome | null>;
   saveAtomic: (
     filePath: string,
-    bytes: number[],
+    bytes: Uint8Array,
     options?: { expectedHash?: string; force?: boolean }
   ) => Promise<SaveOutcome>;
   checkXMindRunning: () => Promise<string[]>;
-  printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<number[]>;
+  printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<Uint8Array>;
   minimize: () => void;
   maximize: () => void;
   close: () => void;
@@ -76,7 +79,7 @@ const api: ElectronAPI = {
   isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
   getInitialFile: () => ipcRenderer.invoke('app:getInitialFile'),
   onMaximizedChange: (callback) => {
-    const handler = (_: any, isMax: boolean) => callback(isMax);
+    const handler = (_: Electron.IpcRendererEvent, isMax: boolean) => callback(isMax);
     ipcRenderer.on('window:maximizedChanged', handler);
     return () => ipcRenderer.removeListener('window:maximizedChanged', handler);
   },

@@ -94,7 +94,8 @@ export function sheetIndexOf(sheets: Sheet[], topicId: string): number {
 export function isLikelyLatex(title?: string): boolean {
   if (!title || typeof title !== 'string') return false;
   const t = title.trim();
-  if (!t) return false;
+  // Senza nessuno di questi caratteri nessuna delle regole sotto può valere.
+  if (!t || !/[\\^_$]/.test(t)) return false;
   if (t.length > 2 && t.startsWith('$') && t.endsWith('$')) return true;
   if (/\\[a-zA-Z]{2,}/.test(t)) return true;
   if (/[a-zA-Z0-9)\]}]\^(\{|[a-zA-Z0-9])/.test(t)) return true;
@@ -232,6 +233,9 @@ export function setFillColor(topic: Topic, color?: string | null): void {
     if (style?.properties && 'svg:fill' in style.properties) {
       delete style.properties['svg:fill'];
       if (Object.keys(style.properties).length === 0) {
+        delete style.properties;
+      }
+      if (Object.keys(style).length === 0) {
         delete topic['style'];
       }
     }

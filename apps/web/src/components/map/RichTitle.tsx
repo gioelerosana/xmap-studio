@@ -9,6 +9,13 @@ import {
 
 /** Cache per le formule matematiche renderizzate per non ricalcolare MathJax */
 const inlineSvgCache = new Map<string, { svg: string; error: string | null }>();
+/** Limite della cache: una sessione lunga di editing di formule non deve farla crescere senza fine. */
+const INLINE_SVG_CACHE_MAX = 2000;
+
+function rememberInlineSvg(key: string, entry: { svg: string; error: string | null }): void {
+  if (inlineSvgCache.size >= INLINE_SVG_CACHE_MAX) inlineSvgCache.clear();
+  inlineSvgCache.set(key, entry);
+}
 
 /** Luminanza relativa di un colore `#rgb`/`#rrggbb[aa]`; `null` se non è esadecimale. */
 export function hexLuminance(color: string): number | null {
@@ -87,7 +94,7 @@ const InlineMathView: React.FC<InlineMathProps> = ({ math, display, fontSizePx =
       // Se già presente nella cache sincrona del core (es. calcolata in EstimatedMetrics)
       const res = renderLatexToSvg(math, fontSizePx, display ?? false);
       const entry = { svg: res.svg, error: res.error };
-      inlineSvgCache.set(cacheKey, entry);
+      rememberInlineSvg(cacheKey, entry);
       return entry;
     } catch {
       return null;
@@ -102,11 +109,11 @@ const InlineMathView: React.FC<InlineMathProps> = ({ math, display, fontSizePx =
       try {
         const res = renderLatexToSvg(math, fontSizePx, display ?? false);
         const entry = { svg: res.svg, error: res.error };
-        inlineSvgCache.set(cacheKey, entry);
+        rememberInlineSvg(cacheKey, entry);
         if (active) setRendered(entry);
       } catch (err: any) {
         const entry = { svg: '', error: err?.message || 'Errore LaTeX' };
-        inlineSvgCache.set(cacheKey, entry);
+        rememberInlineSvg(cacheKey, entry);
         if (active) setRendered(entry);
       }
     }, 0);
