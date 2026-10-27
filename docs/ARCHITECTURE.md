@@ -100,6 +100,19 @@ sovrascriverlo; in assenza di handle produce un download.
 
 MathJax e parte del calcolo del layout girano nel renderer React, non in un
 worker; mappe grandi o formule pesanti possono quindi causare pause visibili.
+Per contenerle:
+
+- la cronologia undo/redo tiene gli snapshot come stringhe JSON (una sola
+  serializzazione per modifica) e una modifica senza cambiamenti non crea un
+  passo; lo stato salvato si riconosce da una revisione, non dalla posizione;
+- il layout tiene in cache le dimensioni dei blocchi per contenuto (titolo,
+  stile, larghezza…): a ogni modifica si rimisurano solo i blocchi cambiati; la
+  cache si svuota quando la UI installa una nuova misura del testo;
+- la mappa si calcola dal `SheetDto` già in stato, senza ricostruire il DTO;
+- `NodeCard` e `MapEdges` sono memoizzati: selezione, editing e ridimensionamento
+  ridisegnano solo i blocchi che cambiano; le immagini si codificano in base64
+  una volta per risorsa;
+- nell'app desktop i file passano l'IPC come `Uint8Array`, non come array di numeri.
 La divisione di file e le altre scritture `.xmind` passano per la scrittura
 atomica desktop (`atomicWrite` in `packages/core/src/node/atomic.ts`) o per
 l'API di salvataggio del browser. La suite automatica non
