@@ -58,6 +58,7 @@ import {
 import { Sheet, Topic } from './model/types.js';
 import { setTitleRuns, setTextStyle, TextStylePatch } from './model/style.js';
 import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
+import { setSheetTheme, ThemePatch } from './model/theme.js';
 import {
   countTopics,
   collectAttachmentRefs,
@@ -225,6 +226,8 @@ export class AppController {
       titleMode?: TitleMode;
       fontSizePx?: number;
       color?: string;
+      /** Fattore di ingrandimento della formula rispetto alla dimensione del testo (1 = normale). */
+      scale?: number;
     } = {}
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
@@ -234,7 +237,8 @@ export class AppController {
     }
 
     const fontPx = options.fontSizePx ?? fontSizePx(topic);
-    const emPx = fontPx ? fontPx * 1.25 : 23.33;
+    const scale = options.scale !== undefined && options.scale > 0 ? options.scale : 1;
+    const emPx = (fontPx ? fontPx * 1.25 : 23.33) * scale;
 
     const { outcome, png } = await applyEquation(topic, latex, {
       emPx,
@@ -847,6 +851,24 @@ export class AppController {
       throw new XmapError(CODE_TOPIC_NOT_FOUND, `Summary ${summaryTopicId} non trovato`);
     }
     wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /**
+   * Modifica il tema del foglio `sheetIndex` (editor dei temi). Un passo di
+   * annullamento solo se qualcosa cambia; un valore non valido lascia il foglio
+   * com'era.
+   */
+  public setSheetTheme(sheetIndex: number, patch: ThemePatch): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const sheet = wb.content[sheetIndex];
+    if (!sheet) throw new XmapError(CODE_INVALID_INPUT, `Foglio ${sheetIndex + 1} non trovato`);
+
+    try {
+      if (setSheetTheme(sheet, patch)) wb.pushHistory();
+    } catch (e) {
+      throw new XmapError(CODE_INVALID_INPUT, e instanceof Error ? e.message : String(e));
+    }
     return wb.toDto();
   }
 

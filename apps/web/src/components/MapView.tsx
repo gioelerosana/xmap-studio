@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import type { Layout, LayoutNode } from '@xmap/core';
+import { titleBaseFontPx, type Layout, type LayoutNode } from '@xmap/core';
 import { Braces, CornerDownLeft, Edit3, Network, Plus, Trash2 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
 import { ContextMenu } from './map/ContextMenu.js';
@@ -39,6 +39,7 @@ export const MapView: React.FC<MapViewProps> = ({
   onToggleCollapse,
   resourceResolver,
   darkMode = true,
+  zen = false,
   structure,
   onStructureChange,
   onMoveTopic,
@@ -276,17 +277,19 @@ export const MapView: React.FC<MapViewProps> = ({
         onClearSelection?.();
       }}
     >
-      {/* Controlli zoom flottanti in basso a destra */}
-      <ZoomControls
-        structure={structure}
-        onStructureChange={onStructureChange}
-        zoom={view.k}
-        onZoom={zoomByButton}
-        onFit={fitAnimated}
-      />
+      {/* Controlli zoom flottanti in basso a destra (nascosti in modalità Zen) */}
+      {!zen && (
+        <ZoomControls
+          structure={structure}
+          onStructureChange={onStructureChange}
+          zoom={view.k}
+          onZoom={zoomByButton}
+          onFit={fitAnimated}
+        />
+      )}
 
-      {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse) */}
-      {isCoarse && selectedNode && (
+      {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse), nascosta in modalità Zen */}
+      {!zen && isCoarse && selectedNode && (
         <div
           ref={toolbarRef}
           data-map-ui
@@ -379,6 +382,7 @@ export const MapView: React.FC<MapViewProps> = ({
             w={editingNode.w}
             h={editingNode.h}
             isRoot={editingNode.depth === 0}
+            fontPx={titleBaseFontPx(editingNode.depth, editingNode.textStyle)}
             initialText={editing.mode === 'text' ? editing.text ?? '' : editingNode.title}
             initialRuns={editing.mode === 'text' ? undefined : editingNode.titleRuns}
             selectAll={editing.mode === 'all'}

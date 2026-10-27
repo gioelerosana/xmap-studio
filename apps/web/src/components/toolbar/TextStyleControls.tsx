@@ -1,15 +1,15 @@
-import React from 'react';
-import { Bold, ChevronDown, Italic, Strikethrough, Underline } from 'lucide-react';
-import type { TopicView } from '@xmap/core';
+import React, { useEffect, useState } from 'react';
+import { ALargeSmall, Bold, ChevronDown, Italic, Minus, Plus, Strikethrough, Underline } from 'lucide-react';
+import { titleBaseFontPx, type TopicView } from '@xmap/core';
 import { cn } from '@xmap/ui-kit';
 
 import type { TopicActions } from '../../app/useTopicActions.js';
-import type { InlineToggleStyle } from '../map/editorBridge.js';
+import { MAX_FONT_SIZE_PX, MIN_FONT_SIZE_PX, type InlineToggleStyle } from '../map/editorBridge.js';
 import { sameColor } from './ColorPopover.js';
 import { FOCUS_RING, chipClass, swatchHairline, swatchSelected } from './classes.js';
 import { BRANCH_COLORS } from './constants.js';
 import { ToolbarButton, ToolbarPopover, useToolbarOrientation } from './primitives.js';
-import { setTextColor, toggleTextStyle } from './useTextStyleShortcuts.js';
+import { setTextColor, setTextFontSize, stepTextFontSize, toggleTextStyle } from './useTextStyleShortcuts.js';
 
 // Stili nel pannello "Altri stili": il grassetto resta sempre visibile sulla barra.
 const POPOVER_STYLE_BUTTONS: { style: InlineToggleStyle; label: string; Icon: React.ElementType }[] = [
@@ -17,6 +17,10 @@ const POPOVER_STYLE_BUTTONS: { style: InlineToggleStyle; label: string; Icon: Re
   { style: 'underline', label: 'Sottolineato (Ctrl+U)', Icon: Underline },
   { style: 'strikethrough', label: 'Barrato', Icon: Strikethrough },
 ];
+
+// Dimensioni rapide in px, come nel menu delle dimensioni di XMind.
+const FONT_SIZE_PRESETS = [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64];
+const FONT_SIZE_STEP = 1;
 
 interface TextStyleControlsProps {
   topic: TopicView | null;
@@ -120,6 +124,147 @@ export const TextStyleControls: React.FC<TextStyleControlsProps> = ({ topic, isE
           </>
         )}
       </ToolbarPopover>
+      <FontSizePopover topic={topic} isEditingText={isEditingText} actions={actions} />
     </>
+  );
+};
+
+type FontSizePopoverProps = TextStyleControlsProps;
+
+// Dimensione del testo in px: −/+ di un pixel, valore scritto a mano o dimensioni rapide.
+// Durante la modifica in place vale per la selezione; il campo numerico ruberebbe il focus
+// all'editor (che si chiuderebbe), quindi lì restano attivi solo i pulsanti.
+const FontSizePopover: React.FC<FontSizePopoverProps> = ({ topic, isEditingText, actions }) => {
+  const enabled = topic?.kind === 'text';
+  const target = { topic, isEditingText, actions };
+  // `fo:font-size` è in pt: il ritorno in px può avere decimali spuri.
+  const stored = isEditingText ? undefined : topic?.textStyle?.fontSizePx;
+  const custom = stored === undefined ? undefined : Math.round(stored * 10) / 10;
+  const current = topic ? titleBaseFontPx(topic.depth, topic.textStyle) : undefined;
+
+  return (
+    <ToolbarPopover
+      align="center"
+      focusable={!isEditingText}
+      panelClassName="flex w-52 flex-col gap-2"
+      trigger={({ open, toggle }) => (
+        <ToolbarButton
+          label="Dimensione del testo"
+          active={open || custom !== undefined}
+          disabled={!enabled}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={toggle}
+        >
+          <ALargeSmall className="size-4" />
+        </ToolbarButton>
+      )}
+    >
+      {(close) => (
+        <div role="group" aria-label="Dimensione del testo" className="flex flex-col gap-2">
+          <span className="text-2xs text-muted-foreground">
+            Dimensione del testo{isEditingText ? ' (selezione)' : ''}
+          </span>
+          <div className="flex items-center gap-1">
+            <ToolbarButton
+              label="Riduci il testo"
+              disabled={!enabled}
+              onClick={() => stepTextFontSize(target, -FONT_SIZE_STEP)}
+            >
+              <Minus className="size-4" />
+            </ToolbarButton>
+            <FontSizeInput
+              key={topic?.id}
+              value={isEditingText ? undefined : current}
+              disabled={!enabled || isEditingText}
+              onCommit={(px) => setTextFontSize(target, px)}
+            />
+            <ToolbarButton
+              label="Ingrandisci il testo"
+              disabled={!enabled}
+              onClick={() => stepTextFontSize(target, FONT_SIZE_STEP)}
+            >
+              <Plus className="size-4" />
+            </ToolbarButton>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {FONT_SIZE_PRESETS.map((px) => (
+              <button
+                key={px}
+                type="button"
+                aria-pressed={custom === px}
+                onPointerDown={(e) => e.preventDefault()}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setTextFontSize(target, px)}
+                className={cn(chipClass(custom === px), 'min-w-8 tabular-nums')}
+              >
+                {px}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            aria-pressed={!isEditingText && custom === undefined}
+            onPointerDown={(e) => e.preventDefault()}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setTextFontSize(target, null);
+              close();
+            }}
+            className={cn(chipClass(!isEditingText && custom === undefined), 'flex h-6 items-center justify-center px-2')}
+          >
+            Predefinita
+          </button>
+        </div>
+      )}
+    </ToolbarPopover>
+  );
+};
+
+interface FontSizeInputProps {
+  value: number | undefined;
+  disabled: boolean;
+  onCommit: (px: number) => void;
+}
+
+// Campo in px: si applica con Invio o all'uscita; un valore non valido torna a quello attuale.
+const FontSizeInput: React.FC<FontSizeInputProps> = ({ value, disabled, onCommit }) => {
+  const shown = value === undefined ? '' : String(Math.round(value * 10) / 10);
+  const [draft, setDraft] = useState(shown);
+  useEffect(() => setDraft(shown), [shown]);
+
+  const commit = () => {
+    const px = Number(draft.replace(',', '.'));
+    if (draft.trim() === '' || !Number.isFinite(px) || px <= 0 || draft === shown) {
+      setDraft(shown);
+      return;
+    }
+    onCommit(px);
+  };
+
+  return (
+    <label className="flex h-8 flex-1 items-center gap-1 rounded-control border bg-background px-2 text-xs coarse:h-10">
+      <input
+        type="number"
+        inputMode="numeric"
+        min={MIN_FONT_SIZE_PX}
+        max={MAX_FONT_SIZE_PX}
+        step={1}
+        aria-label="Dimensione del testo in pixel"
+        placeholder="—"
+        disabled={disabled}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          }
+        }}
+        className="w-full min-w-0 bg-transparent tabular-nums outline-none disabled:opacity-disabled [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      <span className="text-muted-foreground">px</span>
+    </label>
   );
 };

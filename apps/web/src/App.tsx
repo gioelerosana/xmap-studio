@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Minimize2 } from 'lucide-react';
 import { Banner, Button, Modal, ToastContainer } from '@xmap/ui-kit';
 import { AppController, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
 import { MapView, type MapEditing } from './components/MapView.js';
@@ -6,6 +7,8 @@ import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
 import { LatexEditorModal } from './components/latex/LatexEditorModal.js';
 import { ExportModal } from './components/ExportModal.js';
 import { PrintModal } from './components/PrintModal.js';
+import { ImageExportModal } from './components/ImageExportModal.js';
+import { ThemeEditorModal } from './components/ThemeEditorModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import { AppMark } from './components/AppMark.js';
@@ -52,9 +55,13 @@ export const App: React.FC = () => {
 
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [imageExportOpen, setImageExportOpen] = useState(false);
+  const [themeModalOpen, setThemeModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Modalità Zen: solo la mappa, senza header, barra flottante, controlli di navigazione e schede dei fogli. Non persiste.
+  const [zenMode, setZenMode] = useState(false);
   const [editing, setEditing] = useState<MapEditing | null>(null);
   // Blocco aperto nell'editor LaTeX centrato; `undefined` = editor chiuso.
   const [latexTopicId, setLatexTopicId] = useState<string | undefined>();
@@ -278,7 +285,11 @@ export const App: React.FC = () => {
     handleCreateSummary,
     setSettingsOpen,
     setPrintModalOpen,
+    zenMode,
+    setZenMode,
   });
+
+  const zen = zenMode && Boolean(workbook);
 
   const resolveResource = useCallback((src: string) => controller.resourceBytes(src), [controller]);
 
@@ -293,6 +304,9 @@ export const App: React.FC = () => {
       onSaveAs: handleSaveAs,
       onExport: () => setExportModalOpen(true),
       onPrint: () => setPrintModalOpen(true),
+      onExportImage: () => setImageExportOpen(true),
+      onEditTheme: () => setThemeModalOpen(true),
+      onZen: () => setZenMode(true),
       onImport: () => setImportModalOpen(true),
       onExportEquation: handleExportEquation,
       onAttach: handleAttach,
@@ -305,25 +319,27 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-dvh w-screen overflow-hidden bg-background text-foreground select-none">
-      <AppHeader
-        headerRef={headerRef}
-        layout={headerLayout}
-        title={workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio'}
-        workbook={workbook}
-        busy={busy}
-        darkMode={darkMode}
-        settingsOpen={settingsOpen}
-        isElectron={isElectron}
-        isWindowMaximized={isWindowMaximized}
-        menuItems={menuItems}
-        onNewMap={handleNewMap}
-        onOpen={handleOpenLocalFile}
-        onSave={handleSave}
-        onUndo={() => doUndoRedo('undo')}
-        onRedo={() => doUndoRedo('redo')}
-        onToggleTheme={toggleDarkMode}
-        onToggleSettings={() => setSettingsOpen((open) => !open)}
-      />
+      {!zen && (
+        <AppHeader
+          headerRef={headerRef}
+          layout={headerLayout}
+          title={workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio'}
+          workbook={workbook}
+          busy={busy}
+          darkMode={darkMode}
+          settingsOpen={settingsOpen}
+          isElectron={isElectron}
+          isWindowMaximized={isWindowMaximized}
+          menuItems={menuItems}
+          onNewMap={handleNewMap}
+          onOpen={handleOpenLocalFile}
+          onSave={handleSave}
+          onUndo={() => doUndoRedo('undo')}
+          onRedo={() => doUndoRedo('redo')}
+          onToggleTheme={toggleDarkMode}
+          onToggleSettings={() => setSettingsOpen((open) => !open)}
+        />
+      )}
 
       <main className="relative flex flex-1 overflow-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         {settingsOpen && (
@@ -381,8 +397,9 @@ export const App: React.FC = () => {
                 onCancelEdit={() => setEditing(null)}
                 onToggleCollapse={handleToggleCollapse}
                 resourceResolver={resolveResource}
-                // In stampa la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
-                darkMode={darkMode && !printModalOpen}
+                // In stampa e nell'export immagine la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
+                darkMode={darkMode && !printModalOpen && !imageExportOpen}
+                zen={zen}
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
                 onMoveTopic={handleMove}
@@ -400,21 +417,35 @@ export const App: React.FC = () => {
                 onConnectRelationshipTarget={handleConnectRelationshipTarget}
               />
 
-              <FloatingToolbar
-                topic={selectedTopic}
-                selectedTopicIds={selectedTopicIds}
-                allTopics={allTopics}
-                relationships={currentSheet?.relationships || []}
-                isEditingText={Boolean(editing)}
-                actions={topicActions}
-                canAddSummary={canAddSummary}
-                onAddSummaryForSelection={handleCreateSummary}
-                onOpenLatex={openLatex}
-                onStartConnectRelationship={(id) => setConnectingTopicId(id)}
-                onInsertImage={(file) => void insertImage(file, 'picker')}
-              />
+              {!zen && (
+                <FloatingToolbar
+                  topic={selectedTopic}
+                  selectedTopicIds={selectedTopicIds}
+                  allTopics={allTopics}
+                  relationships={currentSheet?.relationships || []}
+                  isEditingText={Boolean(editing)}
+                  actions={topicActions}
+                  canAddSummary={canAddSummary}
+                  onAddSummaryForSelection={handleCreateSummary}
+                  onOpenLatex={openLatex}
+                  onStartConnectRelationship={(id) => setConnectingTopicId(id)}
+                  onInsertImage={(file) => void insertImage(file, 'picker')}
+                />
+              )}
 
-              {workbook.sheets.length > 1 && (
+              {zen && (
+                <Button
+                  size="xs"
+                  variant="ghost-muted"
+                  className="absolute right-2 top-2 z-30 opacity-20 hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+                  title="Esci dalla modalità Zen (Esc, Ctrl+Alt+Z)"
+                  onClick={() => setZenMode(false)}
+                >
+                  <Minimize2 className="size-4" /> Esci da Zen
+                </Button>
+              )}
+
+              {!zen && workbook.sheets.length > 1 && (
                 <div className="flex h-[calc(2.25rem+env(safe-area-inset-bottom))] shrink-0 items-center gap-1 overflow-x-auto border-t bg-sidebar px-2 pb-[env(safe-area-inset-bottom)]">
                   {workbook.sheets.map((sheet, idx) => (
                     <Button
@@ -459,6 +490,27 @@ export const App: React.FC = () => {
         onClose={() => setPrintModalOpen(false)}
         layout={currentLayout}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+      />
+      <ImageExportModal
+        isOpen={imageExportOpen}
+        onClose={() => setImageExportOpen(false)}
+        layout={currentLayout}
+        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+        onSaved={(message) => addToast('success', message)}
+      />
+      <ThemeEditorModal
+        isOpen={themeModalOpen && workbook !== null}
+        onClose={() => setThemeModalOpen(false)}
+        sheets={workbook?.sheets ?? []}
+        initialSheetIndex={activeSheetIndex}
+        onApply={(sheetIndex, patch) => {
+          try {
+            controller.setSheetTheme(sheetIndex, patch);
+            refreshState();
+          } catch (err) {
+            addToast('error', err instanceof Error ? err.message : String(err));
+          }
+        }}
       />
       <ImportModal
         isOpen={importModalOpen}

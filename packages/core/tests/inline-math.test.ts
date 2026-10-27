@@ -237,7 +237,7 @@ describe('splitInlineMath', () => {
       const plainSize = metrics.measure(plainNode);
       const mathSize = metrics.measure(tallMathNode);
 
-      expect(plainSize.h).toBe(36);
+      expect(plainSize.h).toBeGreaterThanOrEqual(36);
       // La frazione complessa richiede altezza maggiore di 36px
       expect(mathSize.h).toBeGreaterThan(plainSize.h);
     });

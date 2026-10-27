@@ -1,0 +1,1 @@
+/home/ubuntu/xmap-studio/apps/android/src/main/java/com/gioelerosana/xmapstudio/MainActivity.java

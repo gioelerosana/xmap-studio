@@ -18,9 +18,11 @@ interface GlobalShortcutsOptions {
   handleCreateSummary: () => void;
   setSettingsOpen: Dispatch<SetStateAction<boolean>>;
   setPrintModalOpen: Dispatch<SetStateAction<boolean>>;
+  zenMode: boolean;
+  setZenMode: Dispatch<SetStateAction<boolean>>;
 }
 
-/** Scorciatoie globali: Ctrl+lettera (undo, salva, apri, stampa…) ed Esc per ridurre o togliere la selezione. */
+/** Scorciatoie globali: Ctrl+lettera (undo, salva, apri, stampa…), Ctrl+Alt+Z per la modalità Zen ed Esc per ridurre o togliere la selezione (e, a selezione vuota, uscire da Zen). */
 export function useGlobalShortcuts({
   hasWorkbook,
   selectedTopic,
@@ -35,6 +37,8 @@ export function useGlobalShortcuts({
   handleCreateSummary,
   setSettingsOpen,
   setPrintModalOpen,
+  zenMode,
+  setZenMode,
 }: GlobalShortcutsOptions) {
   const { selectedTopicId, selectedTopicIds, setSelectedTopicIds, selectSingle } = selection;
 
@@ -44,6 +48,12 @@ export function useGlobalShortcuts({
       if (!mod) return;
       const key = e.key.toLowerCase();
       const inField = (e.target as Element | null)?.closest?.(TEXT_FIELD);
+      // Ctrl+Alt+Z: modalità Zen (prima di Ctrl+Z, che è l'annulla).
+      if (e.altKey && (key === 'z' || e.code === 'KeyZ')) {
+        e.preventDefault();
+        if (hasWorkbook) setZenMode((on) => !on);
+        return;
+      }
       if (key === 'z' || key === 'y') {
         // In un campo di testo vale l'undo nativo del campo.
         if (inField) return;
@@ -75,7 +85,7 @@ export function useGlobalShortcuts({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleAddChild, handleCreateSummary, hasWorkbook, setSettingsOpen, setPrintModalOpen]);
+  }, [doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleAddChild, handleCreateSummary, hasWorkbook, setSettingsOpen, setPrintModalOpen, setZenMode]);
 
   // Esc fuori dai campi di testo: la selezione multipla torna singola, quella singola si toglie.
   useEffect(() => {
@@ -85,6 +95,12 @@ export function useGlobalShortcuts({
       if (editing) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
+      // Senza selezione da togliere, Esc esce dalla modalità Zen.
+      if (zenMode && selectedTopicIds.length === 0 && !selectedTopicId) {
+        e.preventDefault();
+        setZenMode(false);
+        return;
+      }
       if (selectedTopicIds.length > 1) {
         e.preventDefault();
         setSelectedTopicIds(selectedTopicId ? [selectedTopicId] : []);
@@ -97,5 +113,5 @@ export function useGlobalShortcuts({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editing, selectedTopicIds, selectedTopicId, setSelectedTopicIds, selectSingle]);
+  }, [editing, selectedTopicIds, selectedTopicId, setSelectedTopicIds, selectSingle, zenMode, setZenMode]);
 }

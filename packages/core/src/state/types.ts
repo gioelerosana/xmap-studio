@@ -115,6 +115,8 @@ export interface SheetDto {
   title: string;
   topics: TopicView[];
   relationships: RelationshipView[];
+  /** Tema del foglio (`sheet.theme`), letto da `readSheetTheme`. */
+  theme?: SheetTheme;
 }
 
 export interface WorkbookDto {
@@ -154,4 +156,43 @@ export interface MergeResultDto {
   addedTopics: number;
   totalSheets: number;
   addedResources: number;
+}
+
+/** Livello di stile del tema: `centralTopic`, `mainTopic`, `subTopic` di `sheet.theme`. */
+export type ThemeLevel = 'central' | 'main' | 'sub';
+
+/** Forma del blocco (`shape-class` senza il prefisso `org.xmind.topicShape.`), tra quelle disegnate dall'app. */
+export type TopicShape = 'roundedRect' | 'rect' | 'ellipse' | 'underline';
+
+/** Linea dei rami verso i figli (`line-class` senza il prefisso `org.xmind.branchConnection.`). */
+export type BranchLine = 'curve' | 'straight' | 'elbow' | 'roundedElbow';
+
+/**
+ * Stile di un livello letto dal tema del foglio. Campi assenti = valore
+ * `inherited`, sconosciuto o mancante: la vista usa il proprio default.
+ */
+export interface ThemeLevelStyle {
+  /** Riempimento pieno (`svg:fill` esadecimale con `fill-pattern` diverso da `none`). */
+  fill?: string;
+  /** Colore del testo (`fo:color`). */
+  textColor?: string;
+  fontFamily?: string;
+  /** Dimensione in pt (`fo:font-size`). */
+  fontSizePt?: number;
+  bold?: boolean;
+  italic?: boolean;
+  shape?: TopicShape;
+  /** Linea verso i figli. */
+  line?: BranchLine;
+  /** Spessore della linea verso i figli, in pt. */
+  lineWidthPt?: number;
+}
+
+/** Tema del foglio, nella parte che l'app sa disegnare e modificare. */
+export interface SheetTheme {
+  /** Colori dei rami principali (`map.multi-line-colors`), in ordine. */
+  branchColors?: string[];
+  /** Sfondo della mappa (`map.svg:fill`). */
+  background?: string;
+  levels: Record<ThemeLevel, ThemeLevelStyle>;
 }

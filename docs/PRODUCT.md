@@ -122,9 +122,9 @@ non toccano lo schema: leggiamo il modello già in memoria.
 
 | Feature | Lock Free | Stato | Priorità |
 |---|---|---|---|
-| Export SVG | sì | Rinviato: l'anteprima grafica (Fase 6) disegna il layout, ma l'export SVG su file resta da fare | Media |
+| Export SVG | sì | **Fatto**: "Esporta immagine PNG / SVG…" (`ImageExportModal`, `export/mapImage.ts`) clona la mappa in tema chiaro, risolve gli stili calcolati (`var()`/`oklch` → rgb) e compone un SVG autonomo con `buildSvgDocument` (core); i caratteri restano per nome | Media |
 | Export Markdown / OPML | sì | **Fatto** (Fase 2): `exporters/markdown.ts`, `exporters/opml.ts`, un `#` per sheet, `$latex$`/note/etichette; OPML con `_note`/`_equation`/`_labels` | **Alta** |
-| Export PNG senza watermark | watermark in Free | Fattibile (il layout della Fase 6 è la base) | Media |
+| Export PNG senza watermark | watermark in Free | **Fatto**: stesso SVG rasterizzato su canvas a 1×/2×/3× (`computeRasterSize` limita lato 8192 px e 64 Mpx), sfondo opaco o trasparente, nessuna dipendenza | Media |
 | Import Markdown / OPML → mappa | sì | **Fatto** (Fase 2): `exporters/import.ts`, crea una nuova sheet; le equazioni `$…$` diventano native (renderer) | **Alta** |
 | Merge di file `.xmind` | sì | **Fatto** (Fase 2): `AppController.mergeWorkbook`, sheet accodate con id riassegnati | Media |
 | Split mappa per ramo principale | sì | **Fatto** (Fase 2): `AppController.splitTopic`, ramo → mappa autonoma validata | Bassa |
@@ -138,8 +138,8 @@ non toccano lo schema: leggiamo il modello già in memoria.
 | Outliner (vista testo) | sì | **Rimosso dalla UI** (resta `export::to_outline`) | Media |
 | Ricerca / filtro nell'albero | sì | **Fatto**: barra di ricerca + filtri per tipo nella colonna sinistra | Media |
 | Apertura dal file manager | sì | **Fatto**: MIME `application/xmind` + `.desktop` con `Exec=… %f`, `HANDLES_OPEN`; una finestra per file | Media |
-| Temi / custom theme | sì | Parziale (Fase 5): colore di ramo (`svg:fill`); l'editor di temi resta da fare | Bassa |
-| ZEN mode (tutte le rese) | parziale | Solo UI | Bassa |
+| Temi / custom theme | sì | **Fatto** (Fase 8): editor "Tema del foglio…" (menu ⋮) per colori dei rami, sfondo e, per centrale/principali/sotto-blocchi, riempimento, colore e font del testo, forma, linea e spessore verso i figli; scrive in `sheet.theme` solo le chiavi modificate | Bassa |
+| ZEN mode (tutte le rese) | parziale | **Fatto** (Fase 8): "Modalità Zen" (menu ⋮, `Ctrl+Alt+Z`) nasconde header, barra flottante, controlli di navigazione/zoom e schede dei fogli lasciando solo la tela; si esce con Esc (a selezione vuota), `Ctrl+Alt+Z` o il pulsante quasi trasparente "Esci da Zen". Solo UI, non persiste e non tocca il file | Bassa |
 | Set Password | sì | **Fuori scope**: cifratura ZIP, rompe atomicità e validazione | — |
 
 ### 3.6 Trappole trasversali (valide per tutte le fasi)
@@ -218,7 +218,7 @@ dipendenze), `ExportModal`/`ImportModal` in `apps/web`.
 `$…$` native), **merge** di file `.xmind` (sheet accodate con id e riferimenti
 riassegnati, risorse e allegati copiati) e **split** di un ramo in una mappa
 autonoma validata. L'**export SVG della mappa** e il **PNG senza watermark**
-usano il layout della Fase 6 e restano da completare come export su file.
+sono fatti ("Esporta immagine PNG / SVG…", dal DOM della mappa in tema chiaro).
 
 ### Fase 3 — Struttura visibile
 **Feature:** Relationship, Boundary, Summary, callout e floating topic con
@@ -272,7 +272,7 @@ nulla in XMind e ha complessità di layout alta.
 **Stato:** **fatto** in versione base: `layout/layout.ts` calcola il tidy tree
 (orizzontale) in modo puro, `MapView` disegna nodi e connettori, colore del
 ramo incluso. Restano marker,
-relazioni/archi curvi e l'export SVG su file.
+relazioni/archi curvi (l'export SVG/PNG su file è fatto).
 
 ### Fase 7 — Vista mappa ad albero (la feature centrale)
 **Idea:** promuovere la resa grafica a **vista primaria** dell'app: albero
@@ -311,7 +311,7 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | trascinabili, `position` = centro relativo alla radice (dal codice di XMind); round-trip in XMind da verificare |
 | Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | barra flottante, Ctrl+B/I/U |
 | | Formattazione parziale del titolo (`attributedTitle`) | ✅ | Ctrl+B/I/U o barra flottante sulla selezione nell'editor in place; round-trip in XMind da verificare |
-| | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti |
+| | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti; dimensione in px modificabile dalla barra (blocco intero o selezione: −/+, valore a mano, dimensioni rapide) |
 | Relazioni | Forme curved/straight/angled/zigzag, tratteggio, frecce dal tema | ✅ | `layout/relationship.ts` |
 | | Punti di controllo trascinabili (`controlPoints`) | ✅ | maniglie sulla relazione selezionata |
 | | Creazione di una relazione trascinando dalla mappa | 🟡 | dal menu contestuale ("Collega con freccia…" + clic sul bersaglio); trascinamento da fare |
@@ -319,9 +319,9 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | Struttura | Sommari (graffa + topic) e boundary | 🟡 | sommari resi e creabili su più fratelli (Ctrl+]), anche incollando un'immagine (Ctrl+V) con più fratelli selezionati; boundary da disegnare; round-trip in XMind dell'immagine su sommario da verificare |
 | | Logic Chart, Tree Chart | ✅ | |
 | | Mind map bilanciata, org chart, fishbone, timeline, matrice | ⬜ | oggi rese come Logic Chart |
-| Stile | Tema del foglio (colori, forme dei blocchi, linee dei rami) | 🟡 | colori dei rami; forme/linee dal tema da fare |
+| Stile | Tema del foglio (colori, forme dei blocchi, linee dei rami) | 🟡 | `model/theme.ts`: resi e modificabili (editor "Tema del foglio…") colori dei rami, riempimento, font, dimensione, grassetto/corsivo, forme rettangolo/arrotondata/ellisse/sottolineata, linee e spessori per centrale/principali/sotto-blocchi; sfondo solo scritto (l'app segue chiaro/scuro); stili di blocchi liberi, sommari, callout e altre forme XMind conservati ma non resi; round-trip in XMind da verificare |
 | | Forma, riempimento e bordo del singolo blocco | 🟡 | riempimento fatto |
-| | Linee dei rami a gomito/curve come da tema | ⬜ | |
+| | Linee dei rami a gomito/curve come da tema | ✅ | curva, dritta, gomito, gomito arrotondato (`line-class` del genitore) e spessore (`line-width`); la Tree Chart resta a tronco |
 | Contenuto | Equazioni LaTeX native (MathJax) | ✅ | supera Free |
 | | Formule `$…$` in linea nel testo del blocco | ✅ | solo resa nell'app: nel file resta testo, XMind mostra il sorgente |
 | | Larghezza del blocco (`customWidth`) e dimensione delle immagini trascinabili | ✅ | maniglie sul blocco selezionato; round-trip in XMind da verificare |
@@ -332,7 +332,7 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Outliner, presentazione (Pitch), focus su un ramo | 🟡 | outliner sì |
 | Export | Markdown, OPML, testo | ✅ | |
 | | Stampa e PDF della mappa (A4/A3, più pagine) | ✅ | anteprima delle pagine, sempre in tema chiaro; PDF solo nel desktop |
-| | PNG/SVG della mappa | ⬜ | |
+| | PNG/SVG della mappa | ✅ | sempre in tema chiaro, sfondo opaco o trasparente, PNG a 1×/2×/3×; riapertura in XMind non applicabile (non scrive nel `.xmind`) |
 
 **Ordine di attacco:** prima ciò che rende la mappa leggibile come in XMind
 (stile testo, relazioni, boundary, linee del tema), poi l'editing diretto sulla
@@ -399,7 +399,7 @@ l'arrivo di nuove feature:
 6. **Fase 4 — media**: fatta la parte allegati; Audio Notes fuori scope.
 7. **Fase 5 — produttività**: fatto task, outliner, ricerca/filtro, colore del
    ramo; temi/rich text da fare.
-8. **Fase 6 — anteprima grafica**: fatta in versione base; export SVG su file e
+8. **Fase 6 — anteprima grafica**: fatta in versione base; export SVG/PNG su file fatto,
    resa di marker/relazioni da completare.
 9. **Fase 7 — vista mappa ad albero**: completata! Piano in
    [`MAP-VIEW.md`](MAP-VIEW.md). Layout ad albero puro (`packages/core/src/layout/`), vista interattiva

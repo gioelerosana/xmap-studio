@@ -9,7 +9,17 @@ export type SaveBytesOutcome =
   | { path: string }
   | { ok: false; code: string; message: string; processes?: string[]; path: string };
 
+/** Esito del controllo aggiornamenti (vedi `updater.ts`). */
+export type UpdateOutcome =
+  | { status: 'unsupported'; message: string }
+  | { status: 'upToDate'; version: string }
+  | { status: 'downloaded'; version: string; path: string }
+  | { status: 'error'; message: string };
+
 export interface ElectronAPI {
+  /** Windows: controlla GitHub e scarica l'exe portable più recente nei Download. */
+  checkAndDownloadUpdate: () => Promise<UpdateOutcome>;
+  platform: () => Promise<string>;
   openFileDialog: () => Promise<{ path: string; name: string; bytes: number[] } | null>;
   openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: number[] } | null>;
   openFile: (options?: {
@@ -47,6 +57,8 @@ export interface ElectronAPI {
 }
 
 const api: ElectronAPI = {
+  checkAndDownloadUpdate: () => ipcRenderer.invoke('update:checkAndDownload'),
+  platform: () => ipcRenderer.invoke('app:platform'),
   openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
   openFilePath: (filePath: string) => ipcRenderer.invoke('fs:openPath', filePath),
   openFile: (options) => ipcRenderer.invoke('dialog:openAnyFile', options),

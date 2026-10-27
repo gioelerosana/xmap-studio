@@ -1,6 +1,8 @@
 import { SUMMARY_BRACE_W, trunkX, type Layout, type LayoutNode } from '@xmap/core';
 
 export const TREE_CORNER_R = 8;
+/** Raggio dei raccordi della linea a gomito arrotondato del tema. */
+const ELBOW_CORNER_R = 8;
 
 export interface Trunk {
   parent: number;
@@ -31,7 +33,10 @@ export function computeTrunks(l: Layout): Trunk[] {
   }));
 }
 
-/** Percorso del connettore padre→figlio: gomito con raccordo per la Tree Chart, curva altrimenti. */
+/**
+ * Percorso del connettore padre→figlio: gomito con raccordo per la Tree Chart,
+ * altrimenti la linea del tema del genitore (curva se il tema non la dice).
+ */
 export function edgePathD(edge: Layout['edges'][number], p: LayoutNode, c: LayoutNode): string {
   const endY = c.y + c.h / 2;
   if (edge.kind === 'tree') {
@@ -42,8 +47,30 @@ export function edgePathD(edge: Layout['edges'][number], p: LayoutNode, c: Layou
   }
   const startX = p.x + p.w;
   const startY = p.y + p.h / 2;
-  const deltaX = Math.abs(c.x - startX) * 0.55;
-  return `M ${startX} ${startY} C ${startX + deltaX} ${startY}, ${c.x - deltaX} ${endY}, ${c.x} ${endY}`;
+  switch (p.branchLine) {
+    case 'straight':
+      return `M ${startX} ${startY} L ${c.x} ${endY}`;
+    case 'elbow':
+    case 'roundedElbow': {
+      // Gomito a metà strada fra i due blocchi; quello arrotondato raccorda i due angoli.
+      const midX = startX + (c.x - startX) / 2;
+      const dy = endY - startY;
+      const r =
+        p.branchLine === 'roundedElbow'
+          ? Math.max(Math.min(ELBOW_CORNER_R, Math.abs(dy) / 2, Math.abs(c.x - startX) / 2), 0)
+          : 0;
+      if (r === 0) return `M ${startX} ${startY} H ${midX} V ${endY} H ${c.x}`;
+      const sy = Math.sign(dy);
+      return (
+        `M ${startX} ${startY} H ${midX - r} Q ${midX} ${startY} ${midX} ${startY + sy * r} ` +
+        `V ${endY - sy * r} Q ${midX} ${endY} ${midX + r} ${endY} H ${c.x}`
+      );
+    }
+    default: {
+      const deltaX = Math.abs(c.x - startX) * 0.55;
+      return `M ${startX} ${startY} C ${startX + deltaX} ${startY}, ${c.x - deltaX} ${endY}, ${c.x} ${endY}`;
+    }
+  }
 }
 
 /** Percorso della graffa di sommario `}` e del raccordo verso il blocco riassunto. */

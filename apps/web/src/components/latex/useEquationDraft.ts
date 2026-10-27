@@ -9,6 +9,15 @@ import {
   type TopicView,
 } from '@xmap/core';
 
+export const SCALE_MIN = 50;
+export const SCALE_MAX = 300;
+export const SCALE_STEP = 5;
+const BASE_EM_PX = 23.33;
+const PREVIEW_EM_PX = 28;
+
+export const clampScale = (percent: number) =>
+  Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(percent)));
+
 export type TitleModeId = 'formula_only' | 'keep_title' | 'custom';
 
 interface EquationDraftOptions {
@@ -29,6 +38,19 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
   const [titleMode, setTitleMode] = useState<TitleModeId>('formula_only');
   const [customTitle, setCustomTitle] = useState(t.title);
   const [inkColor, setInkColor] = useState('#000000');
+  // Percentuale di ingrandimento; riaprendo un'equazione si ricava dalla larghezza salvata.
+  const [scalePercent, setScalePercent] = useState(() => {
+    if (t.kind !== 'equation' || !t.latex || !t.imageW) return 100;
+    try {
+      const fontPx = t.textStyle?.fontSizePx;
+      const baseWidth = controller.preview(t.latex, fontPx ? fontPx * 1.25 : BASE_EM_PX).width;
+      if (!baseWidth) return 100;
+      const percent = clampScale(Math.round((t.imageW / baseWidth) * (100 / SCALE_STEP)) * SCALE_STEP);
+      return Math.abs(percent - 100) <= 3 ? 100 : percent;
+    } catch {
+      return 100;
+    }
+  });
   const [preview, setPreview] = useState<{ svg: string; error: string | null } | null>(null);
   const [applying, setApplying] = useState(false);
 
@@ -51,7 +73,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
     }
     previewTimer.current = window.setTimeout(() => {
       try {
-        const res = controller.preview(trimmed, 28);
+        const res = controller.preview(trimmed, PREVIEW_EM_PX * (inlineFormula ? 1 : clampScale(scalePercent) / 100));
         if (res.error) {
           setPreview({ svg: '', error: res.error });
         } else {
@@ -64,7 +86,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
     return () => {
       if (previewTimer.current) window.clearTimeout(previewTimer.current);
     };
-  }, [latex, inkColor, darkMode, controller]);
+  }, [latex, inkColor, darkMode, controller, scalePercent, inlineFormula]);
 
   // Riscrive solo la formula inline del titolo: delimitatori e frammenti di stile restano.
   // La validazione di `replaceInlineMathSegment` avviene prima di toccare il modello.
@@ -90,7 +112,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
       else if (titleMode === 'custom') mode = { kind: 'custom', title: customTitle };
       else mode = { kind: 'formula_only' };
       if (inlineMode) writeInlineFormula(latex.trim());
-      else await controller.apply(t.id, latex.trim(), { titleMode: mode, color: inkColor });
+      else await controller.apply(t.id, latex.trim(), { titleMode: mode, color: inkColor, scale: clampScale(scalePercent) / 100 });
       onChanged();
       onToast('success', inlineMode ? 'Formula aggiornata' : 'Equazione applicata');
       return true;
@@ -124,6 +146,8 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
     setCustomTitle,
     inkColor,
     setInkColor,
+    scalePercent,
+    setScalePercent,
     preview,
     applying,
     handleApplyEquation,

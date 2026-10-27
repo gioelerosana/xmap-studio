@@ -494,7 +494,7 @@ punto da verificare in UI.
   via drag & drop sulla mappa, posizione dei blocchi liberi, punti di controllo
   delle relazioni, formattazione parziale (Ctrl+B/I/U), larghezza dei blocchi e
   dimensione delle immagini, copia/incolla/duplica dal menu contestuale.
-  I temi non si modificano ancora (vedi matrice di parità). Inventario aggiornato in
+  Il tema del foglio si modifica dall'editor "Tema del foglio…" (colori, font, forme, linee; vedi matrice di parità). Inventario aggiornato in
   [`docs/PRODUCT.md`](docs/PRODUCT.md).
 - Le risorse orfane non vengono rimosse dallo ZIP (scelta a favore della
   sicurezza dei dati e dell'undo).

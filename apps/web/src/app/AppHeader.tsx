@@ -1,7 +1,7 @@
 import type { Ref } from 'react';
 import type { WorkbookDto } from '@xmap/core';
 import { Button, HeaderBar, IconButton, Menu, Separator, cn, type MenuItem } from '@xmap/ui-kit';
-import { FilePlus, FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
+import { SquarePlus, FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 
 interface AppHeaderProps {
@@ -52,7 +52,7 @@ export function AppHeader({
       leftContent={
         <>
           {workbook && layout.inlineOpen && (
-            <Button variant="ghost" size="sm" icon={<FilePlus className="size-4" />} onClick={onNewMap} title="Nuova mappa">
+            <Button variant="ghost" size="sm" icon={<SquarePlus className="size-4" />} onClick={onNewMap} title="Nuova mappa">
               <span className={cn(!layout.showLabels && 'sr-only')}>Nuova</span>
             </Button>
           )}

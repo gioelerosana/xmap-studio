@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { cn } from '@xmap/ui-kit';
 import type { TextStyle, TitleRun } from '@xmap/core';
-import { registerInlineEditor, type InlineToggleStyle } from './editorBridge.js';
+import { clampFontSizePx, registerInlineEditor, type InlineToggleStyle } from './editorBridge.js';
 
 export type EditExit = 'enter' | 'tab' | 'blur';
 
@@ -12,6 +12,8 @@ export interface NodeEditorProps {
   w: number;
   h: number;
   isRoot: boolean;
+  /** Dimensione base del testo del blocco in px, la stessa del blocco disegnato (`titleBaseFontPx`). */
+  fontPx: number;
   initialText: string;
   initialRuns?: TitleRun[];
   /** Seleziona tutto il testo all'apertura; altrimenti il cursore va in fondo. */
@@ -309,6 +311,7 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
   w,
   h,
   isRoot,
+  fontPx,
   initialText,
   initialRuns,
   selectAll,
@@ -424,6 +427,23 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
             },
             { wholeIfCollapsed: true }
           ),
+        setFontSize: (px) =>
+          restyle(
+            (selected) => {
+              for (const c of selected) {
+                if (px) c.style.fontSizePx = px;
+                else delete c.style.fontSizePx;
+              }
+            },
+            { wholeIfCollapsed: true }
+          ),
+        stepFontSize: (delta, basePx) =>
+          restyle(
+            (selected) => {
+              for (const c of selected) c.style.fontSizePx = clampFontSizePx((c.style.fontSizePx ?? basePx) + delta);
+            },
+            { wholeIfCollapsed: true }
+          ),
       }),
     // Le funzioni leggono solo il DOM tramite `ref`: basta registrarle una volta.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -509,9 +529,9 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       suppressContentEditableWarning
       className={cn(
         'absolute overflow-hidden rounded-[10px] border border-primary bg-card px-2.5 py-1 leading-snug text-foreground shadow-composer outline-none ring-[3px] ring-primary/25 whitespace-pre-wrap break-words',
-        isRoot ? 'text-sm font-semibold tracking-tight' : 'text-xs font-medium'
+        isRoot ? 'font-semibold tracking-tight' : 'font-medium'
       )}
-      style={{ left: x, top: y, width: Math.max(w, 120), minHeight: h }}
+      style={{ left: x, top: y, width: Math.max(w, 120), minHeight: h, fontSize: `${fontPx}px` }}
       onInput={fit}
       onPaste={handlePaste}
       onBlur={() => finish('blur')}

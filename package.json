@@ -8,7 +8,7 @@
     "dev": "pnpm --filter @xmap/web dev",
     "run:dev": "pnpm --filter @xmap/web dev",
     "dev:web": "pnpm --filter @xmap/web dev",
-    "build:web": "pnpm --filter @xmap/web build",
+    "build:web": "pnpm --filter @xmap/web build && node scripts/setup-cloudflare-ci.mjs",
     "dev:desktop": "pnpm --filter @xmap/desktop dev",
     "build:desktop": "pnpm --filter @xmap/desktop build",
     "build:core": "pnpm --filter @xmap/core build",
