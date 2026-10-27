@@ -1,6 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import type { GuardedSaveResult } from '@xmap/core/node';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { checkAndDownloadUpdate } from './updater.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
@@ -14,6 +16,21 @@ function loadCore(): Promise<Core> {
 }
 
 const DEV_SERVER_URL = 'http://localhost:3000';
+const DEV_SERVER_ORIGIN = new URL(DEV_SERVER_URL).origin;
+const webDistPath = path.resolve(__dirname, '../../web/dist/index.html');
+const webDistPrefix = pathToFileURL(`${path.dirname(webDistPath)}${path.sep}`).href;
+const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+const WINDOW_WIDTH = 1200;
+const WINDOW_HEIGHT = 800;
+const MIN_WINDOW_WIDTH = 720;
+const MIN_WINDOW_HEIGHT = 520;
+const ERR_ABORTED = -3;
+const MAX_BYTE = 255;
+/**
+ * Accetta "mappa.xmind" e "MAPPA.XMIND"; rifiuta "mappa.xmap" e "mappa.xmind.bak".
+ * Verifica: https://regex101.com/?regex=%5C.xmind%24&flags=i
+ */
+const XMIND_EXTENSION = /\.xmind$/i;
 const initialFiles = new Map<number, string | null>();
 const allowedCloseIds = new Set<number>();
 const startupFiles = findXmindFiles(process.argv);
@@ -22,7 +39,7 @@ const queuedFiles: string[] = startupFiles;
 
 function findXmindFiles(args: string[]): string[] {
   return args
-    .filter((arg) => /\.xmind$/i.test(arg) && fs.existsSync(arg))
+    .filter((arg) => XMIND_EXTENSION.test(arg) && fs.existsSync(arg))
     .map((arg) => path.resolve(arg));
 }
 
@@ -33,11 +50,11 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', (_, commandLine) => {
     const files = commandLine
-      .filter((arg) => /\.xmind$/i.test(arg) && fs.existsSync(arg))
+      .filter((arg) => XMIND_EXTENSION.test(arg) && fs.existsSync(arg))
       .map((arg) => path.resolve(arg));
     if (files.length > 0) {
       if (app.isReady()) {
-        for (const file of files) createWindow(file);
+        files.forEach((file) => createWindow(file));
       } else {
         queuedFiles.push(...files);
       }
@@ -53,18 +70,46 @@ if (!gotTheLock) {
     else queuedFiles.push(path.resolve(filePath));
   });
 
-  app.whenReady().then(() => {
-    createWindow(startupFile);
-    for (const file of queuedFiles.splice(0)) createWindow(file);
-  });
+  void openStartupWindows();
+}
+
+async function openStartupWindows(): Promise<void> {
+  await app.whenReady();
+  // Con file in coda (macOS `open-file` all'avvio) la finestra vuota è superflua.
+  if (startupFile !== null || queuedFiles.length === 0) createWindow(startupFile);
+  queuedFiles.splice(0).forEach((file) => createWindow(file));
+}
+
+function isAppUrl(url: string): boolean {
+  if (URL.canParse(url) && new URL(url).origin === DEV_SERVER_ORIGIN) return true;
+  return url.startsWith(webDistPrefix);
+}
+
+/** Apre nel browser o nel client di posta solo i link web e mail; il resto viene ignorato. */
+async function openExternalUrl(url: string): Promise<void> {
+  if (!URL.canParse(url) || !EXTERNAL_PROTOCOLS.has(new URL(url).protocol)) return;
+  try {
+    await shell.openExternal(url);
+  } catch (error: unknown) {
+    console.warn('[xmap] apertura del link esterno non riuscita:', error);
+  }
+}
+
+/** Un caricamento fallito non deve far cadere il main process: la UI gestisce il resto in `did-fail-load`. */
+async function loadSafely(load: Promise<void>): Promise<void> {
+  try {
+    await load;
+  } catch (error: unknown) {
+    console.warn('[xmap] caricamento della UI non riuscito:', error);
+  }
 }
 
 function createWindow(initialFile: string | null = null): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 720,
-    minHeight: 520,
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     frame: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#fcfcfc',
     show: false,
@@ -80,6 +125,17 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
   initialFiles.set(id, initialFile);
   window.once('ready-to-show', () => window.show());
 
+  // I link esterni si aprono nel browser di sistema, mai in una nuova finestra dell'app.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalUrl(url);
+    return { action: 'deny' };
+  });
+  window.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return;
+    event.preventDefault();
+    openExternalUrl(url);
+  });
+
   // La conferma di chiusura è già gestita dal main process (evento 'close' →
   // 'app:beforeClose' → dialog nel renderer), quindi il beforeunload del
   // renderer non deve bloccare la chiusura.
@@ -90,6 +146,10 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
   let rendererReady = false;
   window.webContents.on('did-finish-load', () => {
     rendererReady = true;
+  });
+  // Renderer morto: nessuno risponderebbe più a `app:beforeClose`, quindi la finestra deve poter chiudersi.
+  window.webContents.on('render-process-gone', () => {
+    rendererReady = false;
   });
 
   // Chiede conferma al renderer prima di chiudere, per non perdere modifiche.
@@ -106,29 +166,64 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
     allowedCloseIds.delete(id);
   });
 
-  const webDistPath = path.resolve(__dirname, '../../web/dist/index.html');
   // Se il server di sviluppo non risponde si ripiega sulla UI compilata; se
   // fallisce anche quella la finestra si mostra comunque, invece di restare
   // nascosta in attesa di un `ready-to-show` che non arriverà.
   window.webContents.on('did-fail-load', (_event, errorCode, _description, url, isMainFrame) => {
-    if (!isMainFrame || errorCode === -3 /* ERR_ABORTED: navigazione sostituita */) return;
+    // ERR_ABORTED: navigazione sostituita da un'altra, non è un errore.
+    if (!isMainFrame || errorCode === ERR_ABORTED) return;
     if (url.startsWith(DEV_SERVER_URL) && fs.existsSync(webDistPath)) {
       console.warn(`[xmap] ${DEV_SERVER_URL} non raggiungibile, carico ${webDistPath}`);
-      void window.loadFile(webDistPath);
+      void loadSafely(window.loadFile(webDistPath));
       return;
     }
     window.show();
   });
 
   const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
-  if (!isDev && fs.existsSync(webDistPath)) void window.loadFile(webDistPath);
-  else void window.loadURL(DEV_SERVER_URL);
+  const loading =
+    !isDev && fs.existsSync(webDistPath) ? window.loadFile(webDistPath) : window.loadURL(DEV_SERVER_URL);
+  void loadSafely(loading);
 
   return window;
 }
 
 function senderWindow(event: { sender: Electron.WebContents }): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
+}
+
+/** Byte da inviare al renderer: la copia ha un ArrayBuffer di dimensione esatta (un Buffer può essere una vista su un pool più grande). */
+function toIpcBytes(buffer: Uint8Array): Uint8Array {
+  return new Uint8Array(buffer);
+}
+
+function isByte(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_BYTE;
+}
+
+/** Byte ricevuti dal renderer: Uint8Array (formato attuale) o array di numeri (compatibilità). */
+function toBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (Array.isArray(value) && value.every(isByte)) return Uint8Array.from(value);
+  throw new Error('Dati del file non validi: attesi byte.');
+}
+
+function isAbsolutePath(value: unknown): value is string {
+  return typeof value === 'string' && path.isAbsolute(value);
+}
+
+function isRegularFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    // File inesistente o non accessibile: per il chiamante non è un file apribile.
+    return false;
+  }
+}
+
+async function readFileForRenderer(filePath: string) {
+  const buffer = await fs.promises.readFile(filePath);
+  return { path: filePath, name: path.basename(filePath), bytes: toIpcBytes(buffer) };
 }
 
 // IPC handlers
@@ -152,15 +247,12 @@ ipcMain.handle('dialog:openFile', async (event) => {
     filters: [{ name: 'XMind Map', extensions: ['xmind'] }],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
-  const filePath = result.filePaths[0];
-  const buffer = fs.readFileSync(filePath);
-  return { path: filePath, name: path.basename(filePath), bytes: Array.from(buffer) };
+  return readFileForRenderer(result.filePaths[0]);
 });
 
-ipcMain.handle('fs:openPath', async (_, filePath: string) => {
-  if (!fs.existsSync(filePath)) return null;
-  const buffer = fs.readFileSync(filePath);
-  return { path: filePath, name: path.basename(filePath), bytes: Array.from(buffer) };
+ipcMain.handle('fs:openPath', async (_, filePath: unknown) => {
+  if (!isAbsolutePath(filePath) || !isRegularFile(filePath)) return null;
+  return readFileForRenderer(filePath);
 });
 
 ipcMain.handle('dialog:saveFile', async (event, suggestedName?: string) => {
@@ -185,9 +277,7 @@ ipcMain.handle(
       filters: [{ name: options?.description || 'File', extensions }],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    const filePath = result.filePaths[0];
-    const buffer = fs.readFileSync(filePath);
-    return { path: filePath, name: path.basename(filePath), bytes: Array.from(buffer) };
+    return readFileForRenderer(result.filePaths[0]);
   }
 );
 
@@ -196,7 +286,7 @@ ipcMain.handle(
   async (
     event,
     suggestedName: string,
-    bytesArr: number[],
+    bytesValue: unknown,
     options?: {
       description?: string;
       extensions?: string[];
@@ -207,6 +297,7 @@ ipcMain.handle(
   ) => {
     const owner = senderWindow(event);
     if (!owner) return null;
+    const bytes = toBytes(bytesValue);
     const extensions = options?.extensions ?? ['bin'];
     let outputPath = options?.targetPath;
     if (!outputPath) {
@@ -217,7 +308,6 @@ ipcMain.handle(
       if (result.canceled || !result.filePath) return null;
       outputPath = result.filePath;
     }
-    const bytes = new Uint8Array(bytesArr);
     const writesXmind = extensions.some((extension) => extension.toLowerCase() === 'xmind');
     if (writesXmind && !outputPath.toLowerCase().endsWith('.xmind')) {
       outputPath += '.xmind';
@@ -243,9 +333,22 @@ ipcMain.on('window:forceClose', (event) => {
 // valore discriminato ({ ok, code, message, processes }), non un'eccezione.
 ipcMain.handle(
   'fs:saveAtomic',
-  async (_, filePath: string, bytesArr: number[], options?: { expectedHash?: string; force?: boolean }) => {
+  async (
+    _,
+    filePath: unknown,
+    bytesValue: unknown,
+    options?: { expectedHash?: string; force?: boolean }
+  ): Promise<GuardedSaveResult> => {
+    if (!isAbsolutePath(filePath) || !filePath.toLowerCase().endsWith('.xmind')) {
+      return {
+        ok: false,
+        code: 'invalid_input',
+        message: 'Percorso di salvataggio non valido: serve un file .xmind con percorso assoluto.',
+      };
+    }
+    const bytes = toBytes(bytesValue);
     const { guardedSave } = await loadCore();
-    return guardedSave(filePath, new Uint8Array(bytesArr), {
+    return guardedSave(filePath, bytes, {
       expectedHash: options?.expectedHash,
       force: options?.force === true,
     });
@@ -265,7 +368,7 @@ ipcMain.handle(
       margins: { marginType: 'none' },
       preferCSSPageSize: true,
     });
-    return Array.from(buffer);
+    return toIpcBytes(buffer);
   }
 );
 
