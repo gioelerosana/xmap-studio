@@ -1,5 +1,6 @@
 import { readControlPoints, resolveRelationshipStyle } from '../model/relationship.js';
 import { readTextStyle, readTitleRuns } from '../model/style.js';
+import { readSheetTheme } from '../model/theme.js';
 import { CODE_INVALID_INPUT, XmapError } from '../errors.js';
 import { RawArchive } from '../archive/types.js';
 import { CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
@@ -147,6 +148,7 @@ export class OpenWorkbook {
         title: (sheet.rootTopic ? topicTitle(sheet.rootTopic) : '') || sheet.title || `Foglio ${index + 1}`,
         topics,
         relationships,
+        theme: readSheetTheme(sheet),
       };
     });
 

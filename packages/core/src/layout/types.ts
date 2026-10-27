@@ -1,4 +1,4 @@
-import type { Point, RelationshipStyle, TextStyle, TitleRun } from '../state/types.js';
+import type { BranchLine, Point, RelationshipStyle, TextStyle, TitleRun, TopicShape } from '../state/types.js';
 
 export const DEFAULT_NODE_W = 180.0;
 export const DEFAULT_NODE_H = 36.0;
@@ -46,6 +46,16 @@ export interface MapNode {
   structureClass?: string;
   textStyle?: TextStyle;
   titleRuns?: TitleRun[];
+  /** Font del tema per il livello del blocco (nome singolo, la UI aggiunge il fallback). */
+  fontFamily?: string;
+  /** Forma del blocco dal tema; assente = rettangolo arrotondato. */
+  shape?: TopicShape;
+  /** Colore del testo dal tema, usato sui blocchi a riempimento pieno. */
+  themeTextColor?: string;
+  /** Linea verso i figli dal tema; assente = curva. */
+  branchLine?: BranchLine;
+  /** Spessore (px) della linea verso i figli dal tema. */
+  branchLineWidth?: number;
   /** Figli disposti in colonna (`attached`, `callout`). */
   children: MapNode[];
   /** Sommari: topic del gruppo `summary` agganciati a una graffa, fuori dalla colonna. */
@@ -101,6 +111,16 @@ export interface LayoutNode {
   childrenBelow: boolean;
   textStyle?: TextStyle;
   titleRuns?: TitleRun[];
+  /** Font del tema per il livello del blocco (nome singolo, la UI aggiunge il fallback). */
+  fontFamily?: string;
+  /** Forma del blocco dal tema; assente = rettangolo arrotondato. */
+  shape?: TopicShape;
+  /** Colore del testo dal tema, usato sui blocchi a riempimento pieno. */
+  themeTextColor?: string;
+  /** Linea verso i figli dal tema; assente = curva. */
+  branchLine?: BranchLine;
+  /** Spessore (px) della linea verso i figli dal tema. */
+  branchLineWidth?: number;
 }
 
 /** Forma del connettore: gomito dal lato destro (Logic Chart) o dal tronco (Tree Chart). */

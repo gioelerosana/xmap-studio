@@ -1,5 +1,5 @@
 import { relationshipGeometry } from './relationship.js';
-import { SheetDto, TextStyle, TitleRun, TopicView } from '../state/types.js';
+import { SheetDto, SheetTheme, TextStyle, ThemeLevel, ThemeLevelStyle, TitleRun, TopicView } from '../state/types.js';
 import { renderLatexToSvg } from '../latex/mathjax.js';
 import { splitInlineMath } from '../latex/inline.js';
 import { inlineMathFontSize, titleBaseFontPx, TITLE_LEADING_RATIO } from '../latex/size.js';
@@ -18,8 +18,11 @@ import {
   trunkX,
 } from './types.js';
 
-/** Larghezza in px di `text` con il font della mappa a `fontSizePx`, grassetto o no. */
-export type TextMeasurer = (text: string, fontSizePx: number, bold: boolean) => number;
+/**
+ * Larghezza in px di `text` a `fontSizePx`, grassetto o no, con il font `family`
+ * del tema (prima scelta, la UI ricade sul font della mappa) o quello della mappa.
+ */
+export type TextMeasurer = (text: string, fontSizePx: number, bold: boolean, family?: string) => number;
 
 let textMeasurer: TextMeasurer | null = null;
 
@@ -70,8 +73,8 @@ function heuristicCharWidth(ch: string, fontSize: number, bold: boolean): number
 }
 
 /** Larghezza di `text` con lo stile dato: misura della UI se installata, altrimenti stima. */
-function measureText(text: string, fontSize: number, bold: boolean): number {
-  if (textMeasurer) return textMeasurer(text, fontSize, bold);
+function measureText(text: string, fontSize: number, bold: boolean, family?: string): number {
+  if (textMeasurer) return textMeasurer(text, fontSize, bold, family);
   let sum = 0;
   for (const ch of text) sum += heuristicCharWidth(ch, fontSize, bold);
   return sum;
@@ -79,7 +82,7 @@ function measureText(text: string, fontSize: number, bold: boolean): number {
 
 /** Unità indivisibile del titolo: un carattere con il suo stile, oppure una formula MathJax. */
 type TitleCell =
-  | { kind: 'char'; ch: string; size: number; bold: boolean }
+  | { kind: 'char'; ch: string; size: number; bold: boolean; family?: string }
   | { kind: 'math'; width: number; height: number; display: boolean };
 
 /** Stile di base del blocco: dimensione e grassetto del testo, altezza minima di riga. */
@@ -87,6 +90,7 @@ interface TitleBase {
   size: number;
   bold: boolean;
   lineH: number;
+  family?: string;
 }
 
 /** Riga del titolo già misurata. */
@@ -95,8 +99,8 @@ interface LineBox {
   height: number;
 }
 
-function charCells(source: string, size: number, bold: boolean): TitleCell[] {
-  return [...source].map((ch): TitleCell => ({ kind: 'char', ch, size, bold }));
+function charCells(source: string, size: number, bold: boolean, family?: string): TitleCell[] {
+  return [...source].map((ch): TitleCell => ({ kind: 'char', ch, size, bold, family }));
 }
 
 /**
@@ -117,10 +121,10 @@ function mathCells(latex: string, size: number, display: boolean): TitleCell[] {
 }
 
 /** Celle di un frammento di testo (con eventuali formule `$…$` / `$$…$$`), nello stile dato. */
-function partCells(source: string, size: number, bold: boolean): TitleCell[] {
-  if (!source.includes('$')) return charCells(source, size, bold);
+function partCells(source: string, size: number, bold: boolean, family?: string): TitleCell[] {
+  if (!source.includes('$')) return charCells(source, size, bold, family);
   return splitInlineMath(source).flatMap((seg) =>
-    seg.kind === 'text' ? charCells(seg.value, size, bold) : mathCells(seg.value, size, seg.display ?? false)
+    seg.kind === 'text' ? charCells(seg.value, size, bold, family) : mathCells(seg.value, size, seg.display ?? false)
   );
 }
 
@@ -130,9 +134,11 @@ function partCells(source: string, size: number, bold: boolean): TitleCell[] {
  */
 function titleCells(text: string, base: TitleBase, runs?: TitleRun[]): TitleCell[] {
   if (!runs || runs.length === 0 || runs.map((r) => r.text).join('') !== text) {
-    return partCells(text, base.size, base.bold);
+    return partCells(text, base.size, base.bold, base.family);
   }
-  return runs.flatMap((run) => partCells(run.text, run.fontSizePx ?? base.size, run.bold ?? base.bold));
+  return runs.flatMap((run) =>
+    partCells(run.text, run.fontSizePx ?? base.size, run.bold ?? base.bold, base.family)
+  );
 }
 
 /** Larghezza di una sequenza di celle: i caratteri consecutivi con lo stesso stile si misurano insieme. */
@@ -149,11 +155,13 @@ function measureCells(cells: readonly TitleCell[]): number {
     let chunk = '';
     while (index < cells.length) {
       const next = cells[index];
-      if (next.kind !== 'char' || next.size !== cell.size || next.bold !== cell.bold) break;
+      if (next.kind !== 'char' || next.size !== cell.size || next.bold !== cell.bold || next.family !== cell.family) {
+        break;
+      }
       chunk += next.ch;
       index++;
     }
-    width += measureText(chunk, cell.size, cell.bold);
+    width += measureText(chunk, cell.size, cell.bold, cell.family);
   }
   return width;
 }
@@ -312,6 +320,7 @@ export function estimateNodeSize(
     displayTitle?: string;
     textStyle?: TextStyle;
     titleRuns?: TitleRun[];
+    fontFamily?: string;
     hasNotes?: boolean;
     markers?: string[];
     labels?: string[];
@@ -381,7 +390,12 @@ export function estimateNodeSize(
   const isBranch = node.depth === 1;
   const baseFontSize = titleBaseFontPx(node.depth, node.textStyle);
   const baseBold = node.textStyle?.bold ?? (isRoot || isBranch);
-  const base: TitleBase = { size: baseFontSize, bold: baseBold, lineH: isRoot ? 20.0 : 18.0 };
+  const base: TitleBase = {
+    size: baseFontSize,
+    bold: baseBold,
+    lineH: isRoot ? 20.0 : 18.0,
+    family: node.fontFamily,
+  };
 
   const padX = isRoot ? 24.0 : 18.0;
   const noteW = node.hasNotes ? 20.0 : 0.0;
@@ -460,8 +474,9 @@ export function buildSheetTrees(sheet: SheetDto): { trees: MapNode[]; floating: 
     roots.push(sheet.topics[0]);
   }
 
-  const trees = roots.map((r) => buildNodeRecursive(r, childrenMap));
-  const floatingNodes = floating.map((f) => buildNodeRecursive(f, childrenMap));
+  const theme = sheet.theme;
+  const trees = roots.map((r) => buildNodeRecursive(r, childrenMap, theme));
+  const floatingNodes = floating.map((f) => buildNodeRecursive(f, childrenMap, theme));
 
   return { trees, floating: floatingNodes };
 }
@@ -482,23 +497,52 @@ function isTreeRight(structureClass?: string): boolean {
   return structureClass === TREE_RIGHT_STRUCTURE;
 }
 
+/** px per pt (1pt = 4/3 px). */
+const PX_PER_PT = 4 / 3;
+
+/**
+ * Livello di stile del tema per un blocco: radice, rami principali, il resto.
+ * I blocchi liberi e i sommari (stili `floatingTopic`/`summaryTopic`, non
+ * modificati dall'editor) restano allo stile dell'app; i loro figli sono sub.
+ */
+function themeLevelOf(topic: TopicView): ThemeLevel | undefined {
+  if (topic.depth === 0) return 'central';
+  if (topic.group === 'detached' || topic.group === 'summary') return undefined;
+  return topic.depth === 1 ? 'main' : 'sub';
+}
+
+/** Stile del testo del tema sotto quello del blocco: vince sempre il blocco. */
+function withThemeText(own: TextStyle | undefined, level: ThemeLevelStyle | undefined): TextStyle | undefined {
+  if (!level) return own;
+  const fromTheme: TextStyle = {};
+  if (level.fontSizePt !== undefined) fromTheme.fontSizePx = level.fontSizePt * PX_PER_PT;
+  if (level.bold !== undefined) fromTheme.bold = level.bold;
+  if (level.italic !== undefined) fromTheme.italic = level.italic;
+  const merged = { ...fromTheme, ...own };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 function buildNodeRecursive(
   topic: TopicView,
   childrenMap: Map<string, TopicView[]>,
+  theme: SheetTheme | undefined,
   branchAccent?: string
 ): MapNode {
-  const explicitFill = topic.fillColor;
-  // Il fill appartiene solo al topic che lo dichiara; ciò che si eredita è
-  // l'accento del ramo, usato da connettori e decorazioni.
-  const accent = explicitFill || branchAccent;
+  const level = themeLevelOf(topic);
+  const themeStyle = level ? theme?.levels[level] : undefined;
+  const palette = theme?.branchColors ?? BRANCH_COLORS;
+  // Il fill appartiene solo al topic che lo dichiara (o al suo livello del
+  // tema); ciò che si eredita è l'accento del ramo, usato da connettori e decorazioni.
+  const explicitFill = topic.fillColor ?? themeStyle?.fill;
+  const accent = topic.fillColor || branchAccent;
 
   const rawChildren = childrenMap.get(topic.id) || [];
   const children: MapNode[] = [];
   const summaryTopics: MapNode[] = [];
   rawChildren.forEach((c, i) => {
     const childBranch =
-      topic.depth === 0 && !c.fillColor ? BRANCH_COLORS[i % BRANCH_COLORS.length] : accent;
-    const node = buildNodeRecursive(c, childrenMap, childBranch);
+      topic.depth === 0 && !c.fillColor ? palette[i % palette.length] : accent;
+    const node = buildNodeRecursive(c, childrenMap, theme, childBranch);
     if (c.group === 'summary') {
       summaryTopics.push(node);
     } else {
@@ -539,8 +583,13 @@ function buildNodeRecursive(
     position: topic.position,
     customWidth: topic.customWidth,
     structureClass: topic.structureClass,
-    textStyle: topic.textStyle,
+    textStyle: withThemeText(topic.textStyle, themeStyle),
     titleRuns: topic.titleRuns,
+    fontFamily: themeStyle?.fontFamily,
+    shape: themeStyle?.shape,
+    themeTextColor: themeStyle?.textColor,
+    branchLine: themeStyle?.line,
+    branchLineWidth: themeStyle?.lineWidthPt !== undefined ? themeStyle.lineWidthPt * PX_PER_PT : undefined,
     children,
     summaries,
   };
@@ -732,6 +781,11 @@ function pushLayoutNode(
     customWidth: node.customWidth,
     textStyle: node.textStyle,
     titleRuns: node.titleRuns,
+    fontFamily: node.fontFamily,
+    shape: node.shape,
+    themeTextColor: node.themeTextColor,
+    branchLine: node.branchLine,
+    branchLineWidth: node.branchLineWidth,
     childrenBelow,
   });
   return index;
