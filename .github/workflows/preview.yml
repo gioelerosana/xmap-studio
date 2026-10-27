@@ -1,0 +1,79 @@
+# Anteprima live della PR. Workers Builds produce l'URL dell'anteprima (nel
+# riepilogo del suo check run e nel check «Workers Builds: xmap-studio»), ma il
+# commento che il bot Cloudflare lascia nel PR mostra «No Preview URL»: dal PR
+# non c'è nessun link cliccabile. Questo workflow legge il riepilogo del check
+# run e pubblica un commento sempre aggiornato con gli URL, provandoli prima
+# per dire se rispondono o se sono dietro Cloudflare Access (docs/DEPLOY.md
+# §«Anteprime delle PR»).
+#
+# Il trigger `check_run` esiste solo su `main`: il workflow entra in funzione
+# dopo il merge del PR che lo introduce.
+name: Anteprima PR
+
+on:
+  check_run:
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# Una build per volta sul PR: i commenti si aggiornano, non si duplicano.
+concurrency:
+  group: anteprima-pr-${{ github.event.check_run.pull_requests[0].number }}
+  cancel-in-progress: true
+
+jobs:
+  comment:
+    # Solo le build di Workers Builds su un PR: main e gli altri workflow non
+    # producono anteprime.
+    if: >-
+      github.event.check_run.app.slug == 'cloudflare-workers-and-pages' &&
+      startsWith(github.event.check_run.name, 'Workers Builds') &&
+      github.event.check_run.pull_requests[0] != null
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: node --test scripts/preview-url.test.mjs
+      - name: Commento con l'anteprima
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.check_run.pull_requests[0].number }}
+          SHA: ${{ github.event.check_run.head_sha }}
+          CONCLUSION: ${{ github.event.check_run.conclusion }}
+          BUILD_URL: ${{ github.event.check_run.details_url }}
+          SUMMARY: ${{ github.event.check_run.output.summary }}
+        run: |
+          set -euo pipefail
+          # Solo gli esiti che dicono qualcosa: una build annullata non deve
+          # cancellare il commento con l'anteprima buona.
+          case "$CONCLUSION" in
+            success|failure|timed_out) ;;
+            *)
+              echo "Build $CONCLUSION: commento non aggiornato." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+          esac
+          # Build di un commit già superato: aggiornerebbe il PR con un'anteprima
+          # vecchia, meglio lasciare il commento dell'ultima build.
+          head=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
+          if [ "$head" != "$SHA" ]; then
+            echo "Build di ${SHA:0:7}, il PR è a ${head:0:7}: commento non aggiornato." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf '%s\n' "$SUMMARY" > "$RUNNER_TEMP/summary.md"
+          node scripts/preview-url.mjs comment \
+            --summary-file "$RUNNER_TEMP/summary.md" \
+            --conclusion "$CONCLUSION" \
+            --sha "$SHA" \
+            --build-url "$BUILD_URL" > "$RUNNER_TEMP/comment.md"
+          existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- xmap-preview-urls -->")) | .id' | head -1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$existing" -F body=@"$RUNNER_TEMP/comment.md" > /dev/null
+            echo "Commento aggiornato: https://github.com/$REPO/pull/$PR#issuecomment-$existing" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$RUNNER_TEMP/comment.md" > /dev/null
+            echo "Commento pubblicato sul PR #$PR." >> "$GITHUB_STEP_SUMMARY"
+          fi
