@@ -50,11 +50,18 @@ del dominio, come fa il Worker.
 Due strade, entrambe senza toccare il codice:
 
 - **Workers Builds** (consigliata): dalla dashboard, Workers → `xmap-studio` →
-  Settings → Build → collega il repo GitHub. Build command
-  `pnpm install --frozen-lockfile && pnpm build:web`, deploy command
-  `npx wrangler deploy`, branch `main`. Nessun segreto su GitHub. Per le PR
-  la scheda "Base delle anteprime" usa lo stesso build command e
-  `npx wrangler preview`, che richiede il blocco `"previews": {}` in
-  `wrangler.jsonc` (senza, la build della PR fallisce).
+  Settings → Build → collega il repo GitHub.
+  - Build command: `pnpm install --frozen-lockfile && pnpm build:web`
+  - Deploy command: `npx wrangler deploy` (default) oppure `npx wrangler versions upload`.
+  - Branch di produzione: `main`. Nessun segreto su GitHub.
+  - Per le PR, la configurazione richiede il blocco `"previews": {}` in `wrangler.jsonc`.
+  - Nota su `wrangler versions upload` nei branch/PR: Cloudflare inietta la variabile
+    `WRANGLER_CI_MATCH_TAG` con un tag non associato al Worker principale, causando
+    il fallimento del check di coerenza di Wrangler (`The name in your wrangler.jsonc
+    file must match the name of your Worker`, bug noto `cloudflare/workers-sdk#15682`).
+    Il comando `pnpm build:web` include automaticamente `scripts/setup-cloudflare-ci.mjs`,
+    che prepara un proxy temporaneo per intercettare ed eliminare la variabile prima
+    del deploy. In alternativa, dalla dashboard Cloudflare si può impostare il deploy
+    command come `env -u WRANGLER_CI_MATCH_TAG npx wrangler versions upload`.
 - **GitHub Actions** con `cloudflare/wrangler-action` e un API token
   (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) tra i secret del repo.
