@@ -204,12 +204,12 @@ describe('Tema del foglio: vista e round-trip', () => {
     const node = (id: string) => layout.nodes.find((n) => n.id === id);
     expect(node('a')?.accent).toBe('#FF6B6B');
     expect(node('b')?.accent).toBe('#FF9F69');
-    // 36pt = 36px; il blocco ne tiene conto.
-    expect(node('r')?.textStyle).toEqual({ fontSizePx: 36, bold: true });
+    // La dimensione resta quella dell'app (26 px la radice): del tema valgono grassetto e corsivo.
+    expect(node('r')?.textStyle).toEqual({ bold: true });
     expect(node('r')?.fontFamily).toBe('Nunito');
     expect(node('r')?.branchLine).toBe('roundedElbow');
     expect(node('r')?.branchLineWidth).toBe(4);
-    expect(node('a1')?.textStyle).toEqual({ fontSizePx: 14, bold: false });
+    expect(node('a1')?.textStyle).toEqual({ bold: false });
     expect(node('r')!.h).toBeGreaterThan(node('a')!.h);
   });
 

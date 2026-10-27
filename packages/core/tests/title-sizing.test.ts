@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   estimateNodeSize,
   inlineMathFontSize,
+  TITLE_FONT_PX,
   renderLatexToSvg,
   setTextMeasurer,
   type TextMeasurer,
@@ -11,8 +12,9 @@ import {
 const fakeMeasurer: TextMeasurer = (text, fontSizePx, bold) =>
   [...text].length * fontSizePx * (bold ? 0.6 : 0.5);
 
-/** Altezza di una riga base di un blocco di profondità 2 e padding verticale del blocco. */
-const LINE_H = 18;
+/** Dimensione base del testo di un blocco di profondità 2, altezza della sua riga e padding verticale del blocco. */
+const BASE_PX = TITLE_FONT_PX.other;
+const LINE_H = 20;
 const PAD_V = 16;
 
 afterEach(() => {
@@ -28,10 +30,10 @@ describe('stima del titolo con run e formule', () => {
       title: 'alpha beta gamma',
       titleRuns: [{ text: 'alpha ' }, { text: 'beta', bold: true }, { text: ' gamma' }],
     });
-    // 'alpha ' + 'beta' + ' gamma': 'beta' in grassetto pesa 4 * 12 * 0.6 invece di 4 * 12 * 0.5
+    // 'alpha ' + 'beta' + ' gamma': 'beta' in grassetto pesa 4 * 14 * 0.6 invece di 4 * 14 * 0.5
     expect(partlyBold.w).toBeGreaterThanOrEqual(plain.w);
-    expect(plain.w).toBe(Math.round(96 + 18 + 2));
-    expect(partlyBold.w).toBe(Math.round(100.8 + 18 + 2));
+    expect(plain.w).toBe(Math.round(16 * BASE_PX * 0.5 + 18 + 2));
+    expect(partlyBold.w).toBe(Math.round(16 * BASE_PX * 0.5 + 4 * BASE_PX * 0.1 + 18 + 2));
   });
 
   it('una run con dimensione maggiore alza la riga e quindi il blocco', () => {
@@ -54,7 +56,7 @@ describe('stima del titolo con run e formule', () => {
 
   it('una formula display ha una riga propria con la sua altezza più 4px', () => {
     const latex = '\\sum_{i=1}^{n} i';
-    const mathH = renderLatexToSvg(latex, inlineMathFontSize(12), true).height;
+    const mathH = renderLatexToSvg(latex, inlineMathFontSize(BASE_PX), true).height;
     const withDisplay = estimateNodeSize({ depth: 2, title: `testo $$${latex}$$` });
     const plainText = estimateNodeSize({ depth: 2, title: 'testo' });
     // Riga del testo prima della formula, poi la riga della formula
@@ -63,7 +65,7 @@ describe('stima del titolo con run e formule', () => {
   });
 
   it('una formula inline alza la riga solo se è più alta del testo', () => {
-    const mathH = renderLatexToSvg('x^2', inlineMathFontSize(12), false).height;
+    const mathH = renderLatexToSvg('x^2', inlineMathFontSize(BASE_PX), false).height;
     const size = estimateNodeSize({ depth: 2, title: 'valore $x^2$' });
     expect(size.h).toBe(Math.max(36, Math.round(Math.max(LINE_H, mathH + 4) + PAD_V)));
   });
@@ -75,7 +77,7 @@ describe('stima del titolo con run e formule', () => {
       title: 'valore $x^2$',
       titleRuns: [{ text: 'valore ' }, { text: '$x^2$', bold: true }],
     });
-    const mathH = renderLatexToSvg('x^2', inlineMathFontSize(12), false).height;
+    const mathH = renderLatexToSvg('x^2', inlineMathFontSize(BASE_PX), false).height;
     expect(size.h).toBe(Math.max(36, Math.round(Math.max(LINE_H, mathH + 4) + PAD_V)));
     expect(size.w).toBeGreaterThan(0);
   });
@@ -93,7 +95,7 @@ describe('stima del titolo con run e formule', () => {
 
   it("l'equazione nativa misura la formula come la si disegna, non il PNG salvato", () => {
     const latex = 'E=mc^2';
-    const svg = renderLatexToSvg(latex, inlineMathFontSize(12));
+    const svg = renderLatexToSvg(latex, inlineMathFontSize(BASE_PX));
     const size = estimateNodeSize({ depth: 2, kind: 'equation', latex, imageW: 600, imageH: 300 });
     expect(size.w).toBeCloseTo(Math.max(svg.width + 36, 96), 5);
     expect(size.h).toBeCloseTo(Math.max(svg.height + 22, 38), 5);

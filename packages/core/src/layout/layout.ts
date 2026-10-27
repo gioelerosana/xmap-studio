@@ -500,9 +500,6 @@ function isTreeRight(structureClass?: string): boolean {
 /** px per pt (1pt = 4/3 px). */
 const PX_PER_PT = 4 / 3;
 
-/** Il testo del tema si disegna con 1 pt = 1 px: a 4/3 px i titoli risultavano giganti rispetto al resto dell'app. */
-const THEME_FONT_PX_PER_PT = 1;
-
 /**
  * Livello di stile del tema per un blocco: radice, rami principali, il resto.
  * I blocchi liberi e i sommari (stili `floatingTopic`/`summaryTopic`, non
@@ -514,11 +511,10 @@ function themeLevelOf(topic: TopicView): ThemeLevel | undefined {
   return topic.depth === 1 ? 'main' : 'sub';
 }
 
-/** Stile del testo del tema sotto quello del blocco: vince sempre il blocco. */
+/** Grassetto e corsivo del tema sotto lo stile del blocco, che vince sempre. La dimensione resta quella dell'app (`titleBaseFontPx`). */
 function withThemeText(own: TextStyle | undefined, level: ThemeLevelStyle | undefined): TextStyle | undefined {
   if (!level) return own;
   const fromTheme: TextStyle = {};
-  if (level.fontSizePt !== undefined) fromTheme.fontSizePx = level.fontSizePt * THEME_FONT_PX_PER_PT;
   if (level.bold !== undefined) fromTheme.bold = level.bold;
   if (level.italic !== undefined) fromTheme.italic = level.italic;
   const merged = { ...fromTheme, ...own };
