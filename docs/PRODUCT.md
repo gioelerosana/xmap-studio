@@ -311,7 +311,7 @@ Legenda: ✅ fatto · 🟡 parziale · ⬜ da fare.
 | | Blocchi liberi (floating) trascinabili, `position` salvata | 🟡 | trascinabili, `position` = centro relativo alla radice (dal codice di XMind); round-trip in XMind da verificare |
 | Testo | Grassetto/corsivo/sottolineato/barrato del blocco (`style.properties`) | ✅ | barra flottante, Ctrl+B/I/U |
 | | Formattazione parziale del titolo (`attributedTitle`) | ✅ | Ctrl+B/I/U o barra flottante sulla selezione nell'editor in place; round-trip in XMind da verificare |
-| | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti |
+| | Font, dimensione, colore, allineamento del testo | 🟡 | colore e dimensione letti; dimensione in px modificabile dalla barra (blocco intero o selezione: −/+, valore a mano, dimensioni rapide) |
 | Relazioni | Forme curved/straight/angled/zigzag, tratteggio, frecce dal tema | ✅ | `layout/relationship.ts` |
 | | Punti di controllo trascinabili (`controlPoints`) | ✅ | maniglie sulla relazione selezionata |
 | | Creazione di una relazione trascinando dalla mappa | 🟡 | dal menu contestuale ("Collega con freccia…" + clic sul bersaglio); trascinamento da fare |

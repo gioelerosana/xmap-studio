@@ -3,7 +3,8 @@ import type { TopicView } from '@xmap/core';
 
 import type { TopicActions, TextStylePatch } from '../../app/useTopicActions.js';
 import { TEXT_FIELD } from '../../app/constants.js';
-import { activeInlineEditor, type InlineToggleStyle } from '../map/editorBridge.js';
+import { titleBaseFontPx } from '@xmap/core';
+import { activeInlineEditor, clampFontSizePx, type InlineToggleStyle } from '../map/editorBridge.js';
 
 const PATCH_FOR_STYLE: Record<InlineToggleStyle, (value: boolean) => TextStylePatch> = {
   bold: (bold) => ({ bold }),
@@ -39,6 +40,28 @@ export function setTextColor({ topic, isEditingText, actions }: StyleTarget, col
   }
   if (!topic || topic.kind !== 'text') return;
   actions.setTextStyle(topic.id, { color });
+}
+
+/** Dimensione del testo in px (`null` = predefinita del blocco), con le stesse regole di `toggleTextStyle`. */
+export function setTextFontSize({ topic, isEditingText, actions }: StyleTarget, px: number | null) {
+  const size = px === null ? null : clampFontSizePx(px);
+  if (isEditingText) {
+    activeInlineEditor()?.setFontSize(size);
+    return;
+  }
+  if (!topic || topic.kind !== 'text') return;
+  actions.setTextStyle(topic.id, { fontSizePx: size });
+}
+
+/** Ingrandisce o rimpicciolisce il testo di `delta` px rispetto alla dimensione attuale. */
+export function stepTextFontSize({ topic, isEditingText, actions }: StyleTarget, delta: number) {
+  if (!topic || topic.kind !== 'text') return;
+  const current = titleBaseFontPx(topic.depth, topic.textStyle);
+  if (isEditingText) {
+    activeInlineEditor()?.stepFontSize(delta, current);
+    return;
+  }
+  actions.setTextStyle(topic.id, { fontSizePx: clampFontSizePx(current + delta) });
 }
 
 const SHORTCUT_STYLES: Record<string, InlineToggleStyle> = {

@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { cn } from '@xmap/ui-kit';
 import type { TextStyle, TitleRun } from '@xmap/core';
-import { registerInlineEditor, type InlineToggleStyle } from './editorBridge.js';
+import { clampFontSizePx, registerInlineEditor, type InlineToggleStyle } from './editorBridge.js';
 
 export type EditExit = 'enter' | 'tab' | 'blur';
 
@@ -421,6 +421,23 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
                 if (color) c.style.color = color;
                 else delete c.style.color;
               }
+            },
+            { wholeIfCollapsed: true }
+          ),
+        setFontSize: (px) =>
+          restyle(
+            (selected) => {
+              for (const c of selected) {
+                if (px) c.style.fontSizePx = px;
+                else delete c.style.fontSizePx;
+              }
+            },
+            { wholeIfCollapsed: true }
+          ),
+        stepFontSize: (delta, basePx) =>
+          restyle(
+            (selected) => {
+              for (const c of selected) c.style.fontSizePx = clampFontSizePx((c.style.fontSizePx ?? basePx) + delta);
             },
             { wholeIfCollapsed: true }
           ),
