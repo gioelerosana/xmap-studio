@@ -95,6 +95,55 @@ function SettingsSection({ title, children }: { title: string; children: React.R
   );
 }
 
+type UpdateState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; message: string };
+
+/** Windows: controlla GitHub e scarica la nuova versione; Linux: la gestisce il gestore di AppImage. */
+function UpdateControl() {
+  const [platform, setPlatform] = useState<string | null>(null);
+  const [state, setState] = useState<UpdateState>({ kind: 'idle' });
+  useEffect(() => {
+    void window.electronAPI?.platform().then(setPlatform);
+  }, []);
+
+  const check = async () => {
+    if (!window.electronAPI) return;
+    setState({ kind: 'busy' });
+    const outcome = await window.electronAPI.checkAndDownloadUpdate();
+    const message = {
+      unsupported: () => 'Gli aggiornamenti non sono gestiti da qui su questo sistema.',
+      upToDate: () => 'Hai già la versione più recente.',
+      downloaded: () =>
+        outcome.status === 'downloaded'
+          ? `Versione ${outcome.version} scaricata in ${outcome.path}. Chiudi l'app e avvia il nuovo file.`
+          : '',
+      error: () => (outcome.status === 'error' ? `Controllo non riuscito: ${outcome.message}` : ''),
+    }[outcome.status]();
+    setState({ kind: 'done', message });
+  };
+
+  if (platform === null) return null;
+  if (platform !== 'win32') {
+    return (
+      <SettingRow
+        label="Aggiornamenti"
+        hint="L'AppImage si aggiorna dal tuo gestore di AppImage (AppImageUpdate, Gear Lever, …) tramite zsync."
+      >
+        {null}
+      </SettingRow>
+    );
+  }
+  return (
+    <SettingRow
+      label="Aggiornamenti"
+      hint={state.kind === 'done' ? state.message : 'Controlla GitHub e scarica l’ultima versione nei Download.'}
+    >
+      <Button size="sm" variant="secondary" disabled={state.kind === 'busy'} onClick={() => void check()}>
+        {state.kind === 'busy' ? 'Controllo in corso…' : 'Controlla aggiornamenti'}
+      </Button>
+    </SettingRow>
+  );
+}
+
 /**
  * Scala dell'interfaccia: valori proposti più un campo libero.
  *
@@ -298,6 +347,7 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsP
                   <p className="mt-1 text-sm text-muted-foreground">{APP_DESCRIPTION}</p>
                 </div>
               </div>
+              {isElectron ? <UpdateControl /> : null}
             </SettingsSection>
           )}
 

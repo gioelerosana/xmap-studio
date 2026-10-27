@@ -108,7 +108,7 @@ Job:
 |---|---|---|
 | `verify` | verify | `scripts/check-release-version.mjs`: il tag deve coincidere con la `version` di tutti i `package.json` e con `pkgver` del PKGBUILD di release; poi `pnpm build` e `pnpm test` |
 | `build (windows)` | build | `pnpm dist:win` → `XMap-Studio-<versione>-portable-x64.exe` (+ `SHA256SUMS-windows.txt`) |
-| `build (linux)` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage` (+ `SHA256SUMS-linux.txt`) |
+| `build (linux)` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage`, poi `appimage-zsync.mjs` (update information + `.AppImage.zsync`) (+ `SHA256SUMS-linux.txt`) |
 | `release` | release | solo sui tag: crea la GitHub Release del tag (note generate dai commit) e allega i due artefatti e i checksum |
 
 In un lancio manuale su un branch non c'è un tag: il controllo tag/versione si
@@ -167,13 +167,27 @@ L'AppImage richiede FUSE 2 sull'host (limite di AppImage); altrimenti si avvia
 con `--appimage-extract-and-run`. Il lancio aggiunge da sé `--no-sandbox` dove
 i user namespace non privilegiati non sono disponibili.
 
+## Aggiornamenti automatici
+
+- **Linux (AppImage):** `apps/desktop/scripts/appimage-zsync.mjs` scrive nella
+  sezione ELF `.upd_info` la stringa `gh-releases-zsync|gioelerosana|xmap-studio|latest|XMap-Studio-*-x86_64.AppImage.zsync`
+  e genera `<AppImage>.zsync` con `zsyncmake` (pacchetto `zsync`, installato nel
+  job). I gestori di AppImage (AppImageUpdate, Gear Lever, …) cercano il `.zsync`
+  nell'ultima release e scaricano solo i blocchi cambiati. Va eseguito prima del
+  checksum, perché modifica l'AppImage.
+- **Windows (exe portable):** in Impostazioni › Informazioni il pulsante
+  "Controlla aggiornamenti" (`apps/desktop/src/updater.ts`) legge l'ultima
+  release su GitHub; se è più recente scarica l'exe nei Download verificando lo
+  SHA-256 di `SHA256SUMS-windows.txt` e lo mostra in Esplora file. Non sostituisce
+  l'exe in esecuzione: l'utente lo avvia dopo aver chiuso l'app.
+
 ## Artefatti
 
 | Artefatto | Percorso | Distribuito |
 |---|---|---|
 | Web app (build Vite) | `apps/web/dist/` | no (inclusa nei pacchetti) |
 | Processo Electron compilato | `apps/desktop/dist/` | no |
-| AppImage Linux | `apps/desktop/release/` | sì (GitHub Release del tag) |
+| AppImage Linux (+ `.zsync`) | `apps/desktop/release/` | sì (GitHub Release del tag) |
 | Exe portable Windows | `apps/desktop/release/` | sì (GitHub Release del tag) |
 | Pacchetto Arch | `packaging/arch/` | no (si compila in locale) |
 

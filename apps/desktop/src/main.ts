@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { checkAndDownloadUpdate } from './updater.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
 // può fare `require()` di un modulo ESM, quindi lo carichiamo con import()
@@ -137,6 +138,9 @@ ipcMain.handle('app:getInitialFile', (event) => {
   initialFiles.delete(id);
   return filePath;
 });
+
+ipcMain.handle('update:checkAndDownload', () => checkAndDownloadUpdate());
+ipcMain.handle('app:platform', () => process.platform);
 
 ipcMain.handle('safety:checkXMind', async () => (await loadCore()).xmindProcesses());
 

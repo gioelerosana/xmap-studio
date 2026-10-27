@@ -2,6 +2,13 @@
 declare global {
   interface Window {
     electronAPI?: {
+      checkAndDownloadUpdate: () => Promise<
+        | { status: 'unsupported'; message: string }
+        | { status: 'upToDate'; version: string }
+        | { status: 'downloaded'; version: string; path: string }
+        | { status: 'error'; message: string }
+      >;
+      platform: () => Promise<string>;
       openFileDialog: () => Promise<{ path: string; name: string; bytes: number[] } | null>;
       openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: number[] } | null>;
       openFile: (options?: { description?: string; extensions?: string[] }) => Promise<{ path: string; name: string; bytes: number[] } | null>;
