@@ -1,11 +1,13 @@
-# Controllo dei PR verso main: il titolo deve essere in Conventional Commits,
-# perché al merge decide la release (auto-release.yml, docs/RELEASE.md). Il
-# riepilogo del job mostra la versione che il merge produrrebbe oggi.
+# Controllo dei PR verso main: il titolo deve essere in Conventional Commits.
+# Il merge non produce nessuna release (la lancia a mano l'utente, vedi
+# release-manual.yml e docs/RELEASE.md), ma il titolo — che con lo squash merge
+# diventa il subject del commit su main — è ciò che il calcolo automatico
+# della release leggerà.
 name: Titolo PR
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+    types: [opened, edited, reopened, synchronize]
     branches: [main]
 
 permissions:
@@ -16,18 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - run: node --test scripts/release-version.test.mjs
-      - name: Release prevista al merge
+      - name: Controllo del titolo
         env:
           TITLE: ${{ github.event.pull_request.title }}
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
-          bump=$(node scripts/release-version.mjs bump --title "$TITLE" --labels "$LABELS")
-          if [ "$bump" = none ]; then
-            echo "Al merge: nessuna release." | tee -a "$GITHUB_STEP_SUMMARY"
-          else
-            version=$(node scripts/release-version.mjs next --bump "$bump")
-            echo "Al merge: release $bump, v$version (se nel frattempo non ne escono altre)." | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
+          kind=$(node scripts/release-version.mjs check-title --title "$TITLE")
+          {
+            echo "Titolo riconosciuto: \`$TITLE\`"
+            echo
+            echo "- tipo → peso in una release: $kind"
+            echo "- **Il merge non rilascia nulla**: la release si lancia a mano (docs/RELEASE.md)."
+          } | tee -a "$GITHUB_STEP_SUMMARY"

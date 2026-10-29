@@ -1,7 +1,11 @@
 // Versioni di release nel formato vYY.MAJOR.MINOR (docs/RELEASE.md §Versioning).
 //
-//   node scripts/release-version.mjs bump --title "feat(map): …" [--labels "a,b"]
-//       stampa major | minor | none: il tipo di release che il PR produce
+//   node scripts/release-version.mjs check-title --title "feat(map): …"
+//       verifica il titolo di un PR (Conventional Commits) e stampa
+//       «tipo → major | minor | none»: come conterebbe in una release
+//   node scripts/release-version.mjs commits
+//       analizza i commit dall'ultimo tag v* a HEAD e stampa un JSON con
+//       {lastTag, bump, included, ignored, nonConforming}
 //   node scripts/release-version.mjs next --bump major|minor [--date 2026-10-25T…]
 //       stampa la versione successiva (senza «v») a partire dai tag git esistenti
 //   node scripts/release-version.mjs set 26.1.0
@@ -21,7 +25,7 @@ export const MANIFESTS = [
   'apps/desktop/package.json',
 ];
 
-// Tipo Conventional Commits del titolo del PR → release prodotta al merge.
+// Tipo Conventional Commits → peso nella prossima release (major, minor, nessuna).
 const BUMP_BY_TYPE = {
   feat: 'major',
   fix: 'minor',
@@ -36,19 +40,14 @@ const BUMP_BY_TYPE = {
   test: 'none',
 };
 
-const LABEL_PREFIX = 'release:';
-const BUMPS = ['major', 'minor', 'none'];
 const TITLE_RE = /^([a-z]+)(\([^)]+\))?(!)?: \S/;
 const TAG_RE = /^v(\d+)\.(\d+)\.(\d+)$/;
+const MERGE_RE = /^Merge (pull request|branch|remote-tracking branch|tag) /;
+const RELEASE_COMMIT_RE = /^chore\(release\)!?: /;
+const BUMP_RANK = { none: 0, minor: 1, major: 2 };
 
-/** Release prodotta da un PR: l'etichetta `release:*` vince sul titolo. */
-export function bumpFromPr(title, labels = []) {
-  const forced = labels.filter((l) => l.startsWith(LABEL_PREFIX)).map((l) => l.slice(LABEL_PREFIX.length));
-  if (forced.length > 1) throw new Error(`Più etichette di release sul PR: ${forced.join(', ')}. Lasciane una.`);
-  if (forced.length === 1) {
-    if (!BUMPS.includes(forced[0])) throw new Error(`Etichetta "${LABEL_PREFIX}${forced[0]}" sconosciuta: usa ${BUMPS.map((b) => LABEL_PREFIX + b).join(', ')}.`);
-    return forced[0];
-  }
+/** Controlla un titolo (o subject) in Conventional Commits e dice quanto pesa in una release. */
+export function checkTitle(title) {
   const match = TITLE_RE.exec(title);
   if (!match) {
     throw new Error(`Titolo "${title}" non in formato Conventional Commits: atteso "tipo(ambito): descrizione", es. "feat(map): …".`);
@@ -56,7 +55,42 @@ export function bumpFromPr(title, labels = []) {
   const [, type, , breaking] = match;
   const bump = BUMP_BY_TYPE[type];
   if (!bump) throw new Error(`Tipo "${type}" non ammesso nel titolo: usa ${Object.keys(BUMP_BY_TYPE).join(', ')}.`);
-  return breaking ? 'major' : bump;
+  return { type, bump: breaking ? 'major' : bump };
+}
+
+/**
+ * Classifica i subject dei commit su main dall'ultimo tag. I merge commit e i
+ * `chore(release): …` non contano; i subject non conformi a Conventional
+ * Commits sono ignorati ma restituiti, perché il chiamante li segnali.
+ */
+export function analyzeCommits(subjects) {
+  const included = [];
+  const ignored = [];
+  const nonConforming = [];
+  let bump = 'none';
+  for (const raw of subjects) {
+    const subject = raw.trim();
+    if (!subject) continue;
+    if (MERGE_RE.test(subject) || RELEASE_COMMIT_RE.test(subject)) {
+      ignored.push(subject);
+      continue;
+    }
+    let result;
+    try {
+      result = checkTitle(subject);
+    } catch {
+      nonConforming.push(subject);
+      continue;
+    }
+    included.push(subject);
+    if (BUMP_RANK[result.bump] > BUMP_RANK[bump]) bump = result.bump;
+  }
+  return { bump, included, ignored, nonConforming };
+}
+
+/** Release che i commit giustificano: major | minor | none. */
+export function bumpFromCommits(subjects) {
+  return analyzeCommits(subjects).bump;
 }
 
 /** Versione successiva: YY dall'anno della data, contatori dai tag dello stesso anno. */
@@ -96,9 +130,25 @@ function option(args, name) {
 function main(args) {
   const [command, ...rest] = args;
   switch (command) {
-    case 'bump': {
-      const labels = (option(rest, 'labels') ?? '').split(',').map((l) => l.trim()).filter(Boolean);
-      return bumpFromPr(option(rest, 'title') ?? '', labels);
+    case 'check-title': {
+      const { type, bump } = checkTitle(option(rest, 'title') ?? '');
+      return `${type} → ${bump}`;
+    }
+    case 'commits': {
+      // Ultimo tag di versione raggiungibile da HEAD; senza tag, tutta la storia.
+      let lastTag = null;
+      try {
+        lastTag = execFileSync('git', ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', 'HEAD'], {
+          cwd: root,
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+      } catch {
+        // nessun tag: si analizza tutto
+      }
+      const range = lastTag ? `${lastTag}..HEAD` : 'HEAD';
+      const log = execFileSync('git', ['log', '--format=%s', range], { cwd: root, encoding: 'utf-8' });
+      return JSON.stringify({ lastTag, ...analyzeCommits(log.split('\n')) });
     }
     case 'next': {
       const raw = option(rest, 'date');
@@ -111,7 +161,7 @@ function main(args) {
       setVersion(rest[0] ?? '');
       return `Versione impostata: ${rest[0]}`;
     default:
-      throw new Error('Uso: release-version.mjs bump|next|set (vedi l\'intestazione del file).');
+      throw new Error('Uso: release-version.mjs check-title|commits|next|set (vedi l\'intestazione del file).');
   }
 }
 

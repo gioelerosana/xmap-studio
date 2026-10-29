@@ -1,5 +1,5 @@
 # Workflow di release. Parte in tre modi:
-#   - richiamato da auto-release.yml dopo il merge di un PR in main, con il tag
+#   - richiamato da release-manual.yml, lanciato a mano dall'utente, con il tag
 #     appena creato (input `tag`): è il percorso normale;
 #   - al push manuale di un tag di versione (vYY.MAJOR.MINOR, docs/RELEASE.md):
 #       git tag -a v26.1.0 -m "v26.1.0" && git push origin v26.1.0

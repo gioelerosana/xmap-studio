@@ -1,0 +1,120 @@
+# Release manuale: si lancia a mano da GitHub (Actions › Release manuale › Run
+# workflow, oppure `gh workflow run release-manual.yml`) e solo da `main`.
+# Un merge non rilascia nulla: la release è una decisione separata.
+#
+# Con `bump: auto` (default) il tipo si ricava dai subject dei commit su main
+# dall'ultimo tag v* (regole in docs/RELEASE.md §Versioning):
+#   almeno un feat / tipo con «!»                          → vYY.(MAJOR+1).0
+#   altrimenti un fix, perf, refactor, style, revert, build → vYY.MAJOR.(MINOR+1)
+#   solo docs, ci, chore, test, o nessun commit             → niente da rilasciare
+# I merge commit e i `chore(release): …` non contano; i subject non conformi a
+# Conventional Commits sono ignorati ed elencati nel riepilogo del run.
+#
+# Il job allinea le versioni (package.json, PKGBUILD) con un commit
+# `chore(release): vX` su main, crea il tag e richiama release.yml e il mirror:
+# i push fatti con GITHUB_TOKEN non avviano da soli altri workflow.
+name: Release manuale
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Tipo di release (auto = dai commit dall'ultimo tag)
+        type: choice
+        options: [auto, major, minor]
+        default: auto
+
+permissions:
+  contents: read
+
+# Una release alla volta: due lanci in parallelo calcolerebbero lo stesso tag.
+concurrency:
+  group: release-manual
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Solo da main
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::La release parte solo da main (lanciato da $GITHUB_REF): scegli il branch main."
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Calcolo della versione
+        id: version
+        env:
+          BUMP_INPUT: ${{ inputs.bump }}
+        run: |
+          node scripts/release-version.mjs commits > "$RUNNER_TEMP/commits.json"
+          last_tag=$(jq -r '.lastTag // "nessuno"' "$RUNNER_TEMP/commits.json")
+          {
+            echo "## Commit dall'ultimo tag ($last_tag)"
+            echo
+            if [ "$(jq '.included | length' "$RUNNER_TEMP/commits.json")" -eq 0 ]; then
+              echo "_Nessun commit rilevante._"
+            else
+              jq -r '.included[] | "- " + .' "$RUNNER_TEMP/commits.json"
+            fi
+            if [ "$(jq '.nonConforming | length' "$RUNNER_TEMP/commits.json")" -gt 0 ]; then
+              echo
+              echo "### Ignorati: non in Conventional Commits"
+              jq -r '.nonConforming[] | "- " + .' "$RUNNER_TEMP/commits.json"
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          bump="$BUMP_INPUT"
+          if [ "$bump" = auto ]; then
+            bump=$(jq -r .bump "$RUNNER_TEMP/commits.json")
+          fi
+          if [ "$bump" = none ]; then
+            echo "**Niente da rilasciare**: dall'ultimo tag ci sono solo commit docs/ci/chore/test, o nessuno. Per forzare una release rilancia con \`bump\` = major o minor." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          version=$(node scripts/release-version.mjs next --bump "$bump")
+          echo "**Release $bump: v$version**" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - name: Commit di release e tag
+        if: steps.version.outputs.tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          node scripts/release-version.mjs set "$VERSION"
+          node scripts/check-release-version.mjs "$TAG"
+          {
+            echo "chore(release): $TAG"
+            echo
+            echo "Release manuale. Commit inclusi dall'ultimo tag:"
+            jq -r '.included[] | "- " + .' "$RUNNER_TEMP/commits.json"
+          } > "$RUNNER_TEMP/release-message.txt"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -a -F "$RUNNER_TEMP/release-message.txt"
+          git tag -a "$TAG" -m "$TAG"
+          git push --atomic origin HEAD:main "$TAG"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.tag
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+
+  mirror:
+    needs: tag
+    if: needs.tag.outputs.tag
+    uses: ./.github/workflows/mirror.yml
+    secrets: inherit
