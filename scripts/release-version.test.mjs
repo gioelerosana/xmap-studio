@@ -1,29 +1,71 @@
 // node --test scripts/release-version.test.mjs
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bumpFromPr, nextVersion } from './release-version.mjs';
+import { analyzeCommits, bumpFromCommits, checkTitle, nextVersion } from './release-version.mjs';
 
-test('il tipo del titolo decide la release', () => {
-  assert.equal(bumpFromPr('feat(map): nuova barra'), 'major');
-  assert.equal(bumpFromPr('feat: senza ambito'), 'major');
-  assert.equal(bumpFromPr('fix(save): backup duplicati'), 'minor');
-  assert.equal(bumpFromPr('perf(layout): stima più rapida'), 'minor');
-  assert.equal(bumpFromPr('docs(agents): regole dei tag'), 'none');
-  assert.equal(bumpFromPr('ci: cache pnpm'), 'none');
-  assert.equal(bumpFromPr('fix(core)!: cambia il formato'), 'major');
-});
-
-test("l'etichetta release:* vince sul titolo", () => {
-  assert.equal(bumpFromPr('docs: guida', ['release:minor']), 'minor');
-  assert.equal(bumpFromPr('feat: x', ['bug', 'release:none']), 'none');
-  assert.throws(() => bumpFromPr('feat: x', ['release:major', 'release:minor']), /Più etichette/);
-  assert.throws(() => bumpFromPr('feat: x', ['release:patch']), /sconosciuta/);
+test('il tipo del titolo decide quanto pesa in una release', () => {
+  assert.deepEqual(checkTitle('feat(map): nuova barra'), { type: 'feat', bump: 'major' });
+  assert.equal(checkTitle('feat: senza ambito').bump, 'major');
+  assert.equal(checkTitle('fix(save): backup duplicati').bump, 'minor');
+  assert.equal(checkTitle('perf(layout): stima più rapida').bump, 'minor');
+  assert.equal(checkTitle('docs(agents): regole dei tag').bump, 'none');
+  assert.equal(checkTitle('ci: cache pnpm').bump, 'none');
+  assert.equal(checkTitle('fix(core)!: cambia il formato').bump, 'major');
 });
 
 test('titoli non validi sono rifiutati', () => {
-  assert.throws(() => bumpFromPr('Aggiunge la barra'), /Conventional Commits/);
-  assert.throws(() => bumpFromPr('feat:senza spazio'), /Conventional Commits/);
-  assert.throws(() => bumpFromPr('feature(map): x'), /non ammesso/);
+  assert.throws(() => checkTitle('Aggiunge la barra'), /Conventional Commits/);
+  assert.throws(() => checkTitle('feat:senza spazio'), /Conventional Commits/);
+  assert.throws(() => checkTitle('feature(map): x'), /non ammesso/);
+});
+
+test('almeno un feat tra i commit → major', () => {
+  assert.equal(bumpFromCommits(['fix(save): a', 'feat(map): b', 'docs: c']), 'major');
+});
+
+test('solo correzioni e simili → minor', () => {
+  assert.equal(bumpFromCommits(['fix(save): a', 'docs: c']), 'minor');
+  assert.equal(bumpFromCommits(['refactor(core): a']), 'minor');
+  assert.equal(bumpFromCommits(['perf: a', 'ci: b']), 'minor');
+});
+
+test('solo docs/ci/chore/test o nessun commit → none', () => {
+  assert.equal(bumpFromCommits(['docs(agents): a', 'ci: b', 'chore(deps): c', 'test(core): d']), 'none');
+  assert.equal(bumpFromCommits([]), 'none');
+});
+
+test('un tipo con «!» → major', () => {
+  assert.equal(bumpFromCommits(['fix(core)!: cambia il formato']), 'major');
+  assert.equal(bumpFromCommits(['docs!: x', 'fix: y']), 'major');
+});
+
+test('merge commit e chore(release) sono ignorati', () => {
+  const subjects = [
+    'Merge pull request #7 from gioelerosana/feat/x',
+    "Merge branch 'main' into feat/y",
+    'chore(release): v26.2.1',
+    'docs: guida',
+  ];
+  const result = analyzeCommits(subjects);
+  assert.equal(result.bump, 'none');
+  assert.deepEqual(result.included, ['docs: guida']);
+  assert.equal(result.ignored.length, 3);
+  assert.deepEqual(result.nonConforming, []);
+});
+
+test('un chore(release) con «!» o un merge che cita feat non pesano', () => {
+  assert.equal(bumpFromCommits(['chore(release)!: v27', 'Merge pull request #1 from a/feat: x']), 'none');
+});
+
+test('subject non conformi sono ignorati e restituiti', () => {
+  const result = analyzeCommits(['Aggiunge la barra', 'feature(map): x', 'fix(save): a', '']);
+  assert.equal(result.bump, 'minor');
+  assert.deepEqual(result.included, ['fix(save): a']);
+  assert.deepEqual(result.nonConforming, ['Aggiunge la barra', 'feature(map): x']);
+});
+
+test('un subject da squash merge con (#NN) conta', () => {
+  assert.equal(bumpFromCommits(['feat(editor): barra flottante (#12)']), 'major');
 });
 
 test('versione successiva nello stesso anno', () => {
