@@ -7,7 +7,7 @@ per esempio `v26.1.0`, `v26.1.1`, `v26.2.0`:
 
 | Parte | Significato |
 |---|---|
-| `YY` | anno del rilascio a due cifre (data del merge, UTC) |
+| `YY` | anno del rilascio a due cifre (data del lancio della release, UTC) |
 | `MAJOR` | numero della release di funzionalità nell'anno; riparte da 1 a ogni anno nuovo |
 | `MINOR` | numero della release di sole correzioni dopo l'ultima `MAJOR`; riparte da 0 a ogni `MAJOR` |
 
@@ -26,65 +26,85 @@ da `apps/web/package.json` al build (`__APP_VERSION__` in
 `apps/web/vite.config.ts`), Electron da `apps/desktop/package.json`, i nomi
 degli artefatti da electron-builder.
 
-### Una release per ogni PR
+### Release a richiesta
 
-Ogni PR unito in `main` produce da solo la sua release
-([`auto-release.yml`](../.github/workflows/auto-release.yml)). Il tipo lo decide
-il **titolo del PR**, in [Conventional Commits](https://www.conventionalcommits.org/)
-come i commit (`tipo(ambito): descrizione`, descrizione in italiano):
+Un merge in `main` **non** rilascia nulla. Il flusso delle PR (una per task,
+unite in fretta) è separato dalla release, che si lancia a mano quando l'utente
+decide di pubblicare ([`release-manual.yml`](../.github/workflows/release-manual.yml)).
 
-| Titolo del PR | Release al merge |
+Il tipo di release si ricava dai **subject dei commit su `main` dall'ultimo tag
+`v*`**, in [Conventional Commits](https://www.conventionalcommits.org/) (`tipo(ambito):
+descrizione`, descrizione in italiano). Con lo squash merge il subject è il
+titolo della PR; con un merge commit contano i commit del branch.
+
+| Commit dall'ultimo tag | Release |
 |---|---|
-| `feat(...)`, o qualunque tipo con `!` (`fix(core)!: …`) | `MAJOR`: `v26.2.0` → `v26.3.0` |
-| `fix`, `perf`, `refactor`, `style`, `revert`, `build` | `MINOR`: `v26.2.0` → `v26.2.1` |
-| `docs`, `ci`, `chore`, `test` | nessuna release |
+| almeno un `feat(...)`, o qualunque tipo con `!` (`fix(core)!: …`) | `MAJOR`: `v26.2.0` → `v26.3.0` |
+| altrimenti almeno un `fix`, `perf`, `refactor`, `style`, `revert`, `build` | `MINOR`: `v26.2.0` → `v26.2.1` |
+| solo `docs`, `ci`, `chore`, `test`, o nessun commit | niente da rilasciare |
 
-Il tipo si sceglie guardando **tutto** il PR, non il primo commit: se contiene
-anche una sola funzionalità nuova per l'utente è `feat`; se cambia solo il
-comportamento di cose esistenti (correzioni, prestazioni, ritocchi) è `fix` o
-simili; se non tocca l'app distribuita (doc, CI, strumenti di repo) è `docs`,
-`ci` o `chore`.
+Non contano i merge commit (`Merge pull request …`, `Merge branch …`) e i
+`chore(release): …`. I subject non conformi a Conventional Commits sono
+ignorati, ma il riepilogo del run li elenca. Il controllo
+[`pr-title.yml`](../.github/workflows/pr-title.yml) verifica solo il formato del
+titolo della PR, perché è quello che il calcolo leggerà; il suo riepilogo dice
+anche che il merge non rilascia.
 
-Un'etichetta sul PR vince sul titolo: `release:major`, `release:minor` o
-`release:none` (per esempio un `docs` che va comunque pubblicato, o un `fix`
-che non deve uscire da solo). Al massimo una per PR.
+Per lanciare la release:
 
-Il workflow [`pr-title.yml`](../.github/workflows/pr-title.yml) controlla il
-titolo e le etichette a ogni modifica del PR e scrive nel riepilogo del job la
-versione che il merge produrrebbe. Al merge, `auto-release.yml`:
+```bash
+gh workflow run release-manual.yml --ref main -f bump=auto   # auto | major | minor
+gh run list --workflow release-manual.yml --limit 1
+gh run watch <id>
+```
 
-1. calcola la versione dai tag esistenti (`scripts/release-version.mjs`);
+Oppure da GitHub: Actions › Release manuale › Run workflow, branch `main`. Il
+workflow rifiuta qualunque altro branch. L'input `bump` è `auto` (default: dai
+commit) oppure `major`/`minor` per forzare il tipo; con `auto` e solo commit
+`docs`/`ci`/`chore`/`test` il run termina con «niente da rilasciare», senza
+errore. Se serve, `bump` = `major`/`minor` pubblica comunque.
+
+Il workflow:
+
+1. calcola il tipo e la versione dai tag esistenti
+   (`scripts/release-version.mjs commits` e `next`) e li scrive nel riepilogo
+   del run, insieme all'elenco dei commit inclusi;
 2. aggiorna `package.json` e PKGBUILD con un commit
-   `chore(release): vYY.MAJOR.MINOR` su `main`;
-3. crea il tag annotato e lo pusha insieme al commit;
+   `chore(release): vYY.MAJOR.MINOR` su `main`, il cui corpo elenca i commit
+   inclusi;
+3. crea il tag annotato e lo pusha insieme al commit (push atomico);
 4. richiama il workflow di release (build, test, artefatti, GitHub Release) e
    il mirror GitLab.
 
-I merge vengono serializzati (un solo `auto-release` alla volta), quindi due PR
-uniti di seguito ricevono versioni consecutive. Nei branch di lavoro **non** si
-tocca la versione: la scrive solo il workflow.
+Le release sono serializzate (un solo `release-manual` alla volta). Nei branch
+di lavoro **non** si tocca la versione: la scrive solo il workflow.
 
 ## Checklist
 
-Prima del merge di un PR che produce una release:
+Per ogni PR:
 
-1. Titolo del PR in Conventional Commits con il tipo giusto (tabella sopra), o
-   etichetta `release:*`; il check "Titolo PR" deve essere verde.
+1. Titolo in Conventional Commits con il tipo giusto (tabella sopra); il check
+   "Titolo PR" deve essere verde.
 2. Aggiorna `README.md` (cosa fa l'app) e `docs/OVERVIEW.md` (stack,
    architettura, limiti noti) se cambiano.
 3. `pnpm build` e `pnpm test` verdi;
-   `node --test scripts/release-version.test.mjs` se tocchi gli script di
-   release.
+   `node --test scripts/*.test.mjs` se tocchi gli script di repo o di release.
 4. Collauda l'app con `pnpm dev:desktop` e apri in XMind un file generato
-   (vedi [`TESTING.md`](TESTING.md)).
-5. Dopo il merge segui il workflow "Auto release" su GitHub Actions: a fine run
-   gli artefatti sono allegati alla GitHub Release del tag.
-6. Fai `git pull` su `main` in locale: il commit di release è del bot.
+   (vedi [`TESTING.md`](TESTING.md)) se hai toccato formato o salvataggio.
+
+Per rilasciare, quando l'utente lo chiede:
+
+1. `git fetch origin`: `main` locale allineato, CI di `main` verde.
+2. `gh workflow run release-manual.yml --ref main -f bump=auto`.
+3. Segui il run (`gh run watch`): il riepilogo mostra i commit inclusi e la
+   versione calcolata; a fine run gli artefatti sono allegati alla GitHub
+   Release del tag.
+4. `git pull` su `main` in locale: il commit di release è del bot.
 
 ### Release a mano
 
-Serve solo per casi eccezionali (ripubblicare una versione, workflow
-automatico fallito a metà). Stesse regole di numerazione:
+Serve solo per casi eccezionali (ripubblicare una versione, `release-manual.yml`
+fallito a metà). Stesse regole di numerazione:
 
 ```bash
 node scripts/release-version.mjs next --bump minor   # stampa la prossima, es. 26.2.1
@@ -97,10 +117,11 @@ git push origin HEAD v26.2.1                           # il push del tag avvia r
 ## Workflow di release (GitHub Actions)
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) gira quando
-lo richiama `auto-release.yml` dopo un merge, sul push manuale di un tag
-`vYY.MAJOR.MINOR` e **a mano** da GitHub (Actions › Release › Run workflow,
-scegliendo branch o tag). Sulle pull request gira solo il controllo del titolo
-(`pr-title.yml`). I passi comuni (pnpm, cache dello store, `pnpm install`) sono
+lo richiama `release-manual.yml` dopo che l'utente l'ha lanciato, sul push
+manuale di un tag `vYY.MAJOR.MINOR` e **a mano** da GitHub (Actions › Release ›
+Run workflow, scegliendo branch o tag, per provare la build senza pubblicare).
+Sulle pull request girano solo il controllo del titolo (`pr-title.yml`) e il
+commento con l'anteprima (`preview.yml`). I passi comuni (pnpm, cache dello store, `pnpm install`) sono
 nell'azione locale [`.github/actions/setup`](../.github/actions/setup/action.yml).
 Job:
 
@@ -126,8 +147,8 @@ Se `verify` fallisce per versioni disallineate, correggi, poi sposta il tag:
 `git tag -d v<v> && git push origin :refs/tags/v<v>` e ripeti come in
 §"Release a mano". Se la Release del tag era già stata creata, cancellala prima
 (`gh release delete v<v>`). Se invece fallisce la build dopo che
-`auto-release.yml` ha già creato commit e tag, correggi con un nuovo PR: ne
-uscirà la versione successiva.
+`release-manual.yml` ha già creato commit e tag, correggi con una nuova PR e
+rilancia la release: uscirà la versione successiva.
 
 ### Build in locale
 

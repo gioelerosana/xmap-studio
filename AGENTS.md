@@ -157,9 +157,9 @@ restano all'orchestratore (vedi sotto).
   (`feat/<slug>-<parte>`); l'orchestratore integra i branch nel branch di
   lavoro e risolve i conflitti.
 - Nessun sotto-agente aggiunge dipendenze, fa commit su `main`, push o apre PR:
-  sono decisioni dell'orchestratore. Commit e push del branch di lavoro li fa
-  l'orchestratore a fine task (vedi §"Chiusura di ogni task"); la PR resta una
-  decisione dell'utente.
+  sono decisioni dell'orchestratore. Commit, push del branch di lavoro e
+  apertura della PR li fa l'orchestratore a fine task (vedi §"Chiusura di ogni
+  task"); la PR non la unisce nessun agente.
 - I sotto-agenti rispettano le regole non negoziabili sotto: nel prompt di
   delega richiamale esplicitamente quando il compito tocca salvataggio,
   formato `.xmind` o MathJax.
@@ -194,7 +194,7 @@ Prima di considerare concluso un cambiamento:
 4. se hai toccato il formato `.xmind` o il salvataggio: verifica manuale che un
    file salvato dall'app si apra ancora in XMind senza errori (vedi
    [`docs/TESTING.md`](docs/TESTING.md)); non serve che appaia identico
-5. commit e push del branch, come in §"Chiusura di ogni task"
+5. commit, push del branch e PR aperta, come in §"Chiusura di ogni task"
 
 ### Chiusura di ogni task
 
@@ -204,13 +204,19 @@ Ogni task si chiude **sempre** così, senza aspettare che l'utente lo chieda:
 2. committa **tutte** le modifiche del working tree (Conventional Commits, vedi
    §"Git e GitHub"), divise in più commit se toccano argomenti distinti;
 3. `git push -u origin <branch>`;
-4. nel riepilogo finale all'utente scrivi il **nome del branch** pushato e il
-   **titolo del PR**
-   da usare, con la release che produrrà al merge (§"Versioni, tag e titolo dei
-   PR").
+4. **apri la PR** con `gh pr create --base main --title "<titolo>" --body-file
+   <file>` (mai `--fill`), compilando le sezioni di
+   [`.github/pull_request_template.md`](.github/pull_request_template.md). Se il
+   task descrive una PR già esistente (o `gh pr view` ne trova una per il
+   branch), il push la aggiorna: modifica titolo e descrizione con
+   `gh pr edit` invece di aprirne un'altra;
+5. nel riepilogo finale all'utente scrivi **URL della PR, titolo e branch**,
+   il tipo (`fix`/`feat`/…) usato e, se non lo ha indicato l'utente, perché lo
+   hai scelto (§"Versioni, tag e titolo dei PR").
 
-Non si fa push su `main` né force-push; la Pull Request la apre l'utente o la
-si apre solo su sua richiesta.
+**Non unire mai la PR**, non fare push su `main` né force-push, e non lanciare
+release di tua iniziativa (§"Rilasciare"): unire e rilasciare sono decisioni
+dell'utente.
 
 ### Mobile e PWA
 
@@ -287,9 +293,11 @@ essere nella tailnet (app Tailscale, stesso account).
 xmap-studio/
 ├── package.json / pnpm-workspace.yaml / pnpm-lock.yaml
 ├── AGENTS.md                     # questo file
+├── .github/pull_request_template.md   # template delle PR
 ├── .github/workflows/
-│   ├── auto-release.yml          # al merge di un PR: versione, tag, release
-│   ├── pr-title.yml              # controllo del titolo dei PR (decide la release)
+│   ├── release-manual.yml        # release a richiesta (workflow_dispatch): versione, tag
+│   ├── pr-title.yml              # controllo del formato del titolo dei PR
+│   ├── preview.yml               # commento col link all'anteprima Cloudflare del PR
 │   ├── release.yml               # build e GitHub Release di un tag vYY.MAJOR.MINOR
 │   └── mirror.yml                # copia di `main` su GitLab (mirror)
 ├── LICENSE                       # MIT
@@ -352,35 +360,41 @@ aggiungere file di build o cache al repository.
   ```
 
 - Branch di lavoro: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `refactor/<slug>`.
-- Apri una Pull Request verso `main`; non fare push diretto su `main` per
-  cambiamenti non banali.
+- Ogni task finisce in una Pull Request verso `main` (§"Chiusura di ogni
+  task", §"Flusso delle PR"); niente push diretto su `main`.
 - Non riscrivere la storia di `main`, non fare force-push su `main`.
 
 ### Versioni, tag e titolo dei PR
 
 Le versioni sono **`vYY.MAJOR.MINOR`** (anno a due cifre, release di
-funzionalità dell'anno, release di correzioni), e **ogni PR unito in `main`
-produce da solo la sua release**: versione, commit `chore(release): …`, tag e
-GitHub Release li fa `auto-release.yml`. Regole complete in
+funzionalità dell'anno, release di correzioni). **Una PR unita in `main` non
+produce nessuna release**: la release è un passo separato, lanciato a mano su
+richiesta dell'utente (§"Rilasciare"); versione, commit `chore(release): …`, tag
+e GitHub Release li scrive solo `release-manual.yml`. Regole complete in
 [`docs/RELEASE.md`](docs/RELEASE.md) §"Versioning".
 
 Per l'agente questo vuol dire:
 
 - **non toccare mai la versione** (`version` dei `package.json`, `pkgver`) né
   creare tag nei branch di lavoro: li scrive solo il workflow;
-- **il titolo del PR decide la release**: va in Conventional Commits (tipo in
-  inglese, descrizione in italiano) e il tipo riassume **tutto** il PR:
-  - `feat(...)` se contiene almeno una funzionalità nuova per l'utente → `MAJOR`;
+- il titolo della PR è in Conventional Commits (tipo in inglese, descrizione in
+  italiano), e il tipo riassume **tutto** il PR. Con lo squash merge il titolo
+  diventa il subject del commit su `main`, che il calcolo della release leggerà
+  (con un merge commit contano i commit del branch: per questo anche quelli
+  vanno in Conventional Commits);
+- **il tipo lo indica l'utente nel task** (`fix`, `feat`, …). Se manca, lo scegli
+  tu con la tabella e lo dichiari nel riepilogo:
+  - `feat(...)` se contiene almeno una funzionalità nuova per l'utente;
   - `fix`, `perf`, `refactor`, `style`, `revert`, `build` se cambia solo cose
-    esistenti dell'app → `MINOR`;
-  - `docs`, `ci`, `chore`, `test` se non tocca l'app distribuita → nessuna
-    release;
-- quando apri o aggiorni un PR, scegli il titolo con queste regole (non usare
-  `--fill`, che prende il primo commit) e, se il tipo non basta, aggiungi
-  un'etichetta `release:major`, `release:minor` o `release:none`;
-- se nel corso del lavoro il PR cambia natura (un `fix` che diventa anche una
-  funzionalità), aggiorna il titolo; nel riepilogo all'utente indica il titolo
-  proposto e la release che produrrà.
+    esistenti dell'app;
+  - `docs`, `ci`, `chore`, `test` se non tocca l'app distribuita (non
+    finiscono in una release);
+- la **descrizione è specifica e dice l'effetto per l'utente**:
+  `fix(save): evita backup duplicati nello stesso secondo`. Un nome generico di
+  area (`feat(editor): miglioramenti all'editing`) va bene solo per una PR di
+  raccolta che contiene più cose;
+- se nel corso del lavoro la PR cambia natura (un `fix` che diventa anche una
+  funzionalità), aggiorna il titolo e dillo nel riepilogo.
 
 ### Comandi utili
 
@@ -389,6 +403,53 @@ gh auth status                         # verifica login GitHub
 gh repo view --web                     # apri il repo nel browser
 gh pr create --base main --title "feat(map): …" --body "…"
 ```
+
+## Flusso delle PR
+
+Modello: una PR = un problema = un commit logico su `main`, unita in fretta.
+
+- **Un task, una PR.** Se il task ne contiene due indipendenti, sono due branch
+  e due PR.
+- **Draft finché si itera.** Apri la PR come bozza (`gh pr create --draft`) se
+  l'utente deve ancora guardare l'anteprima e chiedere ritocchi. Cloudflare
+  Workers Builds compila ogni branch e ogni PR; `preview.yml` aspetta la build
+  del commit e tiene nella PR un commento con l'URL del branch (sempre l'ultimo
+  commit) e quello della singola versione, dicendo se rispondono o sono dietro
+  Cloudflare Access (`scripts/preview-url.mjs`, [`docs/DEPLOY.md`](docs/DEPLOY.md)
+  §"Anteprime delle PR"). Per provare dal telefono resta `pnpm dev:tailnet`.
+- **Pronta e unita lo stesso giorno.** Quando l'utente è soddisfatto la PR esce
+  dalla bozza (`gh pr ready`) e la unisce lui. Una PR ancora aperta dopo 2–3
+  giorni è troppo grossa: va spezzata.
+- **Le correzioni dopo il feedback vanno nella stessa PR** (altri commit sullo
+  stesso branch, o un `gh pr edit` se cambia il titolo), non in una PR nuova.
+- **Ramo di integrazione di lunga durata** solo per riscritture non spezzabili
+  in passi che lascino `main` funzionante; in quel caso va riallineato spesso a
+  `main` (`git fetch && git rebase origin/main` o merge) per non accumulare
+  conflitti.
+- Lo squash merge è facoltativo e lo decide l'utente nelle impostazioni del
+  repository: il flusso funziona con entrambe le strategie.
+
+## Rilasciare
+
+Si rilascia **solo se l'utente lo chiede esplicitamente** («rilascia», «fai una
+release»), mai di propria iniziativa e mai come effetto collaterale di un merge
+o di un task. A quel punto:
+
+1. verifica che `main` locale sia aggiornato (`git fetch origin && git status`,
+   `git log origin/main -1`) e che la CI di `main` sia verde
+   (`gh run list --branch main --limit 5`);
+2. avvia il workflow manuale: `gh workflow run release-manual.yml --ref main -f
+   bump=auto` (`auto` calcola il tipo dai commit dall'ultimo tag; `major` o
+   `minor` solo se l'utente indica il tipo o chiede di forzarlo). Parte solo da
+   `main`;
+3. segui il run: `gh run list --workflow release-manual.yml --limit 1`, poi
+   `gh run watch <id>` / `gh run view <id>`. Se il riepilogo dice «niente da
+   rilasciare» non è un errore: riportalo all'utente e non forzare;
+4. riporta all'utente **versione, tag e link della GitHub Release**
+   (`gh release view <tag> --json url`), oppure l'esito negativo con il log del
+   passo fallito.
+
+Dettagli e rimedi in [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## Ricette rapide
 
