@@ -118,6 +118,13 @@ export const App: React.FC = () => {
     return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: mapStructure });
   }, [currentSheet, collapsedIds, mapStructure]);
 
+  // Per la stampa la mappa si può ridisporre ad albero compatto anche se a schermo è un Logic Chart.
+  const printCompactLayout = useMemo<Layout | null>(() => {
+    if (!printModalOpen || !currentSheet) return null;
+    if (mapStructure === 'tree') return currentLayout;
+    return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: 'tree' });
+  }, [printModalOpen, currentSheet, collapsedIds, mapStructure, currentLayout]);
+
   const siblingRangeInfo = useMemo(() => {
     const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);
     if (ids.length === 0) return null;
@@ -508,6 +515,9 @@ export const App: React.FC = () => {
         isOpen={printModalOpen}
         onClose={() => setPrintModalOpen(false)}
         layout={currentLayout}
+        compactLayout={printCompactLayout}
+        screenIsCompact={mapStructure === 'tree'}
+        resourceResolver={resolveResource}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
       />
       <ImageExportModal

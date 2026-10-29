@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { checkAndDownloadUpdate } from './updater.js';
+import type { PrintToPdfOptions } from './preload.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
 // può fare `require()` di un modulo ESM, quindi lo carichiamo con import()
@@ -15,6 +16,7 @@ function loadCore(): Promise<Core> {
   return corePromise;
 }
 
+const MM_PER_INCH = 25.4;
 const DEV_SERVER_URL = 'http://localhost:3000';
 const DEV_SERVER_ORIGIN = new URL(DEV_SERVER_URL).origin;
 const webDistPath = path.resolve(__dirname, '../../web/dist/index.html');
@@ -358,11 +360,14 @@ ipcMain.handle(
 // Stampa su file PDF della finestra mittente
 ipcMain.handle(
   'print:toPdf',
-  async (event, opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => {
+  async (event, opts: PrintToPdfOptions) => {
     const owner = senderWindow(event);
     const target = owner?.webContents ?? event.sender;
     const buffer = await target.printToPDF({
-      pageSize: opts.pageSize,
+      pageSize:
+        typeof opts.pageSize === 'string'
+          ? opts.pageSize
+          : { width: opts.pageSize.widthMm / MM_PER_INCH, height: opts.pageSize.heightMm / MM_PER_INCH },
       landscape: opts.landscape,
       printBackground: true,
       margins: { marginType: 'none' },

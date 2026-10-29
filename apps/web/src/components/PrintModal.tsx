@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Button,
@@ -9,18 +9,36 @@ import {
   Banner,
 } from '@xmap/ui-kit';
 import { Printer, FileDown } from 'lucide-react';
-import { paginate, type Layout, type PaperSize, type PrintFit, type PrintOptions, type PrintPlan } from '@xmap/core';
+import {
+  MIN_LEGIBLE_SCALE,
+  paginate,
+  paginateByBranches,
+  paginateToMapSize,
+  type Layout,
+  type PaperSize,
+  type PrintFit,
+  type PrintOptions,
+  type PrintPage,
+  type PrintPlan,
+} from '@xmap/core';
 import { computeLayoutBounds, getPrintableMapClone } from '../print/mapClone.js';
+import { renderLayoutToSvgHtml } from '../print/renderLayoutHtml.js';
 import { saveBytes } from '../adapters/fileSystem.js';
 
 export interface PrintModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Layout mostrato a schermo. */
   layout: Layout | null;
+  /** Layout con struttura ad albero compatto, per la stampa (uguale a `layout` se lo schermo è già ad albero). */
+  compactLayout: Layout | null;
+  /** Lo schermo usa già l'albero compatto: la scelta della struttura non cambia nulla. */
+  screenIsCompact: boolean;
+  resourceResolver: (src: string) => Uint8Array | null;
   suggestedBase?: string;
 }
 
-type FitMode = 'fit-page' | 'fit-width' | 'scale';
+type FitMode = 'branches' | 'fit-page' | 'fit-width' | 'scale' | 'map-size';
 
 const PAPER_ITEMS: { id: PaperSize; label: string }[] = [
   { id: 'A4', label: 'A4' },
@@ -33,11 +51,28 @@ const ORIENTATION_ITEMS: { id: 'auto' | 'portrait' | 'landscape'; label: string 
   { id: 'landscape', label: 'Orizzontale' },
 ];
 
-const FIT_ITEMS: { id: FitMode; label: string }[] = [
-  { id: 'fit-page', label: 'Una pagina' },
-  { id: 'fit-width', label: 'In larghezza' },
-  { id: 'scale', label: 'Scala' },
+const FIT_OPTIONS: { value: FitMode; label: string }[] = [
+  { value: 'branches', label: 'Per rami (leggibile, a capo tra i rami)' },
+  { value: 'fit-page', label: 'Una pagina' },
+  { value: 'fit-width', label: 'In larghezza (fogli da affiancare)' },
+  { value: 'scale', label: 'Scala fissa (fogli da affiancare)' },
+  { value: 'map-size', label: 'Come la mappa (una pagina su misura)' },
 ];
+
+const STRUCTURE_ITEMS: { id: 'screen' | 'compact'; label: string }[] = [
+  { id: 'screen', label: 'Come a schermo' },
+  { id: 'compact', label: 'Albero compatto' },
+];
+
+/** Millimetri con al massimo un decimale: le dimensioni su misura non diventano cifre lunghe. */
+const formatMm = (mm: number): string => String(Math.round(mm * 10) / 10);
+
+const pageHeaderText = (page: PrintPage, total: number): { left: string; right: string } => {
+  const header = page.header;
+  if (!header) return { left: '', right: '' };
+  const trail = [header.title, ...header.trail].filter(Boolean).join(' › ');
+  return { left: header.continued ? `${trail} (continua)` : trail, right: `${page.index + 1}/${total}` };
+};
 
 const PAGES_WIDE_OPTIONS = [
   { value: 1, label: '1 pagina' },
@@ -52,11 +87,15 @@ export const PrintModal: React.FC<PrintModalProps> = ({
   isOpen,
   onClose,
   layout,
+  compactLayout,
+  screenIsCompact,
+  resourceResolver,
   suggestedBase = 'mappa',
 }) => {
   const [paper, setPaper] = useState<PaperSize>('A4');
   const [orientation, setOrientation] = useState<'auto' | 'portrait' | 'landscape'>('auto');
-  const [fitMode, setFitMode] = useState<FitMode>('fit-page');
+  const [fitMode, setFitMode] = useState<FitMode>('branches');
+  const [compact, setCompact] = useState(true);
   const [pagesWide, setPagesWide] = useState<number>(2);
   const [scalePercent, setScalePercent] = useState<number>(100);
   const [marginMm, setMarginMm] = useState<number>(10);
@@ -70,27 +109,40 @@ export const PrintModal: React.FC<PrintModalProps> = ({
   // All'apertura la mappa si ridisegna in tema chiaro (anche le formule, in modo
   // asincrono): il clone per l'anteprima si cattura dopo un breve intervallo e si
   // ricattura comunque al momento di stampare.
+  // Struttura ad albero compatto diversa da quella a schermo: la mappa si ridisegna da `compactLayout`
+  // invece di clonare il DOM dello schermo.
+  const redrawFromLayout = compact && !screenIsCompact && compactLayout !== null ? compactLayout : null;
+  const activeLayout = redrawFromLayout ?? layout;
+
+  const captureContent = useCallback(
+    (): string =>
+      redrawFromLayout
+        ? renderLayoutToSvgHtml(redrawFromLayout, resourceResolver)
+        : (getPrintableMapClone()?.innerHtml ?? ''),
+    [redrawFromLayout, resourceResolver],
+  );
+
   useEffect(() => {
     if (!isOpen) return;
     setPdfError(null);
-    const capture = () => setSvgContent(getPrintableMapClone()?.innerHtml ?? '');
-    capture();
-    const timer = window.setTimeout(capture, 250);
-    return () => window.clearTimeout(timer);
-  }, [isOpen, layout]);
+    // Fuori dal ciclo di vita di React: `renderLayoutToSvgHtml` usa `flushSync`, che dentro un effetto non svuota.
+    const capture = () => setSvgContent(captureContent());
+    const timers = [window.setTimeout(capture, 0), window.setTimeout(capture, 250)];
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [isOpen, captureContent]);
 
   // Calcola il bounding box della mappa nel mondo
-  const bounds = useMemo(() => computeLayoutBounds(layout), [layout]);
+  const bounds = useMemo(() => computeLayoutBounds(activeLayout), [activeLayout]);
 
   // Costruisce le opzioni di stampa
   const printOptions = useMemo<PrintOptions>(() => {
     let fit: PrintFit;
-    if (fitMode === 'fit-page') {
-      fit = { mode: 'fit-page' };
-    } else if (fitMode === 'fit-width') {
+    if (fitMode === 'fit-width') {
       fit = { mode: 'fit-width', pagesWide };
-    } else {
+    } else if (fitMode === 'scale') {
       fit = { mode: 'scale', scale: Math.max(0.01, scalePercent / 100) };
+    } else {
+      fit = { mode: 'fit-page' };
     }
 
     return {
@@ -106,15 +158,20 @@ export const PrintModal: React.FC<PrintModalProps> = ({
   const { plan, error } = useMemo<{ plan: PrintPlan | null; error: string | null }>(() => {
     if (!isOpen) return { plan: null, error: null };
     try {
-      const calculated = paginate(bounds, printOptions);
-      return { plan: calculated, error: null };
+      if (fitMode === 'map-size') return { plan: paginateToMapSize(bounds), error: null };
+      if (fitMode === 'branches') {
+        if (!activeLayout) throw new Error('Nessuna mappa da stampare.');
+        const { paper, orientation, marginMm } = printOptions;
+        return { plan: paginateByBranches(activeLayout, bounds, { paper, orientation, marginMm }), error: null };
+      }
+      return { plan: paginate(bounds, printOptions), error: null };
     } catch (err: unknown) {
       return {
         plan: null,
         error: err instanceof Error ? err.message : 'Impossibile calcolare l\'impaginazione.',
       };
     }
-  }, [bounds, printOptions, isOpen]);
+  }, [bounds, printOptions, isOpen, fitMode, activeLayout]);
 
   // Testo di riepilogo
   const summaryText = useMemo(() => {
@@ -124,11 +181,17 @@ export const PrintModal: React.FC<PrintModalProps> = ({
     const orientWord = pageCount === 1 ? (isPortrait ? 'verticale' : 'orizzontale') : (isPortrait ? 'verticali' : 'orizzontali');
     const scaleFormatted = Math.round(plan.scale * 100);
 
+    if (plan.paper === 'custom') {
+      return `1 pagina su misura ${formatMm(plan.pageWidthMm)} × ${formatMm(plan.pageHeightMm)} mm, scala ${scaleFormatted}%`;
+    }
+    if (fitMode === 'branches' && pageCount > 1) {
+      return `${pageCount} pagine ${plan.paper} ${orientWord}, a capo tra i rami, scala ${scaleFormatted}%`;
+    }
     if (pageCount === 1) {
       return `1 pagina ${plan.paper} ${orientWord}, scala ${scaleFormatted}%`;
     }
     return `${plan.cols} × ${plan.rows} = ${pageCount} pagine ${plan.paper} ${orientWord}, scala ${scaleFormatted}%`;
-  }, [plan]);
+  }, [plan, fitMode]);
 
   // Cleanup all'unmount
   useEffect(() => {
@@ -158,13 +221,35 @@ export const PrintModal: React.FC<PrintModalProps> = ({
       pageDiv.style.overflow = 'hidden';
       pageDiv.style.background = '#ffffff';
 
+      if (currentPlan.headerMm > 0) {
+        const { left, right } = pageHeaderText(page, currentPlan.pages.length);
+        const headerDiv = document.createElement('div');
+        headerDiv.style.height = `${currentPlan.headerMm}mm`;
+        headerDiv.style.boxSizing = 'border-box';
+        headerDiv.style.display = 'flex';
+        headerDiv.style.alignItems = 'flex-start';
+        headerDiv.style.justifyContent = 'space-between';
+        headerDiv.style.gap = '4mm';
+        headerDiv.style.fontSize = '8pt';
+        headerDiv.style.color = '#666666';
+        headerDiv.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+        const leftEl = document.createElement('span');
+        leftEl.style.overflow = 'hidden';
+        leftEl.style.textOverflow = 'ellipsis';
+        leftEl.style.whiteSpace = 'nowrap';
+        leftEl.textContent = left;
+        const rightEl = document.createElement('span');
+        rightEl.textContent = right;
+        headerDiv.append(leftEl, rightEl);
+        pageDiv.appendChild(headerDiv);
+      }
+
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('width', `${currentPlan.contentWidthPx}px`);
-      svg.setAttribute('height', `${currentPlan.contentHeightPx}px`);
+      svg.setAttribute('width', `${page.world.w * currentPlan.scale}px`);
+      svg.setAttribute('height', `${page.world.h * currentPlan.scale}px`);
       svg.setAttribute('viewBox', `${page.world.x} ${page.world.y} ${page.world.w} ${page.world.h}`);
+      svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
       svg.style.display = 'block';
-      svg.style.width = '100%';
-      svg.style.height = '100%';
       svg.style.overflow = 'hidden';
 
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -172,7 +257,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
       svg.appendChild(g);
       pageDiv.appendChild(svg);
 
-      if (currentPlan.pages.length > 1) {
+      if (currentPlan.pages.length > 1 && currentPlan.headerMm === 0) {
         const pageNum = document.createElement('div');
         pageNum.style.position = 'absolute';
         pageNum.style.bottom = '2mm';
@@ -193,7 +278,10 @@ export const PrintModal: React.FC<PrintModalProps> = ({
     if (styleEl) styleEl.remove();
     styleEl = document.createElement('style');
     styleEl.id = 'print-page-style';
-    styleEl.textContent = `@page { size: ${currentPlan.paper} ${currentPlan.orientation}; margin: 0; }`;
+    styleEl.textContent =
+      currentPlan.paper === 'custom'
+        ? `@page { size: ${currentPlan.pageWidthMm}mm ${currentPlan.pageHeightMm}mm; margin: 0; }`
+        : `@page { size: ${currentPlan.paper} ${currentPlan.orientation}; margin: 0; }`;
     document.head.appendChild(styleEl);
 
     // Il tema chiaro su carta lo garantiscono le variabili di #print-root (index.css).
@@ -205,7 +293,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
 
   const handlePrint = () => {
     if (!plan) return;
-    const cleanup = preparePrintDom(plan, getPrintableMapClone()?.innerHtml ?? svgContent);
+    const cleanup = preparePrintDom(plan, captureContent() || svgContent);
     const onAfterPrint = () => {
       window.removeEventListener('afterprint', onAfterPrint);
       cleanup();
@@ -220,10 +308,11 @@ export const PrintModal: React.FC<PrintModalProps> = ({
     if (!plan || !window.electronAPI?.printToPdf) return;
     setIsPdfSaving(true);
     setPdfError(null);
-    const cleanup = preparePrintDom(plan, getPrintableMapClone()?.innerHtml ?? svgContent);
+    const cleanup = preparePrintDom(plan, captureContent() || svgContent);
     try {
       const bytesArray = await window.electronAPI.printToPdf({
-        pageSize: plan.paper,
+        pageSize:
+          plan.paper === 'custom' ? { widthMm: plan.pageWidthMm, heightMm: plan.pageHeightMm } : plan.paper,
         landscape: plan.orientation === 'landscape',
       });
       const bytes = new Uint8Array(bytesArray);
@@ -267,7 +356,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
             disabled={!plan || Boolean(error) || isPdfSaving}
             onClick={handlePrint}
           >
-            Stampa
+            {isElectronPdfAvailable ? 'Stampa' : 'Stampa o salva PDF…'}
           </Button>
         </div>
       }
@@ -283,26 +372,65 @@ export const PrintModal: React.FC<PrintModalProps> = ({
             {error}
           </Banner>
         )}
+        {plan && fitMode === 'branches' && plan.scale < MIN_LEGIBLE_SCALE && (
+          <Banner variant="warning" title="Testo piccolo">
+            La mappa è molto larga per questo foglio: il testo risulta ridotto. Prova l'orientamento orizzontale o A3.
+          </Banner>
+        )}
+        {plan && fitMode === 'map-size' && plan.scale < 1 && (
+          <Banner variant="warning" title="Mappa ridotta">
+            La mappa supera la dimensione massima di una pagina PDF ed è stata rimpicciolita.
+          </Banner>
+        )}
+        {!isElectronPdfAvailable && (
+          <p className="text-xs text-muted-foreground">
+            Per ottenere un PDF scegli «Salva come PDF» come stampante nel dialogo di stampa del browser.
+          </p>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 items-start">
           {/* Colonna opzioni */}
           <div className="flex flex-col gap-3.5">
-            <Field label="Formato carta">
-              <SegmentedControl size="sm" items={PAPER_ITEMS} activeId={paper} onChange={setPaper} />
-            </Field>
-
-            <Field label="Orientamento">
-              <SegmentedControl
+            <Field label="Adattamento">
+              <Select
                 size="sm"
-                items={ORIENTATION_ITEMS}
-                activeId={orientation}
-                onChange={setOrientation}
+                options={FIT_OPTIONS}
+                value={fitMode}
+                onChange={(e) => {
+                  const next = e.target.value as FitMode;
+                  setFitMode(next);
+                  if (next === 'branches') setCompact(true);
+                }}
               />
             </Field>
 
-            <Field label="Adattamento">
-              <SegmentedControl size="sm" items={FIT_ITEMS} activeId={fitMode} onChange={setFitMode} />
-            </Field>
+            {fitMode !== 'map-size' && (
+              <>
+                <Field label="Formato carta">
+                  <SegmentedControl size="sm" items={PAPER_ITEMS} activeId={paper} onChange={setPaper} />
+                </Field>
+
+                <Field label="Orientamento">
+                  <SegmentedControl
+                    size="sm"
+                    items={ORIENTATION_ITEMS}
+                    activeId={orientation}
+                    onChange={setOrientation}
+                  />
+                </Field>
+              </>
+            )}
+
+            {!screenIsCompact && (
+              <Field label="Struttura">
+                <SegmentedControl
+                  size="sm"
+                  items={STRUCTURE_ITEMS}
+                  activeId={compact ? 'compact' : 'screen'}
+                  onChange={(id) => setCompact(id === 'compact')}
+                />
+              </Field>
+            )}
 
             {fitMode === 'fit-width' && (
               <Field label="Pagine in larghezza">
@@ -329,35 +457,39 @@ export const PrintModal: React.FC<PrintModalProps> = ({
               </Field>
             )}
 
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Margine (mm)">
-                <Input
-                  size="sm"
-                  type="number"
-                  min={0}
-                  max={50}
-                  step={1}
-                  value={marginMm}
-                  onChange={(e) => setMarginMm(Math.max(0, Number(e.target.value) || 0))}
-                />
-              </Field>
+            {fitMode !== 'map-size' && (
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Margine (mm)">
+                  <Input
+                    size="sm"
+                    type="number"
+                    min={0}
+                    max={50}
+                    step={1}
+                    value={marginMm}
+                    onChange={(e) => setMarginMm(Math.max(0, Number(e.target.value) || 0))}
+                  />
+                </Field>
 
-              <Field
-                label="Sovrapposizione (mm)"
-                hint={plan && plan.pages.length > 1 ? undefined : 'Disponibile con più pagine'}
-              >
-                <Input
-                  size="sm"
-                  type="number"
-                  min={0}
-                  max={50}
-                  step={1}
-                  value={overlapMm}
-                  disabled={!plan || plan.pages.length <= 1}
-                  onChange={(e) => setOverlapMm(Math.max(0, Number(e.target.value) || 0))}
-                />
-              </Field>
-            </div>
+                {fitMode !== 'branches' && (
+                  <Field
+                    label="Sovrapposizione (mm)"
+                    hint={plan && plan.pages.length > 1 ? undefined : 'Disponibile con più pagine'}
+                  >
+                    <Input
+                      size="sm"
+                      type="number"
+                      min={0}
+                      max={50}
+                      step={1}
+                      value={overlapMm}
+                      disabled={!plan || plan.pages.length <= 1}
+                      onChange={(e) => setOverlapMm(Math.max(0, Number(e.target.value) || 0))}
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Colonna anteprima */}
@@ -373,32 +505,49 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                 <div
                   className="grid gap-2 max-w-full justify-center"
                   style={{
-                    gridTemplateColumns: `repeat(${plan.cols}, minmax(0, 1fr))`,
+                    gridTemplateColumns:
+                      plan.cols === 1 && plan.pages.length > 1
+                        ? `repeat(${Math.min(plan.pages.length, plan.orientation === 'landscape' ? 2 : 3)}, minmax(0, 1fr))`
+                        : `repeat(${plan.cols}, minmax(0, 1fr))`,
                   }}
                 >
-                  {plan.pages.map((p) => (
-                    <div
-                      key={p.index}
-                      className="bg-white border border-border/80 shadow-xs rounded-sm relative overflow-hidden flex items-center justify-center"
-                      style={{
-                        aspectRatio: `${plan.pageWidthMm} / ${plan.pageHeightMm}`,
-                        minWidth: Math.min(140, Math.max(50, Math.floor(320 / plan.cols))),
-                      }}
-                    >
-                      <svg
-                        viewBox={`${p.world.x} ${p.world.y} ${p.world.w} ${p.world.h}`}
-                        className="w-full h-full block"
-                        preserveAspectRatio="xMidYMid meet"
+                  {plan.pages.map((p) => {
+                    const { left, right } = pageHeaderText(p, plan.pages.length);
+                    return (
+                      <div
+                        key={p.index}
+                        className="bg-white border border-border/80 shadow-xs rounded-sm relative overflow-hidden"
+                        style={{
+                          aspectRatio: `${plan.pageWidthMm} / ${plan.pageHeightMm}`,
+                          minWidth: Math.min(140, Math.max(50, Math.floor(320 / plan.cols))),
+                          padding: `${(plan.marginMm / plan.pageWidthMm) * 100}%`,
+                        }}
                       >
-                        <g dangerouslySetInnerHTML={{ __html: svgContent }} />
-                      </svg>
-                      {plan.pages.length > 1 && (
-                        <span className="absolute bottom-1 right-1 text-3xs font-mono text-muted-foreground bg-white/90 px-1 py-0.5 rounded border border-border/60 select-none">
-                          {p.row + 1},{p.col + 1}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                        {plan.headerMm > 0 && (
+                          <div
+                            className="flex items-start justify-between gap-1 text-[5px] leading-none text-muted-foreground select-none"
+                            style={{ aspectRatio: `${plan.pageWidthMm - 2 * plan.marginMm} / ${plan.headerMm}` }}
+                          >
+                            <span className="truncate">{left}</span>
+                            <span className="shrink-0">{right}</span>
+                          </div>
+                        )}
+                        <svg
+                          viewBox={`${p.world.x} ${p.world.y} ${p.world.w} ${p.world.h}`}
+                          className="w-full block"
+                          style={{ aspectRatio: `${p.world.w} / ${p.world.h}` }}
+                          preserveAspectRatio="xMinYMin meet"
+                        >
+                          <g dangerouslySetInnerHTML={{ __html: svgContent }} />
+                        </svg>
+                        {plan.pages.length > 1 && plan.headerMm === 0 && (
+                          <span className="absolute bottom-1 right-1 text-3xs font-mono text-muted-foreground bg-white/90 px-1 py-0.5 rounded border border-border/60 select-none">
+                            {p.row + 1},{p.col + 1}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

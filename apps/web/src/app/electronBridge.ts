@@ -31,7 +31,7 @@ declare global {
         | { ok: false; code: string; message: string; processes?: string[] }
       >;
       checkXMindRunning: () => Promise<string[]>;
-      printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<Uint8Array>;
+      printToPdf: (opts: { pageSize: 'A4' | 'A3' | { widthMm: number; heightMm: number }; landscape: boolean }) => Promise<Uint8Array>;
       minimize: () => void;
       maximize: () => void;
       close: () => void;

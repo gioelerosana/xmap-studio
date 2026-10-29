@@ -73,6 +73,9 @@ body {
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    /* Il tema blocca html/body all'altezza della finestra: su carta ogni pagina oltre la prima verrebbe tagliata. */
+    height: auto !important;
+    overflow: visible !important;
   }
 
   /* Nascondi tutto tranne il contenitore dedicato di stampa */

@@ -206,6 +206,18 @@ suggerimenti dei comandi e tavolozza di simboli. Il menu **⋮** in alto raccogl
 salva-con-nome, stampa/PDF, export/import Markdown/OPML, export equazione SVG/PNG, allega
 file, unisci mappa, estrai ramo e informazioni.
 
+**Stampa e PDF** (`Ctrl+P`, `PrintModal`): quattro adattamenti più uno su misura.
+*Per rami* (predefinito) porta la mappa alla larghezza del foglio, allineata a sinistra,
+e va a capo pagina solo tra rami fratelli (prima i rami principali, poi i sotto-rami se
+un ramo da solo supera la pagina); ogni pagina ha in cima titolo e ramo da cui riparte
+(«… (continua)») e il numero. Per la stampa la mappa si ridispone ad albero compatto
+anche se a schermo è un Logic Chart (la scelta «Struttura» nella finestra; lo schermo
+non cambia). *Una pagina*, *In larghezza* e *Scala fissa* restano i fogli da
+affiancare con sovrapposizione; *Come la mappa* produce una sola pagina PDF grande
+quanto la mappa (scala 1, ridotta oltre 5 m di lato). Il desktop salva il PDF
+(`printToPDF`); sul web si usa «Salva come PDF» del dialogo di stampa del browser. La
+logica pura è in `packages/core/src/print/` (`paginate.ts`, `branches.ts`).
+
 ---
 
 ## 6. Prova end-to-end

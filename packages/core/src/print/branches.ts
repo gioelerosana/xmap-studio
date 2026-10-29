@@ -28,10 +28,10 @@ export const BRANCH_HEADER_MM = 9;
 export const MAX_CUSTOM_SIDE_MM = 5000;
 
 /** Sotto questa scala il testo stampato scende sotto circa 8 pt: la UI avvisa. */
-export const MIN_LEGIBLE_SCALE = 0.55;
+export const MIN_LEGIBLE_SCALE = 0.65;
 
 /** Quota minima di pagina da riempire prima di preferire un taglio a un livello più profondo. */
-const MIN_FILL = 0.5;
+const MIN_FILL = 0.35;
 
 const EPSILON = 1e-6;
 
@@ -83,9 +83,12 @@ function buildNodeTree(layout: Layout): NodeTree {
   return { parentOf, childrenOf, extent };
 }
 
-/** Il taglio a `y` attraversa un blocco? Allora spezzerebbe un blocco a metà. */
-function crossesNode(nodes: LayoutNode[], y: number): boolean {
-  return nodes.some((n) => n.y + EPSILON < y && y < n.y + n.h - EPSILON);
+/** Il taglio a `y` attraversa un blocco o la graffa di un sommario? Allora spezzerebbe un elemento a metà. */
+function crossesElement(layout: Layout, y: number): boolean {
+  return (
+    layout.nodes.some((n) => n.y + EPSILON < y && y < n.y + n.h - EPSILON) ||
+    layout.summaries.some((s) => Math.min(s.y1, s.y2) + EPSILON < y && y < Math.max(s.y1, s.y2) - EPSILON)
+  );
 }
 
 function collectCandidates(layout: Layout, tree: NodeTree): CutCandidate[] {
@@ -100,7 +103,7 @@ function collectCandidates(layout: Layout, tree: NodeTree): CutCandidate[] {
       const next = sorted[k];
       if (!prev || !next || prev.y1 >= next.y0) continue;
       const y = (prev.y1 + next.y0) / 2;
-      if (!crossesNode(layout.nodes, y)) out.push({ y, depth });
+      if (!crossesElement(layout, y)) out.push({ y, depth });
     }
   };
 
@@ -169,7 +172,8 @@ function pageHeader(layout: Layout, tree: NodeTree, pageTop: number, isFirst: bo
   while (up >= 0) {
     const ancestor = layout.nodes[up];
     if (!ancestor || ancestor.depth === 0) break;
-    trail.unshift(nodeTitle(ancestor));
+    // Un antenato che comincia in questa pagina (es. genitore centrato sopra i figli) non è ancora "continua".
+    if (ancestor.y + EPSILON < pageTop) trail.unshift(nodeTitle(ancestor));
     up = tree.parentOf[up] ?? -1;
   }
   return { title, trail, continued: trail.length > 0 };
@@ -247,7 +251,7 @@ function planForOrientation(
  * pagina solo tra rami fratelli: prima tra i rami principali, poi, se un ramo
  * da solo supera la pagina, tra i suoi sotto-rami. Il contenuto resta allineato
  * a sinistra. Con `orientation: 'auto'` vince l'orientamento con meno pagine
- * (a parità, scala maggiore, poi verticale).
+ * (a parità, scala maggiore, poi verticale), ma solo tra quelli con testo leggibile se ce n'è uno.
  */
 export function paginateByBranches(layout: Layout, bounds: WorldRect, opts: BranchPrintOptions): PrintPlan {
   if (![bounds.x, bounds.y, bounds.w, bounds.h].every(Number.isFinite) || bounds.w <= 0 || bounds.h <= 0) {
@@ -267,6 +271,10 @@ export function paginateByBranches(layout: Layout, bounds: WorldRect, opts: Bran
   }
   const portrait = planForOrientation(layout, bounds, opts, 'portrait', tree, candidates);
   const landscape = planForOrientation(layout, bounds, opts, 'landscape', tree, candidates);
+  // Prima la leggibilità: un orientamento che rimpicciolisce troppo il testo perde, anche se usa meno pagine.
+  const portraitLegible = portrait.scale >= MIN_LEGIBLE_SCALE - EPSILON;
+  const landscapeLegible = landscape.scale >= MIN_LEGIBLE_SCALE - EPSILON;
+  if (portraitLegible !== landscapeLegible) return landscapeLegible ? landscape : portrait;
   if (landscape.pages.length !== portrait.pages.length) {
     return landscape.pages.length < portrait.pages.length ? landscape : portrait;
   }
@@ -292,9 +300,12 @@ export function paginateToMapSize(bounds: WorldRect, opts: MapSizeOptions = {}):
   const maxSideMm = opts.maxSideMm ?? MAX_CUSTOM_SIDE_MM;
   if (!Number.isFinite(marginMm) || marginMm < 0) throw new Error('Il margine non può essere negativo o non finito.');
 
-  const naturalWMm = bounds.w / MM_TO_PX + 2 * marginMm;
-  const naturalHMm = bounds.h / MM_TO_PX + 2 * marginMm;
-  const scale = Math.min(1, maxSideMm / naturalWMm, maxSideMm / naturalHMm);
+  if (!Number.isFinite(maxSideMm) || maxSideMm <= 2 * marginMm) {
+    throw new Error('Il lato massimo della pagina deve essere positivo e superare i margini.');
+  }
+
+  const availableMm = maxSideMm - 2 * marginMm;
+  const scale = Math.min(1, availableMm / (bounds.w / MM_TO_PX), availableMm / (bounds.h / MM_TO_PX));
 
   const contentWidthPx = bounds.w * scale;
   const contentHeightPx = bounds.h * scale;
