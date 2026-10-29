@@ -194,7 +194,7 @@ function buildSheetDto(sheet: Sheet, index: number): SheetDto {
   return {
     index,
     id: sheet.id,
-    title: (sheet.rootTopic ? topicTitle(sheet.rootTopic) : '') || sheet.title || `Foglio ${index + 1}`,
+    title: sheet.title || (sheet.rootTopic ? topicTitle(sheet.rootTopic) : '') || `Foglio ${index + 1}`,
     topics,
     relationships,
     theme: readSheetTheme(sheet),

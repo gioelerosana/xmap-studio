@@ -6,3 +6,4 @@ export * from './relationship.js';
 export * from './image.js';
 export * from './clone.js';
 export * from './theme.js';
+export * from './sheets.js';

@@ -59,6 +59,7 @@ import { Sheet, Topic } from './model/types.js';
 import { setTitleRuns, setTextStyle, TextStylePatch } from './model/style.js';
 import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
 import { setSheetTheme, ThemePatch } from './model/theme.js';
+import { cloneSheet, createSheet, nextSheetTitle } from './model/sheets.js';
 import {
   countTopics,
   collectAttachmentRefs,
@@ -905,6 +906,68 @@ export class AppController {
       throw new XmapError(CODE_INVALID_INPUT, e instanceof Error ? e.message : String(e));
     }
     return wb.toDto();
+  }
+
+  /** Aggiunge un foglio vuoto in fondo (o in `atIndex`). Senza titolo: "Foglio N". */
+  public addSheet(title?: string, atIndex?: number): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const sheet = createSheet(title?.trim() || nextSheetTitle(wb.content));
+    const at = atIndex === undefined ? wb.content.length : Math.max(0, Math.min(atIndex, wb.content.length));
+    wb.content.splice(at, 0, sheet);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /** Rinomina la linguetta del foglio (`sheet.title`). Titolo vuoto non valido; invariato = nessun passo di annullamento. */
+  public renameSheet(sheetIndex: number, title: string): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const sheet = this.requireSheet(wb, sheetIndex);
+    const next = title.trim();
+    if (!next) throw new XmapError(CODE_INVALID_INPUT, 'Il titolo del foglio non può essere vuoto');
+    if (sheet.title !== next) {
+      sheet.title = next;
+      wb.pushHistory();
+    }
+    return wb.toDto();
+  }
+
+  /** Duplica il foglio subito dopo l'originale, con id nuovi. */
+  public duplicateSheet(sheetIndex: number): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const sheet = this.requireSheet(wb, sheetIndex);
+    const base = sheet.title || `Foglio ${sheetIndex + 1}`;
+    wb.content.splice(sheetIndex + 1, 0, cloneSheet(sheet, `${base} (copia)`));
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /** Elimina un foglio (annullabile). L'ultimo foglio rimasto non si elimina. */
+  public deleteSheet(sheetIndex: number): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    this.requireSheet(wb, sheetIndex);
+    if (wb.content.length <= 1) throw new XmapError(CODE_INVALID_INPUT, 'Una mappa deve avere almeno un foglio');
+    wb.content.splice(sheetIndex, 1);
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /** Sposta il foglio da `from` a `to` (posizione finale). */
+  public moveSheet(from: number, to: number): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    this.requireSheet(wb, from);
+    this.requireSheet(wb, to);
+    if (from !== to) {
+      const [sheet] = wb.content.splice(from, 1);
+      if (sheet) wb.content.splice(to, 0, sheet);
+      wb.pushHistory();
+    }
+    return wb.toDto();
+  }
+
+  private requireSheet(wb: OpenWorkbook, sheetIndex: number): Sheet {
+    const sheet = wb.content[sheetIndex];
+    if (!sheet) throw new XmapError(CODE_INVALID_INPUT, `Foglio ${sheetIndex + 1} non trovato`);
+    return sheet;
   }
 
   public setTopicColor(topicId: string, color?: string | null): WorkbookDto {

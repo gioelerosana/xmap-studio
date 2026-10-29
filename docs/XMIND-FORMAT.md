@@ -107,6 +107,12 @@ arrangeableLayerOrder, zones, extensions, theme, relationships`.
 attributedTitle?, controlPoints?{"0","1"}, lineEndPoints?{"0","1"},
 flexibleControlPoints?, style? }` (riferimenti per id a livello sheet).
 
+**Fogli multipli.** Ogni elemento dell'array `content.json` è un foglio (linguetta);
+la linguetta mostra `sheet.title`. L'app crea fogli nuovi con `id` e blocco centrale
+nuovi e duplica un foglio rigenerando tutti gli id (`remapIds`), campi sconosciuti
+compresi; le risorse restano condivise nello stesso file. Non esistono link tra
+fogli verificati: non si inventano campi.
+
 **Tema del foglio** (`sheet.theme`, osservato nei file salvati da XMind 26.x):
 oggetto di sezioni `{ id, properties }` (`map`, `centralTopic`, `mainTopic`,
 `subTopic`, `floatingTopic`, `summaryTopic`, `calloutTopic`, `importantTopic`,

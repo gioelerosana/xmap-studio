@@ -13,6 +13,7 @@ import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import { AppMark } from './components/AppMark.js';
 import { SettingsPage } from './components/SettingsPage.js';
+import { SheetTabs } from './components/SheetTabs.js';
 import { useSettings } from './settings.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
 import { sanitizeName } from './app/fileNames.js';
@@ -20,6 +21,7 @@ import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
 import { useToasts } from './app/useToasts.js';
 import { useSelection } from './app/useSelection.js';
 import { useTopicActions } from './app/useTopicActions.js';
+import { useSheetActions } from './app/useSheetActions.js';
 import { useWorkbookSave } from './app/useWorkbookSave.js';
 import { useWorkbookFiles } from './app/useWorkbookFiles.js';
 import { useElectronWindow } from './app/useElectronWindow.js';
@@ -79,6 +81,15 @@ export const App: React.FC = () => {
       setActiveSheetIndex(0);
       setDocumentKey((k) => k + 1);
       setCollapsedIds(new Set());
+      selectSingle(undefined);
+    },
+    [selectSingle]
+  );
+
+  // Cambio di foglio: la selezione torna vuota. La vista si riadatta da sola (viewKey cambia con l'indice, la radice con il foglio).
+  const selectSheet = useCallback(
+    (index: number) => {
+      setActiveSheetIndex(index);
       selectSingle(undefined);
     },
     [selectSingle]
@@ -200,6 +211,8 @@ export const App: React.FC = () => {
   } = useRelationships({ controller, refreshState, addToast });
 
   const topicActions = useTopicActions({ controller, refreshState, addToast });
+
+  const sheetActions = useSheetActions({ controller, refreshState, addToast, activeSheetIndex, selectSheet });
 
   const { insertImage } = useImageInsert({
     controller,
@@ -340,6 +353,7 @@ export const App: React.FC = () => {
           isWindowMaximized={isWindowMaximized}
           menuItems={menuItems}
           onNewMap={handleNewMap}
+          onAddSheet={sheetActions.addSheet}
           onOpen={handleOpenLocalFile}
           onSave={handleSave}
           onUndo={() => doUndoRedo('undo')}
@@ -367,7 +381,9 @@ export const App: React.FC = () => {
           />
         ) : (
           <>
-            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              {/* Area della mappa: la barra flottante si aggancia a questo riquadro, non alle linguette dei fogli. */}
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               {connectingTopicId && (
                 <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto px-4 w-full max-w-md animate-fade-in">
                   <Banner
@@ -452,24 +468,19 @@ export const App: React.FC = () => {
                   <Minimize2 className="size-4" /> Esci da Zen
                 </Button>
               )}
+              </div>
 
+              {/* Con un solo foglio la barra non occupa spazio; smontandosi azzera anche rinomina e menu aperti. */}
               {!zen && workbook.sheets.length > 1 && (
-                <div className="flex h-[calc(2.25rem+env(safe-area-inset-bottom))] shrink-0 items-center gap-1 overflow-x-auto border-t bg-sidebar px-2 pb-[env(safe-area-inset-bottom)]">
-                  {workbook.sheets.map((sheet, idx) => (
-                    <Button
-                      key={sheet.id || idx}
-                      size="xs"
-                      variant={idx === activeSheetIndex ? 'ghost' : 'ghost-muted'}
-                      className={idx === activeSheetIndex ? 'bg-sidebar-row-active shadow-control text-foreground font-medium' : undefined}
-                      onClick={() => {
-                        setActiveSheetIndex(idx);
-                        selectSingle(undefined);
-                      }}
-                    >
-                      {sheet.title}
-                    </Button>
-                  ))}
-                </div>
+                <SheetTabs
+                  sheets={workbook.sheets}
+                  activeIndex={activeSheetIndex}
+                  onSelect={selectSheet}
+                  onRename={sheetActions.renameSheet}
+                  onDuplicate={sheetActions.duplicateSheet}
+                  onDelete={sheetActions.deleteSheet}
+                  onMove={sheetActions.moveSheet}
+                />
               )}
             </div>
 
