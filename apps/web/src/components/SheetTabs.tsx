@@ -6,7 +6,7 @@
  * con la stessa chiusura su Esc e clic fuori e la stessa navigazione da tastiera.
  */
 import { useEffect, useRef, useState, type FC, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
-import { ChevronLeft, ChevronRight, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Copy, Pencil, Trash2 } from 'lucide-react';
 import type { SheetDto } from '@xmap/core';
 import { Button, Input, cn, type MenuItem } from '@xmap/ui-kit';
 import { ContextMenu } from './map/ContextMenu.js';
@@ -28,7 +28,6 @@ export interface SheetTabsProps {
   sheets: readonly Pick<SheetDto, 'id' | 'title'>[];
   activeIndex: number;
   onSelect: (index: number) => void;
-  onAdd: () => void;
   onRename: (index: number, title: string) => void;
   onDuplicate: (index: number) => void;
   onDelete: (index: number) => void;
@@ -51,7 +50,6 @@ export const SheetTabs: FC<SheetTabsProps> = ({
   sheets,
   activeIndex,
   onSelect,
-  onAdd,
   onRename,
   onDuplicate,
   onDelete,
@@ -209,16 +207,6 @@ export const SheetTabs: FC<SheetTabsProps> = ({
       >
         {sheets.map((sheet, index) => renderTab(sheet, index))}
       </div>
-      <Button
-        variant="ghost-muted"
-        size="icon-xs"
-        className="coarse:size-9"
-        title="Nuovo foglio"
-        aria-label="Nuovo foglio"
-        onClick={onAdd}
-      >
-        <Plus />
-      </Button>
       {menu && (
         <ContextMenu
           x={menu.x}

@@ -27,8 +27,9 @@ aprono anche in XMind. Niente account, niente telemetria.
 - **Modifichi sulla mappa.** Testo nel blocco, `Tab` e `Invio` per nuovi
   blocchi, trascinamento, relazioni, sommari, note e immagini.
 - **Mappe a più fogli.** Una mappa può avere fogli extra, come le linguette di un
-  foglio di calcolo: li aggiungi, rinomini, duplichi, sposti ed elimini dalla
-  barra in basso.
+  foglio di calcolo: dal pulsante accanto alle impostazioni ne aggiungi uno; la
+  barra in basso compare solo con più fogli e permette di rinominare, duplicare,
+  spostare ed eliminare.
 - **Stampi su A4 e A3.** Su un foglio solo o su più fogli da affiancare, e nel
   desktop salvi anche in PDF.
 - **Non perdi niente.** Ogni salvataggio viene controllato prima di scrivere su

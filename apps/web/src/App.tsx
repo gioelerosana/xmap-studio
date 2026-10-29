@@ -353,6 +353,7 @@ export const App: React.FC = () => {
           isWindowMaximized={isWindowMaximized}
           menuItems={menuItems}
           onNewMap={handleNewMap}
+          onAddSheet={sheetActions.addSheet}
           onOpen={handleOpenLocalFile}
           onSave={handleSave}
           onUndo={() => doUndoRedo('undo')}
@@ -469,12 +470,12 @@ export const App: React.FC = () => {
               )}
               </div>
 
-              {!zen && (
+              {/* Con un solo foglio la barra non occupa spazio; smontandosi azzera anche rinomina e menu aperti. */}
+              {!zen && workbook.sheets.length > 1 && (
                 <SheetTabs
                   sheets={workbook.sheets}
                   activeIndex={activeSheetIndex}
                   onSelect={selectSheet}
-                  onAdd={sheetActions.addSheet}
                   onRename={sheetActions.renameSheet}
                   onDuplicate={sheetActions.duplicateSheet}
                   onDelete={sheetActions.deleteSheet}

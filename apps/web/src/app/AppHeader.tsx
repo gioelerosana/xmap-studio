@@ -1,7 +1,7 @@
 import type { Ref } from 'react';
 import type { WorkbookDto } from '@xmap/core';
 import { Button, HeaderBar, IconButton, Menu, Separator, cn, type MenuItem } from '@xmap/ui-kit';
-import { SquarePlus, FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
+import { SquarePlus, FilePlus, FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 
 interface AppHeaderProps {
@@ -17,6 +17,7 @@ interface AppHeaderProps {
   isWindowMaximized: boolean;
   menuItems: MenuItem[];
   onNewMap: () => void;
+  onAddSheet: () => void;
   onOpen: () => void;
   onSave: () => void;
   onUndo: () => void;
@@ -37,6 +38,7 @@ export function AppHeader({
   isWindowMaximized,
   menuItems,
   onNewMap,
+  onAddSheet,
   onOpen,
   onSave,
   onUndo,
@@ -89,6 +91,11 @@ export function AppHeader({
           {layout.inlineRedo && (
             <IconButton size="sm" onClick={onToggleTheme} label="Cambia tema">
               {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </IconButton>
+          )}
+          {workbook && (
+            <IconButton size="sm" onClick={onAddSheet} label="Nuovo foglio">
+              <FilePlus className="size-4" />
             </IconButton>
           )}
           <IconButton
