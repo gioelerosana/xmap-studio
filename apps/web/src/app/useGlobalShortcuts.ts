@@ -18,11 +18,12 @@ interface GlobalShortcutsOptions {
   handleCreateSummary: () => void;
   setSettingsOpen: Dispatch<SetStateAction<boolean>>;
   setPrintModalOpen: Dispatch<SetStateAction<boolean>>;
+  setExportModalOpen: Dispatch<SetStateAction<boolean>>;
   zenMode: boolean;
   setZenMode: Dispatch<SetStateAction<boolean>>;
 }
 
-/** Scorciatoie globali: Ctrl+lettera (undo, salva, apri, stampa…), Ctrl+Alt+Z per la modalità Zen ed Esc per ridurre o togliere la selezione (e, a selezione vuota, uscire da Zen). */
+/** Scorciatoie globali: Ctrl+lettera (undo, salva, apri, stampa…), Ctrl+Maiusc+E per Esporta, Ctrl+Alt+Z per la modalità Zen ed Esc per ridurre o togliere la selezione (e, a selezione vuota, uscire da Zen). */
 export function useGlobalShortcuts({
   hasWorkbook,
   selectedTopic,
@@ -37,6 +38,7 @@ export function useGlobalShortcuts({
   handleCreateSummary,
   setSettingsOpen,
   setPrintModalOpen,
+  setExportModalOpen,
   zenMode,
   setZenMode,
 }: GlobalShortcutsOptions) {
@@ -80,6 +82,11 @@ export function useGlobalShortcuts({
         if (inField) return;
         e.preventDefault();
         handleCreateSummary();
+      } else if (e.shiftKey && key === 'e') {
+        if (hasWorkbook) {
+          e.preventDefault();
+          setExportModalOpen(true);
+        }
       } else if (key === 'p') {
         if (hasWorkbook) {
           e.preventDefault();
@@ -89,7 +96,7 @@ export function useGlobalShortcuts({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleAddChild, handleCreateSummary, hasWorkbook, setSettingsOpen, setPrintModalOpen, setZenMode]);
+  }, [doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleAddChild, handleCreateSummary, hasWorkbook, setSettingsOpen, setPrintModalOpen, setExportModalOpen, setZenMode]);
 
   // Esc fuori dai campi di testo: la selezione multipla torna singola, quella singola si toglie.
   useEffect(() => {

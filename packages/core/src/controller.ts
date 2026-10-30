@@ -1062,18 +1062,42 @@ export class AppController {
     return wb.toDto();
   }
 
-  public export(format: 'markdown' | 'opml' | 'outline'): string {
+  /**
+   * Testo della mappa in un formato aperto. `scope` restringe cosa si esporta:
+   * un solo foglio (`sheetIndex`) o un ramo (`topicId`, che diventa la radice);
+   * senza `scope` si esportano tutti i fogli. Non modifica mai il documento.
+   */
+  public export(
+    format: 'markdown' | 'opml' | 'outline',
+    scope: { sheetIndex?: number; topicId?: string } = {},
+  ): string {
     const wb = this.ensureWorkbook();
+    const sheets = this.sheetsForExport(wb.content, scope);
     switch (format) {
       case 'markdown':
-        return toMarkdown(wb.content);
+        return toMarkdown(sheets);
       case 'opml':
-        return toOPML(wb.content, this.mapTitle() || 'Mappa');
+        return toOPML(sheets, this.mapTitle() || 'Mappa');
       case 'outline':
-        return toOutline(wb.content);
+        return toOutline(sheets);
       default:
         throw new XmapError(CODE_FORMAT, `Formato sconosciuto: ${format}`);
     }
+  }
+
+  private sheetsForExport(content: Sheet[], scope: { sheetIndex?: number; topicId?: string }): Sheet[] {
+    if (scope.topicId !== undefined) {
+      const topic = findTopic(content, scope.topicId);
+      if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${scope.topicId} non trovato`);
+      // Lettura sola: il ramo fa da radice di un foglio fittizio, senza copiarlo.
+      return [{ id: 'export-branch', class: 'sheet', title: topicTitle(topic), rootTopic: topic } as Sheet];
+    }
+    if (scope.sheetIndex !== undefined) {
+      const sheet = content[scope.sheetIndex];
+      if (!sheet) throw new XmapError(CODE_VALIDATION, `Foglio ${scope.sheetIndex} non trovato`);
+      return [sheet];
+    }
+    return content;
   }
 
   /**

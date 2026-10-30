@@ -57,20 +57,20 @@ const FONT_FAMILIES: readonly string[] = [
   'Times New Roman',
   'Courier New',
 ];
-const FONT_OPTIONS: SelectOption[] = [
+const FONT_OPTIONS: SelectOption<string>[] = [
   { value: AUTO, label: 'Automatico' },
   ...FONT_FAMILIES.map((family) => ({ value: family, label: family })),
 ];
 
 /* Valori in stringa: le select lavorano con stringhe, la conversione è in un solo punto. */
 const SIZE_OPTIONS_PT: readonly string[] = ['10', '11', '12', '13', '14', '16', '18', '20', '24', '28', '32', '36', '48'];
-const SIZE_OPTIONS: SelectOption[] = [
+const SIZE_OPTIONS: SelectOption<string>[] = [
   { value: AUTO, label: 'Automatica' },
   ...SIZE_OPTIONS_PT.map((pt) => ({ value: pt, label: `${pt} pt` })),
 ];
 
 const LINE_WIDTH_OPTIONS_PT: readonly string[] = ['1', '2', '3', '4', '6'];
-const LINE_WIDTH_OPTIONS: SelectOption[] = [
+const LINE_WIDTH_OPTIONS: SelectOption<string>[] = [
   { value: AUTO, label: 'Automatico' },
   ...LINE_WIDTH_OPTIONS_PT.map((pt) => ({ value: pt, label: `${pt} pt` })),
 ];
@@ -92,7 +92,7 @@ const LINE_LABELS: Record<BranchLine, string> = {
   elbow: 'Gomito',
   roundedElbow: 'Gomito arrotondato',
 };
-const LINE_OPTIONS: SelectOption[] = [
+const LINE_OPTIONS: SelectOption<string>[] = [
   { value: AUTO, label: 'Automatica' },
   ...BRANCH_LINES.map((line) => ({ value: line, label: LINE_LABELS[line] })),
 ];
@@ -130,10 +130,10 @@ function choiceFromId<T extends string>(choices: readonly T[], id: string): T | 
 
 /** Il menu mostra il valore attuale anche se non è tra le opzioni standard. */
 function withCurrentOption(
-  options: SelectOption[],
+  options: SelectOption<string>[],
   current: string | undefined,
   labelOf: (value: string) => string,
-): SelectOption[] {
+): SelectOption<string>[] {
   if (current === undefined || options.some((option) => option.value === current)) return options;
   return [...options, { value: current, label: labelOf(current) }];
 }
@@ -307,7 +307,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
     [palette],
   );
 
-  const sheetOptions: SelectOption[] = useMemo(
+  const sheetOptions: SelectOption<string>[] = useMemo(
     () =>
       sheets.map((item, position) => ({
         value: String(position),
@@ -352,7 +352,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                 size="sm"
                 options={sheetOptions}
                 value={String(sheetPosition)}
-                onChange={(event) => setSheetPosition(Number(event.target.value))}
+                onValueChange={(value) => setSheetPosition(Number(value))}
               />
             </Field>
           ) : null}
@@ -453,9 +453,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                   size="sm"
                   options={fontOptions}
                   value={style.fontFamily ?? AUTO}
-                  onChange={(event) =>
-                    applyLevel({ fontFamily: event.target.value === AUTO ? null : event.target.value })
-                  }
+                  onValueChange={(value) => applyLevel({ fontFamily: value === AUTO ? null : value })}
                 />
               </Field>
 
@@ -464,9 +462,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                   size="sm"
                   options={sizeOptions}
                   value={sizeKey ?? AUTO}
-                  onChange={(event) =>
-                    applyLevel({ fontSizePt: event.target.value === AUTO ? null : Number(event.target.value) })
-                  }
+                  onValueChange={(value) => applyLevel({ fontSizePt: value === AUTO ? null : Number(value) })}
                 />
               </Field>
 
@@ -506,8 +502,8 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                   size="sm"
                   options={LINE_OPTIONS}
                   value={style.line ?? AUTO}
-                  onChange={(event) => {
-                    const line = event.target.value === AUTO ? null : choiceFromId(BRANCH_LINES, event.target.value);
+                  onValueChange={(value) => {
+                    const line = value === AUTO ? null : choiceFromId(BRANCH_LINES, value);
                     if (line !== undefined) applyLevel({ line });
                   }}
                 />
@@ -518,9 +514,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                   size="sm"
                   options={lineWidthOptions}
                   value={lineWidthKey ?? AUTO}
-                  onChange={(event) =>
-                    applyLevel({ lineWidthPt: event.target.value === AUTO ? null : Number(event.target.value) })
-                  }
+                  onValueChange={(value) => applyLevel({ lineWidthPt: value === AUTO ? null : Number(value) })}
                 />
               </Field>
             </div>

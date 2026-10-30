@@ -203,8 +203,25 @@ del ramo con i pallini sempre visibili, formula LaTeX, note, frecce e struttura
 categoria in una griglia, con ricerca).
 La formula si scrive in un editor al centro dello schermo con anteprima dal vivo,
 suggerimenti dei comandi e tavolozza di simboli. Il menu **⋮** in alto raccoglie
-salva-con-nome, stampa/PDF, export/import Markdown/OPML, export equazione SVG/PNG, allega
+**Esporta…** (`Ctrl+Maiusc+E`), stampa, import Markdown/OPML, allega
 file, unisci mappa, estrai ramo e informazioni.
+
+**Esporta** (`ExportModal`): un'unica finestra con il formato a sinistra e le opzioni a destra.
+*XMind* (salva con nome; `Ctrl+Maiusc+S` resta valido), *Markdown*, *OPML* e *Testo* (con la scelta di cosa
+esportare: tutti i fogli, il foglio attivo o il ramo selezionato, via `controller.export(format, scope)`),
+*Immagine PNG/SVG*, *PDF* (le stesse opzioni della stampa) ed *Equazione* (il blocco selezionato, SVG o PNG).
+
+**Stampa e PDF** (`Ctrl+P`, `PrintModal`; le opzioni stanno in `PrintPanel`, condiviso con «Esporta»): quattro adattamenti più uno su misura.
+*Per rami* (predefinito) porta la mappa alla larghezza del foglio, allineata a sinistra,
+e va a capo pagina solo tra rami fratelli (prima i rami principali, poi i sotto-rami se
+un ramo da solo supera la pagina); ogni pagina ha in cima titolo e ramo da cui riparte
+(«… (continua)») e il numero. Per la stampa la mappa si ridispone ad albero compatto
+anche se a schermo è un Logic Chart (la scelta «Struttura» nella finestra; lo schermo
+non cambia). *Una pagina*, *In larghezza* e *Scala fissa* restano i fogli da
+affiancare con sovrapposizione; *Come la mappa* produce una sola pagina PDF grande
+quanto la mappa (scala 1, ridotta oltre 5 m di lato). Il desktop salva il PDF
+(`printToPDF`); sul web si usa «Salva come PDF» del dialogo di stampa del browser. La
+logica pura è in `packages/core/src/print/` (`paginate.ts`, `branches.ts`).
 
 ---
 

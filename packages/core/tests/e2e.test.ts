@@ -129,6 +129,22 @@ describe('XMap Studio Core - Lossless Round-Trip & Invariants', () => {
     expect(outline).toContain('• ');
   });
 
+  it('esporta solo un foglio o un ramo senza modificare il documento', async () => {
+    const buffer = fs.readFileSync(DEMO_FILE);
+    const controller = new AppController();
+    const dto = await controller.open(buffer, DEMO_FILE);
+
+    const branch = dto.sheets[0].topics.find((t) => t.depth === 1);
+    expect(branch).toBeDefined();
+    const branchMd = controller.export('markdown', { topicId: branch!.id });
+    expect(branchMd.startsWith(`# ${branch!.title}`)).toBe(true);
+    expect(branchMd.length).toBeLessThan(controller.export('markdown').length);
+
+    expect(controller.export('markdown', { sheetIndex: 0 })).toBe(controller.export('markdown'));
+    expect(() => controller.export('markdown', { sheetIndex: 99 })).toThrow();
+    expect(() => controller.export('opml', { topicId: 'inesistente' })).toThrow();
+  });
+
   it('computes logic chart layout coordinates', async () => {
     const buffer = fs.readFileSync(DEMO_FILE);
     const controller = new AppController();

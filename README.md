@@ -30,8 +30,10 @@ aprono anche in XMind. Niente account, niente telemetria.
   foglio di calcolo: dal pulsante accanto alle impostazioni ne aggiungi uno; la
   barra in basso compare solo con più fogli e permette di rinominare, duplicare,
   spostare ed eliminare.
-- **Stampi su A4 e A3.** Su un foglio solo o su più fogli da affiancare, e nel
-  desktop salvi anche in PDF.
+- **Stampi e salvi in PDF.** Su A4 o A3 a capo pagina tra un ramo e l'altro, così
+  anche le mappe lunghe restano leggibili; oppure su più fogli da affiancare, o in
+  una pagina PDF grande quanto la mappa. Nel desktop il PDF si salva direttamente,
+  sul web dal dialogo di stampa.
 - **Non perdi niente.** Ogni salvataggio viene controllato prima di scrivere su
   disco e lascia un backup; se XMind ha il file aperto, il salvataggio si ferma.
 

@@ -1,23 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Button, SegmentedControl, Checkbox, Field, Banner } from '@xmap/ui-kit';
+import { Button, SegmentedControl, Checkbox, Field, Banner } from '@xmap/ui-kit';
 import { Download } from 'lucide-react';
 import type { Layout } from '@xmap/core';
 import { getPrintableMapClone, computeLayoutBounds } from '../print/mapClone.js';
 import { renderMapImage, type MapImageFormat } from '../export/mapImage.js';
 import { saveBytes } from '../adapters/fileSystem.js';
 
-export interface ImageExportModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+export interface ImageExportPanelProps {
+  /** Formato scelto nel dialogo «Esporta». */
+  format: MapImageFormat;
+  /** Chiamata a salvataggio riuscito. */
+  onDone: () => void;
   layout: Layout | null;
   suggestedBase?: string;
   onSaved?: (message: string) => void;
 }
-
-const FORMAT_ITEMS: { id: MapImageFormat; label: string }[] = [
-  { id: 'png', label: 'PNG' },
-  { id: 'svg', label: 'SVG' },
-];
 
 const SCALE_ITEMS = [
   { id: '1', label: '1×' },
@@ -30,14 +27,13 @@ const FORMAT_SPEC: Record<MapImageFormat, { mime: string; description: string }>
   svg: { mime: 'image/svg+xml', description: 'Immagine SVG' },
 };
 
-export const ImageExportModal: React.FC<ImageExportModalProps> = ({
-  isOpen,
-  onClose,
+export const ImageExportPanel: React.FC<ImageExportPanelProps> = ({
+  format,
+  onDone,
   layout,
   suggestedBase = 'mappa',
   onSaved,
 }) => {
-  const [format, setFormat] = useState<MapImageFormat>('png');
   const [scale, setScale] = useState('2');
   const [transparent, setTransparent] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,19 +43,12 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
   // La mappa si ridisegna in chiaro all'apertura (App.tsx): il clone per l'anteprima si
   // cattura dopo un breve intervallo, come nella stampa.
   useEffect(() => {
-    if (!isOpen) {
-      setPreviewHtml('');
-      setError(null);
-      return;
-    }
     setError(null);
     const capture = () => setPreviewHtml(getPrintableMapClone()?.innerHtml ?? '');
     capture();
     const timer = window.setTimeout(capture, 250);
     return () => window.clearTimeout(timer);
-  }, [isOpen, layout]);
-
-  if (!isOpen) return null;
+  }, [layout]);
 
   const bounds = computeLayoutBounds(layout);
   const spec = FORMAT_SPEC[format];
@@ -85,7 +74,7 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
             ? `Immagine salvata (${result.width}×${result.height} px, risoluzione ridotta per il limite del canvas)`
             : `Immagine salvata (${result.width}×${result.height} px)`,
         );
-        onClose();
+        onDone();
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Errore durante l\'esportazione dell\'immagine.');
@@ -95,39 +84,12 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Esporta immagine"
-      size="md"
-      footer={
-        <div className="flex w-full items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
-            Annulla
-          </Button>
-          <Button
-            variant="default"
-            icon={<Download className="size-4" />}
-            loading={saving}
-            disabled={!previewHtml}
-            onClick={handleSave}
-          >
-            Salva .{format}
-          </Button>
-        </div>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <Field label="Formato">
-            <SegmentedControl items={FORMAT_ITEMS} activeId={format} onChange={setFormat} />
-          </Field>
-          {format === 'png' && (
-            <Field label="Risoluzione">
-              <SegmentedControl items={SCALE_ITEMS} activeId={scale} onChange={setScale} />
-            </Field>
-          )}
-        </div>
+    <div className="flex flex-col gap-4">
+      {format === 'png' && (
+        <Field label="Risoluzione">
+          <SegmentedControl items={SCALE_ITEMS} activeId={scale} onChange={setScale} />
+        </Field>
+      )}
 
         <Checkbox checked={transparent} onCheckedChange={setTransparent} label="Sfondo trasparente" />
 
@@ -155,7 +117,17 @@ export const ImageExportModal: React.FC<ImageExportModalProps> = ({
         </p>
 
         {error && <Banner variant="error">{error}</Banner>}
+      <div className="flex w-full items-center justify-end gap-2">
+        <Button
+          variant="default"
+          icon={<Download className="size-4" />}
+          loading={saving}
+          disabled={!previewHtml}
+          onClick={handleSave}
+        >
+          Salva .{format}
+        </Button>
       </div>
-    </Modal>
+    </div>
   );
 };

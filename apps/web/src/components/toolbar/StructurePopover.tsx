@@ -46,17 +46,9 @@ const RelationshipRow: React.FC<{
         aria-label="Forma della freccia"
         className="w-24 shrink-0"
         value={rel.style.shape}
-        onChange={(e) => {
-          const shape = RELATIONSHIP_SHAPES.find((s) => s.id === e.target.value);
-          if (shape) actions.setRelationshipShape(rel.id, shape.id);
-        }}
-      >
-        {RELATIONSHIP_SHAPES.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label}
-          </option>
-        ))}
-      </Select>
+        options={RELATIONSHIP_SHAPES.map((s) => ({ value: s.id, label: s.label }))}
+        onValueChange={(shape) => actions.setRelationshipShape(rel.id, shape)}
+      />
       <button
         type="button"
         aria-label="Rimuovi freccia"

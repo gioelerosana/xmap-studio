@@ -17,6 +17,11 @@ export type UpdateOutcome =
   | { status: 'error'; message: string };
 
 /** File letto dal main process; `bytes` arriva come Uint8Array (structured clone di IPC). */
+/** Formato del PDF: carta standard oppure dimensioni personalizzate in mm (pagina grande quanto la mappa). */
+export type PrintToPdfOptions = {
+  pageSize: 'A4' | 'A3' | { widthMm: number; heightMm: number };
+  landscape: boolean;
+};
 export type OpenedFile = { path: string; name: string; bytes: Uint8Array };
 
 export interface ElectronAPI {
@@ -46,7 +51,7 @@ export interface ElectronAPI {
     options?: { expectedHash?: string; force?: boolean }
   ) => Promise<SaveOutcome>;
   checkXMindRunning: () => Promise<string[]>;
-  printToPdf: (opts: { pageSize: 'A4' | 'A3'; landscape: boolean }) => Promise<Uint8Array>;
+  printToPdf: (opts: PrintToPdfOptions) => Promise<Uint8Array>;
   minimize: () => void;
   maximize: () => void;
   close: () => void;

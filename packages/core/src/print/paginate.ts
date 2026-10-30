@@ -61,17 +61,32 @@ export interface PrintPage {
   col: number;
   /** Porzione del mondo mostrata nell'area utile della pagina. */
   world: WorldRect;
+  /** Intestazione della pagina (solo impaginazione per rami). */
+  header?: PrintPageHeader;
+}
+
+/** Testata di una pagina dell'impaginazione per rami: dove ci si trova nella mappa. */
+export interface PrintPageHeader {
+  /** Titolo della mappa (radice). */
+  title: string;
+  /** Antenati del primo blocco della pagina, dal ramo principale in giù (vuoto a inizio ramo). */
+  trail: string[];
+  /** Vero se la pagina inizia in mezzo a un ramo (continua dalla precedente). */
+  continued: boolean;
 }
 
 export interface PrintPlan {
-  paper: PaperSize;
+  /** `custom` = un'unica pagina grande quanto la mappa. */
+  paper: PaperSize | 'custom';
   /** Orientamento effettivo (mai `auto`). */
   orientation: 'portrait' | 'landscape';
   /** Dimensioni del foglio in mm nell'orientamento effettivo. */
   pageWidthMm: number;
   pageHeightMm: number;
   marginMm: number;
-  /** Area utile (foglio meno margini) in px CSS. */
+  /** Altezza (mm) della fascia di intestazione in cima a ogni pagina; 0 = nessuna. */
+  headerMm: number;
+  /** Area utile (foglio meno margini, meno intestazione) in px CSS. */
   contentWidthPx: number;
   contentHeightPx: number;
   /** px CSS su carta per 1 px del mondo. */
@@ -251,6 +266,7 @@ function buildPlan(
     pageWidthMm,
     pageHeightMm,
     marginMm: opts.marginMm,
+    headerMm: 0,
     contentWidthPx,
     contentHeightPx,
     scale,

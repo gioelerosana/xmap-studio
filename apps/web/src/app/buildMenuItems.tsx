@@ -3,21 +3,18 @@ import type { MenuItem } from '@xmap/ui-kit';
 import {
   SquarePlus,
   FolderOpen,
-  Save,
   Undo2,
   Redo2,
   Moon,
   Sun,
   FileDown,
   FileUp,
-  Sigma,
   Paperclip,
   Merge,
   Split,
   Trash2,
   Info,
   Printer,
-  Image as ImageIcon,
   Palette,
   Maximize2,
 } from 'lucide-react';
@@ -37,14 +34,11 @@ export interface MenuActions {
   onUndo: () => void;
   onRedo: () => void;
   onToggleTheme: () => void;
-  onSaveAs: () => void;
   onExport: () => void;
   onPrint: () => void;
-  onExportImage: () => void;
   onEditTheme: () => void;
   onZen: () => void;
   onImport: () => void;
-  onExportEquation: (format: 'svg' | 'png') => void;
   onAttach: () => void;
   onMerge: () => void;
   onSplit: () => void;
@@ -86,28 +80,11 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
 
   return [
     ...overflowItems,
-    { id: 'save-as', label: 'Salva con nome…', icon: <Save className="size-4" />, shortcut: 'Ctrl+Shift+S', separatorBefore: overflowItems.length > 0, onSelect: actions.onSaveAs },
-    { id: 'export', label: 'Esporta Markdown / OPML…', icon: <FileDown className="size-4" />, separatorBefore: true, onSelect: actions.onExport },
-    { id: 'export-image', label: 'Esporta immagine PNG / SVG…', icon: <ImageIcon className="size-4" />, onSelect: actions.onExportImage },
+    { id: 'export', label: 'Esporta…', icon: <FileDown className="size-4" />, shortcut: 'Ctrl+Shift+E', separatorBefore: overflowItems.length > 0, onSelect: actions.onExport },
     { id: 'zen', label: 'Modalità Zen', icon: <Maximize2 className="size-4" />, shortcut: 'Ctrl+Alt+Z', onSelect: actions.onZen },
     { id: 'print', label: 'Stampa…', icon: <Printer className="size-4" />, shortcut: 'Ctrl+P', onSelect: actions.onPrint },
     { id: 'sheet-theme', label: 'Tema del foglio…', icon: <Palette className="size-4" />, onSelect: actions.onEditTheme },
     { id: 'import', label: 'Importa Markdown / OPML…', icon: <FileUp className="size-4" />, onSelect: actions.onImport },
-    {
-      id: 'export-svg',
-      label: 'Esporta equazione SVG',
-      icon: <Sigma className="size-4" />,
-      separatorBefore: true,
-      disabled: selectedTopic?.kind !== 'equation',
-      onSelect: () => actions.onExportEquation('svg'),
-    },
-    {
-      id: 'export-png',
-      label: 'Esporta equazione PNG',
-      icon: <Sigma className="size-4" />,
-      disabled: selectedTopic?.kind !== 'equation',
-      onSelect: () => actions.onExportEquation('png'),
-    },
     { id: 'attach', label: 'Allega file…', icon: <Paperclip className="size-4" />, separatorBefore: true, disabled: !selectedTopic, onSelect: actions.onAttach },
     { id: 'merge', label: 'Unisci una mappa…', icon: <Merge className="size-4" />, onSelect: actions.onMerge },
     { id: 'split', label: 'Estrai ramo come mappa…', icon: <Split className="size-4" />, disabled: !selectedTopic || selectedTopic.depth === 0, onSelect: actions.onSplit },
