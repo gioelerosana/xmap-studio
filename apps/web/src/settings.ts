@@ -153,10 +153,27 @@ export function resetSettings(): void {
   writeSettings(defaultSettings());
 }
 
+/*
+ * Nella PWA installata su iPadOS/iOS l'evento `change` non arriva se l'aspetto
+ * cambia mentre l'app è sospesa o coperta (Centro di Controllo, cambio
+ * automatico al tramonto): `matches` è aggiornato ma nessuno lo rilegge. Per
+ * questo la preferenza si rilegge anche quando l'app torna visibile o in primo
+ * piano; `useSyncExternalStore` ridisegna solo se il valore è cambiato.
+ */
 function subscribeDarkScheme(listener: () => void): () => void {
-  const mql = window.matchMedia(DARK_QUERY);
-  mql.addEventListener('change', listener);
-  return () => mql.removeEventListener('change', listener);
+  const mql = window.matchMedia?.(DARK_QUERY);
+  if (mql?.addEventListener) mql.addEventListener('change', listener);
+  else mql?.addListener?.(listener);
+  document.addEventListener('visibilitychange', listener);
+  window.addEventListener('pageshow', listener);
+  window.addEventListener('focus', listener);
+  return () => {
+    if (mql?.removeEventListener) mql.removeEventListener('change', listener);
+    else mql?.removeListener?.(listener);
+    document.removeEventListener('visibilitychange', listener);
+    window.removeEventListener('pageshow', listener);
+    window.removeEventListener('focus', listener);
+  };
 }
 
 function getSystemDark(): boolean {
