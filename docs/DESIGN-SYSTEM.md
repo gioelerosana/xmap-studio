@@ -98,8 +98,26 @@ restituisce l'array di tasti e `<Shortcut keys="Ctrl+Shift+S" />` lo rende.
   `invalid?`; `leading?: ReactNode` (icona a sinistra, es. cerca);
   `trailing?: ReactNode`. `forwardRef` sull'`<input>`.
 - `Textarea`: stesso stile, `mono?`, `invalid?`, `autoResize?`. `forwardRef`.
-- `Select`: `<select>` nativo con lo stile di Input e chevron; `size`, `options?:
-  {value,label}[]` oppure children.
+- `Select<T>`: listbox personalizzato (non `<select>` nativo) con lo stile di Input
+  e chevron. API: `value: T`, `onValueChange(value: T)`, `options: {value: T, label,
+  disabled?}[]`, `size`, `invalid?`, `disabled?`, `id?`, `aria-label?`,
+  `placeholder?` (se `value` non corrisponde a nessuna opzione). `T` è `string` o
+  `number` e il valore arriva nel callback com'è, senza conversioni. Niente
+  `forwardRef`, niente children `<option>`, niente `onChange` evento.
+  - Perché non nativo: l'elenco aperto di un `<select>` lo disegna il sistema e
+    ignora il tema dell'app (in scuro risultava bianco con testo bianco).
+  - Elenco: `role="listbox"` in un portale su `body`, `position: fixed` sotto il
+    trigger (sopra se sotto manca spazio), larghezza minima quella del trigger,
+    altezza massima 16rem con scroll, `z-[70]` sopra i modali. Sfondo opaco
+    (`bg-popover`), voce attiva `bg-accent`, spunta a destra per la selezionata.
+  - Tastiera: su trigger, Freccia giù/su, Invio e Spazio aprono. Nell'elenco
+    Freccia giù/su spostano (saltano le disabilitate), Home/End vanno a primo e
+    ultimo, Invio/Spazio scelgono e chiudono, Esc e Tab chiudono (il focus torna al
+    trigger), una lettera salta alla prima opzione che inizia con quella lettera.
+  - Chiusura: clic fuori, `resize`, `scroll` di un antenato (non dell'elenco).
+    L'Esc è intercettato in cattura, così chiude solo il Select e non il Modal che
+    lo contiene. Il `pointerdown` dell'elenco non risale a `window`, quindi non
+    chiude i popover antenati (es. la barra flottante).
 
 ### `Switch`, `Checkbox`
 `Switch`: `checked`, `onCheckedChange(checked)`, `label?`, `disabled?`; traccia

@@ -179,6 +179,8 @@ export const ToolbarPopover: React.FC<ToolbarPopoverProps> = ({
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // Un elenco a tendina aperto (ui-kit `Select`) gestisce da sé l'Esc: chiude lui, non il pannello.
+      if (document.querySelector('[role="listbox"]')) return;
       e.stopPropagation();
       setOpen(false);
     };

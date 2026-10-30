@@ -203,10 +203,15 @@ del ramo con i pallini sempre visibili, formula LaTeX, note, frecce e struttura
 categoria in una griglia, con ricerca).
 La formula si scrive in un editor al centro dello schermo con anteprima dal vivo,
 suggerimenti dei comandi e tavolozza di simboli. Il menu **⋮** in alto raccoglie
-salva-con-nome, stampa/PDF, export/import Markdown/OPML, export equazione SVG/PNG, allega
+**Esporta…** (`Ctrl+Maiusc+E`), stampa, import Markdown/OPML, allega
 file, unisci mappa, estrai ramo e informazioni.
 
-**Stampa e PDF** (`Ctrl+P`, `PrintModal`): quattro adattamenti più uno su misura.
+**Esporta** (`ExportModal`): un'unica finestra con il formato a sinistra e le opzioni a destra.
+*XMind* (salva con nome; `Ctrl+Maiusc+S` resta valido), *Markdown*, *OPML* e *Testo* (con la scelta di cosa
+esportare: tutti i fogli, il foglio attivo o il ramo selezionato, via `controller.export(format, scope)`),
+*Immagine PNG/SVG*, *PDF* (le stesse opzioni della stampa) ed *Equazione* (il blocco selezionato, SVG o PNG).
+
+**Stampa e PDF** (`Ctrl+P`, `PrintModal`; le opzioni stanno in `PrintPanel`, condiviso con «Esporta»): quattro adattamenti più uno su misura.
 *Per rami* (predefinito) porta la mappa alla larghezza del foglio, allineata a sinistra,
 e va a capo pagina solo tra rami fratelli (prima i rami principali, poi i sotto-rami se
 un ramo da solo supera la pagina); ogni pagina ha in cima titolo e ramo da cui riparte

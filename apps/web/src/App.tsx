@@ -7,7 +7,6 @@ import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
 import { LatexEditorModal } from './components/latex/LatexEditorModal.js';
 import { ExportModal } from './components/ExportModal.js';
 import { PrintModal } from './components/PrintModal.js';
-import { ImageExportModal } from './components/ImageExportModal.js';
 import { ThemeEditorModal } from './components/ThemeEditorModal.js';
 import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
@@ -56,7 +55,6 @@ export const App: React.FC = () => {
 
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
-  const [imageExportOpen, setImageExportOpen] = useState(false);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -120,10 +118,10 @@ export const App: React.FC = () => {
 
   // Per la stampa la mappa si può ridisporre ad albero compatto anche se a schermo è un Logic Chart.
   const printCompactLayout = useMemo<Layout | null>(() => {
-    if (!printModalOpen || !currentSheet) return null;
+    if (!(printModalOpen || exportModalOpen) || !currentSheet) return null;
     if (mapStructure === 'tree') return currentLayout;
     return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: 'tree' });
-  }, [printModalOpen, currentSheet, collapsedIds, mapStructure, currentLayout]);
+  }, [printModalOpen, exportModalOpen, currentSheet, collapsedIds, mapStructure, currentLayout]);
 
   const siblingRangeInfo = useMemo(() => {
     const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);
@@ -313,6 +311,7 @@ export const App: React.FC = () => {
     handleCreateSummary,
     setSettingsOpen,
     setPrintModalOpen,
+    setExportModalOpen,
     zenMode,
     setZenMode,
   });
@@ -329,14 +328,11 @@ export const App: React.FC = () => {
       onUndo: () => doUndoRedo('undo'),
       onRedo: () => doUndoRedo('redo'),
       onToggleTheme: toggleDarkMode,
-      onSaveAs: handleSaveAs,
       onExport: () => setExportModalOpen(true),
       onPrint: () => setPrintModalOpen(true),
-      onExportImage: () => setImageExportOpen(true),
       onEditTheme: () => setThemeModalOpen(true),
       onZen: () => setZenMode(true),
       onImport: () => setImportModalOpen(true),
-      onExportEquation: handleExportEquation,
       onAttach: handleAttach,
       onMerge: handleMerge,
       onSplit: handleSplit,
@@ -429,7 +425,7 @@ export const App: React.FC = () => {
                 onToggleCollapse={handleToggleCollapse}
                 resourceResolver={resolveResource}
                 // In stampa e nell'export immagine la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
-                darkMode={darkMode && !printModalOpen && !imageExportOpen}
+                darkMode={darkMode && !printModalOpen && !exportModalOpen}
                 zen={zen}
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
@@ -508,7 +504,21 @@ export const App: React.FC = () => {
       <ExportModal
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
-        getExportContent={(fmt) => controller.export(fmt)}
+        getExportContent={(fmt, scope) => controller.export(fmt, scope)}
+        layout={currentLayout}
+        compactLayout={printCompactLayout}
+        screenIsCompact={mapStructure === 'tree'}
+        resourceResolver={resolveResource}
+        sheetCount={sheetCount}
+        activeSheetIndex={activeSheetIndex}
+        selection={
+          selectedTopic
+            ? { id: selectedTopic.id, title: selectedTopic.title, isEquation: selectedTopic.kind === 'equation' }
+            : null
+        }
+        onSaveAs={handleSaveAs}
+        onExportEquation={handleExportEquation}
+        onImageSaved={(message) => addToast('success', message)}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
       />
       <PrintModal
@@ -519,13 +529,6 @@ export const App: React.FC = () => {
         screenIsCompact={mapStructure === 'tree'}
         resourceResolver={resolveResource}
         suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
-      />
-      <ImageExportModal
-        isOpen={imageExportOpen}
-        onClose={() => setImageExportOpen(false)}
-        layout={currentLayout}
-        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
-        onSaved={(message) => addToast('success', message)}
       />
       <ThemeEditorModal
         isOpen={themeModalOpen && workbook !== null}

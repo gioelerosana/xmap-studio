@@ -25,8 +25,8 @@ export interface ModalProps {
   footer?: ReactNode;
   /** Classe Tailwind di larghezza massima (default `max-w-md`). Ignorata se c'è `size`. */
   maxWidth?: string;
-  /** `sm` max-w-sm · `md` max-w-md · `lg` max-w-2xl; ha la precedenza su `maxWidth`. */
-  size?: 'sm' | 'md' | 'lg';
+  /** `sm` max-w-sm · `md` max-w-md · `lg` max-w-2xl · `xl` max-w-4xl; ha la precedenza su `maxWidth`. */
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }
 
@@ -34,6 +34,7 @@ const SIZES = {
   sm: 'max-w-sm',
   md: 'max-w-md',
   lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
 } as const;
 
 export function Modal({
