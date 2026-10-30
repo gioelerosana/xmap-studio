@@ -1,6 +1,6 @@
 {
   "name": "@xmap/ui-kit",
-  "version": "26.2.1",
+  "version": "26.2.2",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
