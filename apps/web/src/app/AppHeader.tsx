@@ -1,8 +1,10 @@
 import type { Ref } from 'react';
 import type { WorkbookDto } from '@xmap/core';
 import { Button, HeaderBar, IconButton, Menu, Separator, cn, type MenuItem } from '@xmap/ui-kit';
-import { SquarePlus, FilePlus, FolderOpen, Save, Undo2, Redo2, Moon, Sun, MoreVertical, Settings } from 'lucide-react';
+import { SquarePlus, FilePlus, FolderOpen, Save, Undo2, Redo2, MoreVertical, Settings } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
+import type { ThemePreference } from '../settings.js';
+import { ThemeIcon, themeCycleLabel } from './themeCycle.js';
 
 interface AppHeaderProps {
   headerRef: Ref<HTMLElement>;
@@ -11,7 +13,8 @@ interface AppHeaderProps {
   title: string;
   workbook: WorkbookDto | null;
   busy: boolean;
-  darkMode: boolean;
+  /** Preferenza salvata (non il tema risolto): il pulsante cicla Sistema → Chiaro → Scuro. */
+  theme: ThemePreference;
   settingsOpen: boolean;
   isElectron: boolean;
   isWindowMaximized: boolean;
@@ -32,7 +35,7 @@ export function AppHeader({
   title,
   workbook,
   busy,
-  darkMode,
+  theme,
   settingsOpen,
   isElectron,
   isWindowMaximized,
@@ -89,8 +92,8 @@ export function AppHeader({
       rightContent={
         <>
           {layout.inlineRedo && (
-            <IconButton size="sm" onClick={onToggleTheme} label="Cambia tema">
-              {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            <IconButton size="sm" onClick={onToggleTheme} label={themeCycleLabel(theme)}>
+              <ThemeIcon theme={theme} />
             </IconButton>
           )}
           {workbook && (

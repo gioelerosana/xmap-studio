@@ -18,6 +18,7 @@ import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
 import { sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
 import { useToasts } from './app/useToasts.js';
+import { nextTheme } from './app/themeCycle.js';
 import { useSelection } from './app/useSelection.js';
 import { useTopicActions } from './app/useTopicActions.js';
 import { useSheetActions } from './app/useSheetActions.js';
@@ -43,7 +44,7 @@ export const App: React.FC = () => {
   // Cresce a ogni documento aperto: la mappa si riadatta solo allora (o al cambio di foglio).
   const [documentKey, setDocumentKey] = useState(0);
   const { settings, darkMode, update: updateSettings, reset: resetSettings } = useSettings();
-  const toggleDarkMode = useCallback(() => updateSettings({ theme: darkMode ? 'light' : 'dark' }), [darkMode, updateSettings]);
+  const cycleTheme = useCallback(() => updateSettings({ theme: nextTheme(settings.theme) }), [settings.theme, updateSettings]);
 
   const selection = useSelection();
   const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
@@ -321,13 +322,13 @@ export const App: React.FC = () => {
   const resolveResource = useCallback((src: string) => controller.resourceBytes(src), [controller]);
 
   const menuItems = buildMenuItems(
-    { workbook, selectedTopic, selectedTopicId, darkMode, layout: headerLayout },
+    { workbook, selectedTopic, selectedTopicId, theme: settings.theme, layout: headerLayout },
     {
       onNewMap: handleNewMap,
       onOpen: handleOpenLocalFile,
       onUndo: () => doUndoRedo('undo'),
       onRedo: () => doUndoRedo('redo'),
-      onToggleTheme: toggleDarkMode,
+      onToggleTheme: cycleTheme,
       onExport: () => setExportModalOpen(true),
       onPrint: () => setPrintModalOpen(true),
       onEditTheme: () => setThemeModalOpen(true),
@@ -350,7 +351,7 @@ export const App: React.FC = () => {
           title={workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio'}
           workbook={workbook}
           busy={busy}
-          darkMode={darkMode}
+          theme={settings.theme}
           settingsOpen={settingsOpen}
           isElectron={isElectron}
           isWindowMaximized={isWindowMaximized}
@@ -361,7 +362,7 @@ export const App: React.FC = () => {
           onSave={handleSave}
           onUndo={() => doUndoRedo('undo')}
           onRedo={() => doUndoRedo('redo')}
-          onToggleTheme={toggleDarkMode}
+          onToggleTheme={cycleTheme}
           onToggleSettings={() => setSettingsOpen((open) => !open)}
         />
       )}
