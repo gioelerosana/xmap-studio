@@ -5,8 +5,6 @@ import {
   FolderOpen,
   Undo2,
   Redo2,
-  Moon,
-  Sun,
   FileDown,
   FileUp,
   Paperclip,
@@ -19,12 +17,14 @@ import {
   Maximize2,
 } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
+import type { ThemePreference } from '../settings.js';
+import { ThemeIcon, themeCycleLabel } from './themeCycle.js';
 
 export interface MenuContext {
   workbook: WorkbookDto | null;
   selectedTopic: TopicView | null;
   selectedTopicId: string | undefined;
-  darkMode: boolean;
+  theme: ThemePreference;
   layout: HeaderLayout;
 }
 
@@ -48,7 +48,7 @@ export interface MenuActions {
 
 /** Voci del menu ⋮: le azioni che non entrano nell'header e tutte quelle del documento. */
 export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem[] {
-  const { workbook, selectedTopic, selectedTopicId, darkMode, layout } = ctx;
+  const { workbook, selectedTopic, selectedTopicId, theme, layout } = ctx;
 
   // Azioni dell'header che non ci stanno: in testa al menu ⋮.
   const overflowItems: MenuItem[] = [
@@ -68,7 +68,7 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
   const themeItem = (separatorBefore: boolean): MenuItem[] =>
     layout.inlineRedo
       ? []
-      : [{ id: 'theme', label: darkMode ? 'Tema chiaro' : 'Tema scuro', icon: darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />, separatorBefore, onSelect: actions.onToggleTheme }];
+      : [{ id: 'theme', label: themeCycleLabel(theme), icon: <ThemeIcon theme={theme} />, separatorBefore, onSelect: actions.onToggleTheme }];
 
   if (!workbook) {
     return [
