@@ -64,8 +64,8 @@ export interface MapViewProps {
   /** Modalità Zen: nasconde controlli di navigazione/zoom per mostrare solo la tela. */
   zen?: boolean;
   /**
-   * Spazio offerto dalla barra degli strumenti agganciata in basso (schermi stretti): se presente,
-   * i controlli di vista e zoom vi si rendono dentro invece di flottare sulla mappa.
+   * Pannello "Vista e zoom" della barra degli strumenti, aperto (sotto `sm`): i controlli di vista e
+   * zoom vi si rendono dentro; sotto `sm`, a pannello chiuso, non si mostrano.
    */
   mapControlsSlot?: HTMLElement | null;
   structure: MapStructure;
