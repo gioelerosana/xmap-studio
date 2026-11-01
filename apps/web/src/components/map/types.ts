@@ -1,4 +1,4 @@
-import type { Layout, MapStructure, Point, TitleRun } from '@xmap/core';
+import type { BoundaryFrame, Layout, MapStructure, Point, TitleRun } from '@xmap/core';
 import type { buildDragIndex, DropPlacement, DropTarget } from './dragTarget.js';
 import type { EditExit } from './NodeEditor.js';
 import type { ControlPointsPatch } from './RelationshipLayer.js';
@@ -27,6 +27,8 @@ export interface MapViewProps {
   onCommitEdit?: (topicId: string, text: string, exit: EditExit, runs?: TitleRun[]) => void;
   onCancelEdit?: () => void;
   layout: Layout | null;
+  /** Cornici del foglio, calcolate da `layoutBoundaries` sullo stesso layout. */
+  boundaries?: readonly BoundaryFrame[];
   /** Blocco con selezione primaria (determina i comandi della barra flottante). */
   selectedTopicId?: string;
   /**

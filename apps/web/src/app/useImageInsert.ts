@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback } from 'react';
 import type { AppController, TopicView } from '@xmap/core';
 import type { SelectionState } from './useSelection.js';
 import type { AddToast } from './useToasts.js';
@@ -14,7 +14,6 @@ interface ImageInsertOptions {
   refreshState: () => void;
   addToast: AddToast;
   selection: SelectionState;
-  setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
 }
 
 type DecodedImage = Awaited<ReturnType<typeof readImageBlob>>;
@@ -30,7 +29,6 @@ export function useImageInsert({
   refreshState,
   addToast,
   selection,
-  setCollapsedIds,
 }: ImageInsertOptions) {
   const { selectedTopicIds, setSelectedTopicId, selectSingle } = selection;
 
@@ -68,12 +66,6 @@ export function useImageInsert({
         if (!targetParentId) return;
 
         const { newId } = controller.addImageTopic(targetParentId, image.bytes, image.mimeType, size);
-        setCollapsedIds((prev) => {
-          if (!prev.has(targetParentId)) return prev;
-          const next = new Set(prev);
-          next.delete(targetParentId);
-          return next;
-        });
         setSelectedTopicId(newId);
         refreshState();
         addToast(
@@ -94,7 +86,6 @@ export function useImageInsert({
       addToast,
       setSelectedTopicId,
       selectSingle,
-      setCollapsedIds,
     ]
   );
 

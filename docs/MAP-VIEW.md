@@ -125,6 +125,17 @@ Principi:
   selezione; le maniglie si trascinano (nello zig-zag spostano il tratto
   centrale, quindi cambiano entrambi i punti in un solo passo di undo); doppio
   clic su una maniglia ripristina il default.
+- **Cornici** (`map/BoundaryLayer.tsx`, geometria in
+  `packages/core/src/layout/boundary.ts`): rettangolo arrotondato tratteggiato
+  sotto i blocchi, con riempimento leggero, titolo in alto a sinistra e colori
+  del file (`line-color`, `svg:fill`) o del ramo. Non intercettano il puntatore.
+  Stanno dentro il gruppo `[data-map-content]`, quindi entrano nell'export SVG e
+  PNG. Non sono evitate le sovrapposizioni con blocchi vicini: il layout non
+  riserva spazio alle cornici.
+- **Rami chiusi**: la vista deriva i rami chiusi da `branch: "folded"` del
+  modello (`TopicView.folded`). Chiudere/aprire passa dal controller
+  (`setTopicFolded`) e aggiorna il file come una modifica, con un proprio passo di undo. Aggiungere un figlio
+  apre il ramo nello stesso passo di undo.
 
 ## 5. Rischi e limiti
 

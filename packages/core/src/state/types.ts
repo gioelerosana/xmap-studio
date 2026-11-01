@@ -56,9 +56,16 @@ export interface RelationshipView {
   controlPoints?: [Point | undefined, Point | undefined];
 }
 
+/** Cornice XMind di un blocco (`boundaries[]`): intervallo di figli o intero ramo (`master`). */
 export interface BoundaryView {
   id: string;
   range: string;
+  /** Titolo della cornice, se presente. */
+  title?: string;
+  /** Riempimento dal file (`style.properties.svg:fill`), se presente. */
+  fillColor?: string;
+  /** Colore del bordo dal file (`style.properties.line-color`), se presente. */
+  lineColor?: string;
 }
 
 export interface SummaryView {
@@ -95,6 +102,8 @@ export interface TopicView {
   href?: string;
   path: string[];
   childCount: number;
+  /** Ramo chiuso nel file (`branch: "folded"`): la vista parte con i figli nascosti. */
+  folded?: boolean;
   boundaries: BoundaryView[];
   summaries: SummaryView[];
   task?: TaskView;

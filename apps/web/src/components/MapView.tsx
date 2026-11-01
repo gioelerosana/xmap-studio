@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { titleBaseFontPx, type Layout, type LayoutNode } from '@xmap/core';
+import { titleBaseFontPx, type BoundaryFrame, type Layout, type LayoutNode } from '@xmap/core';
 import { Braces, CornerDownLeft, Edit3, Network, Plus, Trash2 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
+import { BoundaryLayer } from './map/BoundaryLayer.js';
 import { ContextMenu } from './map/ContextMenu.js';
 import { NodeEditor } from './map/NodeEditor.js';
 import { RelationshipLayer } from './map/RelationshipLayer.js';
@@ -26,8 +27,11 @@ import type { ContextMenuState, DragOverlay, MapHandlers, MapViewProps } from '.
 
 export type { MapEditing, MapViewProps } from './map/types.js';
 
+const NO_BOUNDARIES: readonly BoundaryFrame[] = [];
+
 export const MapView: React.FC<MapViewProps> = ({
   layout,
+  boundaries = NO_BOUNDARIES,
   viewKey,
   selectedTopicId,
   selectedTopicIds,
@@ -217,6 +221,8 @@ export const MapView: React.FC<MapViewProps> = ({
           fill="url(#map-dot-grid)"
         />
 
+        <BoundaryLayer boundaries={boundaries} />
+
         <MapEdges layout={l} />
 
         {l.nodes.map((node) => (
@@ -255,7 +261,7 @@ export const MapView: React.FC<MapViewProps> = ({
         </g>
       </>
     );
-  }, [effectiveLayout, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld, isCoarse, startResize, selectNode, activateNode, toggleCollapse, resetWidth, editingId]);
+  }, [effectiveLayout, boundaries, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld, isCoarse, startResize, selectNode, activateNode, toggleCollapse, resetWidth, editingId]);
 
   if (!layout || layout.nodes.length === 0) {
     return (
