@@ -129,7 +129,7 @@ Job:
 |---|---|---|
 | `verify` | verify | `scripts/check-release-version.mjs`: il tag deve coincidere con la `version` di tutti i `package.json` e con `pkgver` del PKGBUILD di release; poi `pnpm build` e `pnpm test` |
 | `build (windows)` | build | `pnpm dist:win` → `XMap-Studio-<versione>-portable-x64.exe` (+ `SHA256SUMS-windows.txt`) |
-| `build (linux)` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage`, poi `appimage-zsync.mjs` (update information + `.AppImage.zsync`) (+ `SHA256SUMS-linux.txt`) |
+| `build (linux)` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage`, poi `appimage-zsync.mjs` (update information + `.AppImage.zsync`, `zsync` installato nel job) (+ `SHA256SUMS-linux.txt`, calcolato dopo) |
 | `release` | release | solo sui tag: crea la GitHub Release del tag (note generate dai commit) e allega i due artefatti e i checksum |
 
 In un lancio manuale su un branch non c'è un tag: il controllo tag/versione si
@@ -190,17 +190,37 @@ i user namespace non privilegiati non sono disponibili.
 
 ## Aggiornamenti automatici
 
-- **Linux (AppImage):** `apps/desktop/scripts/appimage-zsync.mjs` scrive nella
-  sezione ELF `.upd_info` la stringa `gh-releases-zsync|gioelerosana|xmap-studio|latest|XMap-Studio-*-x86_64.AppImage.zsync`
-  e genera `<AppImage>.zsync` con `zsyncmake` (pacchetto `zsync`, installato nel
-  job). I gestori di AppImage (AppImageUpdate, Gear Lever, …) cercano il `.zsync`
-  nell'ultima release e scaricano solo i blocchi cambiati. Va eseguito prima del
-  checksum, perché modifica l'AppImage.
-- **Windows (exe portable):** in Impostazioni › Informazioni il pulsante
-  "Controlla aggiornamenti" (`apps/desktop/src/updater.ts`) legge l'ultima
-  release su GitHub; se è più recente scarica l'exe nei Download verificando lo
-  SHA-256 di `SHA256SUMS-windows.txt` e lo mostra in Esplora file. Non sostituisce
-  l'exe in esecuzione: l'utente lo avvia dopo aver chiuso l'app.
+Li gestisce il main process (`apps/desktop/src/updater.ts`); la UI è la sezione
+**Impostazioni › Aggiornamenti** (`apps/web/src/components/UpdatesSection.tsx`),
+che riceve lo stato via IPC (`update:status`) e mostra un pallino sul pulsante
+delle impostazioni e un toast quando c'è una versione nuova.
+
+- **Controllo:** `GET /repos/gioelerosana/xmap-studio/releases/latest` 10 s dopo
+  l'avvio e poi ogni 6 ore, se il controllo automatico è attivo (preferenza in
+  `<userData>/updates.json`); a mano con "Controlla ora". Una versione è nuova se
+  il tag supera `app.getVersion()` (`compareVersions` in `@xmap/core/update`). Si
+  accettano solo asset con URL `https://github.com/gioelerosana/xmap-studio/releases/download/…`.
+- **Linux (AppImage avviata da `$APPIMAGE`):** "Aggiorna ora" scarica
+  `XMap-Studio-<v>-x86_64.AppImage.zsync`, confronta i blocchi con l'AppImage in
+  uso (client zsync in TypeScript, `packages/core/src/update/zsync.ts`) e scarica
+  solo gli intervalli mancanti con richieste HTTP Range (sopra 400 richieste o
+  l'85% del file scarica il file intero). Il file ricostruito, in un temp nella
+  stessa cartella, deve combaciare con lo SHA-1 del `.zsync` e con lo SHA-256 di
+  `SHA256SUMS-linux.txt`; poi prende i permessi del vecchio e lo sostituisce con
+  un `rename` (l'istanza aperta continua sul vecchio inode). Se la cartella non è
+  scrivibile si segnala l'errore e si rimanda alla pagina della release.
+  "Riavvia ora" chiude le finestre (con la conferma per le modifiche non salvate)
+  e riapre l'AppImage. Lo stesso `.zsync` e l'update information scritta da
+  `apps/desktop/scripts/appimage-zsync.mjs` nella sezione ELF `.upd_info`
+  (`gh-releases-zsync|gioelerosana|xmap-studio|latest|XMap-Studio-*-x86_64.AppImage.zsync`)
+  servono anche ai gestori esterni (AppImageUpdate, Gear Lever, …). Lo script va
+  eseguito prima del checksum, perché modifica l'AppImage.
+- **Windows (exe portable, `PORTABLE_EXECUTABLE_FILE`):** "Scarica" salva il nuovo
+  exe accanto a quello in uso (o nei Download se la cartella non è scrivibile),
+  verificato con `SHA256SUMS-windows.txt`; "Chiudi e avvia la nuova versione"
+  riavvia su quel file. Il vecchio exe resta: l'utente lo elimina quando vuole.
+- **Altre installazioni** (pacchetto Arch, sviluppo): solo la segnalazione, con il
+  link alla release.
 
 ## Artefatti
 

@@ -21,6 +21,7 @@ packages/core — AppController (unico accesso al workbook)
      ├── exporters/   Markdown, OPML, outliner, import
      ├── layout/      geometria pura per la vista mappa
      ├── task/        provider org.xmind.ui.task
+     ├── update/      confronto versioni e client zsync (piano dei blocchi da scaricare)
      └── markers/     catalogo marker XMind
      ▼
 packages/ui-kit — componenti React condivisi
