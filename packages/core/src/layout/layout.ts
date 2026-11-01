@@ -1,6 +1,6 @@
 import { relationshipGeometry } from './relationship.js';
 import { SheetDto, SheetTheme, TextStyle, ThemeLevel, ThemeLevelStyle, TitleRun, TopicView } from '../state/types.js';
-import { renderLatexToSvg } from '../latex/mathjax.js';
+import { onMathJaxReady, renderLatexToSvg } from '../latex/mathjax.js';
 import { splitInlineMath } from '../latex/inline.js';
 import { inlineMathFontSize, titleBaseFontPx, TITLE_LEADING_RATIO } from '../latex/size.js';
 import { parseRange } from '../model/utils.js';
@@ -342,6 +342,8 @@ export interface NodeSizeInput {
  */
 const nodeSizeCache = new Map<string, { w: number; h: number }>();
 const NODE_SIZE_CACHE_MAX = 20000;
+// Prima che MathJax sia caricato le formule si misurano come sorgente: dopo, quelle misure non valgono più.
+onMathJaxReady(() => nodeSizeCache.clear());
 
 function nodeSizeKey(node: NodeSizeInput, overrideWidth: number | null | undefined): string {
   return JSON.stringify([
