@@ -1,5 +1,6 @@
 import { CODE_FORMAT, XmapError } from '../errors.js';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
+import { loadJSZip } from './zip.js';
 import { Entries, RawArchive, Resources } from './types.js';
 
 /**
@@ -124,9 +125,10 @@ function pureSha256(bytes: Uint8Array): string {
  */
 export async function readArchive(data: ArrayBuffer | Uint8Array): Promise<RawArchive> {
   // checkCRC32: un archivio corrotto deve fallire qui, non produrre byte sbagliati.
+  const JSZipLib = await loadJSZip();
   let zip: JSZip;
   try {
-    zip = await JSZip.loadAsync(data, { checkCRC32: true });
+    zip = await JSZipLib.loadAsync(data, { checkCRC32: true });
   } catch (err) {
     throw new XmapError(CODE_FORMAT, `Il file non è un archivio ZIP valido: ${err}`);
   }
@@ -161,7 +163,8 @@ export async function readArchive(data: ArrayBuffer | Uint8Array): Promise<RawAr
  * Ricostruisce i byte dello ZIP ordinando prima le entry non-risorsa e poi le risorse.
  */
 export async function buildArchiveBytes(archive: RawArchive): Promise<Uint8Array> {
-  const zip = new JSZip();
+  const JSZipLib = await loadJSZip();
+  const zip = new JSZipLib();
 
   // Prima le entry non-risorsa (come content.json, manifest.json, metadata.json)
   for (const [name, data] of archive.entries) {

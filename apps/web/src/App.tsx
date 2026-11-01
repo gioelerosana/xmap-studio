@@ -1,19 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Minimize2 } from 'lucide-react';
 import { Banner, Button, Modal, ToastContainer } from '@xmap/ui-kit';
-import { AppController, DEFAULT_LAYOUT_OPTS, layoutSheets, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
+import { AppController, DEFAULT_LAYOUT_OPTS, layoutSheets, loadMathJax, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
 import { MapView, type MapEditing } from './components/MapView.js';
 import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
-import { LatexEditorModal } from './components/latex/LatexEditorModal.js';
-import { ExportModal } from './components/ExportModal.js';
-import { PrintModal } from './components/PrintModal.js';
-import { ThemeEditorModal } from './components/ThemeEditorModal.js';
-import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import { AppMark } from './components/AppMark.js';
-import { SettingsPage } from './components/SettingsPage.js';
 import { SheetTabs } from './components/SheetTabs.js';
 import { useSettings } from './settings.js';
+import { useMathJaxReady } from './mathReady.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
 import { sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
@@ -35,6 +30,24 @@ import { useMapKeyboard } from './app/useMapKeyboard.js';
 import { useGlobalShortcuts } from './app/useGlobalShortcuts.js';
 import { buildMenuItems } from './app/buildMenuItems.js';
 import { AppHeader } from './app/AppHeader.js';
+import {
+  LazyExportModal,
+  LazyImportModal,
+  LazyLatexEditorModal,
+  LazyPrintModal,
+  LazySettingsPage,
+  LazyThemeEditorModal,
+  preloadPanels,
+  useMountedOnce,
+} from './app/lazyPanels.js';
+
+// Le finestre secondarie sono chunk a parte: si scaricano a browser libero, non all'avvio.
+const ExportModal = LazyExportModal.Component;
+const PrintModal = LazyPrintModal.Component;
+const ThemeEditorModal = LazyThemeEditorModal.Component;
+const ImportModal = LazyImportModal.Component;
+const SettingsPage = LazySettingsPage.Component;
+const LatexEditorModal = LazyLatexEditorModal.Component;
 
 export const App: React.FC = () => {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI);
@@ -112,17 +125,19 @@ export const App: React.FC = () => {
   const setMapStructure = useCallback((structure: MapStructure) => updateSettings({ mapStructure: structure }), [updateSettings]);
 
   // Layout dal DTO già in stato: niente seconda ricostruzione del foglio nel controller.
+  // `mathReady`: all'arrivo di MathJax le formule, misurate fin lì come sorgente, si rimisurano.
+  const mathReady = useMathJaxReady();
   const currentLayout = useMemo<Layout | null>(() => {
     if (!currentSheet) return null;
     return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: mapStructure });
-  }, [currentSheet, collapsedIds, mapStructure]);
+  }, [currentSheet, collapsedIds, mapStructure, mathReady]);
 
   // Per la stampa la mappa si può ridisporre ad albero compatto anche se a schermo è un Logic Chart.
   const printCompactLayout = useMemo<Layout | null>(() => {
     if (!(printModalOpen || exportModalOpen) || !currentSheet) return null;
     if (mapStructure === 'tree') return currentLayout;
     return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: 'tree' });
-  }, [printModalOpen, exportModalOpen, currentSheet, collapsedIds, mapStructure, currentLayout]);
+  }, [printModalOpen, exportModalOpen, currentSheet, collapsedIds, mapStructure, currentLayout, mathReady]);
 
   const siblingRangeInfo = useMemo(() => {
     const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);
@@ -137,17 +152,30 @@ export const App: React.FC = () => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
+  // L'editor misura e mostra la formula in modo sincrono: si apre a MathJax caricato
+  // (di solito lo è già, il precaricamento parte all'avvio).
   const openLatex = useCallback(
     (id: string) => {
       selectSingle(id);
-      setLatexTopicId(id);
+      loadMathJax().then(
+        () => setLatexTopicId(id),
+        (err: unknown) => addToast('error', `Editor delle formule non disponibile: ${err instanceof Error ? err.message : String(err)}`)
+      );
     },
-    [selectSingle]
+    [selectSingle, addToast]
   );
   const latexTopic = useMemo(
     () => (latexTopicId ? allTopics.find((t) => t.id === latexTopicId) ?? null : null),
     [allTopics, latexTopicId]
   );
+
+  // Ogni finestra si monta alla prima apertura e poi resta montata (conserva lo stato).
+  const latexMounted = useMountedOnce(latexTopic !== null);
+  const exportMounted = useMountedOnce(exportModalOpen);
+  const printMounted = useMountedOnce(printModalOpen);
+  const themeMounted = useMountedOnce(themeModalOpen && workbook !== null);
+  const importMounted = useMountedOnce(importModalOpen);
+  useEffect(preloadPanels, []);
 
   const { writeWorkbook, handleSave, handleSaveAs } = useWorkbookSave({
     controller,
@@ -369,12 +397,14 @@ export const App: React.FC = () => {
 
       <main className="relative flex flex-1 overflow-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         {settingsOpen && (
-          <SettingsPage
-            onClose={() => setSettingsOpen(false)}
-            settings={settings}
-            onUpdate={updateSettings}
-            onReset={resetSettings}
-          />
+          <Suspense fallback={null}>
+            <SettingsPage
+              onClose={() => setSettingsOpen(false)}
+              settings={settings}
+              onUpdate={updateSettings}
+              onReset={resetSettings}
+            />
+          </Suspense>
         )}
         {!workbook ? (
           <EmptyState
@@ -492,72 +522,85 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      <LatexEditorModal
-        // Rimontato a ogni apertura: la bozza riparte dalla formula del blocco.
-        key={latexTopic?.id ?? 'closed'}
-        topic={latexTopic}
-        onClose={() => setLatexTopicId(undefined)}
-        controller={controller}
-        darkMode={darkMode}
-        onChanged={refreshState}
-        onToast={addToast}
-      />
-      <ExportModal
-        isOpen={exportModalOpen}
-        onClose={() => setExportModalOpen(false)}
-        getExportContent={(fmt, scope) => controller.export(fmt, scope)}
-        layout={currentLayout}
-        compactLayout={printCompactLayout}
-        screenIsCompact={mapStructure === 'tree'}
-        resourceResolver={resolveResource}
-        sheetCount={sheetCount}
-        activeSheetIndex={activeSheetIndex}
-        selection={
-          selectedTopic
-            ? { id: selectedTopic.id, title: selectedTopic.title, isEquation: selectedTopic.kind === 'equation' }
-            : null
-        }
-        onSaveAs={handleSaveAs}
-        onExportEquation={handleExportEquation}
-        onImageSaved={(message) => addToast('success', message)}
-        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
-      />
-      <PrintModal
-        isOpen={printModalOpen}
-        onClose={() => setPrintModalOpen(false)}
-        layout={currentLayout}
-        compactLayout={printCompactLayout}
-        screenIsCompact={mapStructure === 'tree'}
-        resourceResolver={resolveResource}
-        suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
-      />
-      <ThemeEditorModal
-        isOpen={themeModalOpen && workbook !== null}
-        onClose={() => setThemeModalOpen(false)}
-        sheets={workbook?.sheets ?? []}
-        initialSheetIndex={activeSheetIndex}
-        onApply={(sheetIndex, patch) => {
-          try {
-            controller.setSheetTheme(sheetIndex, patch);
-            refreshState();
-          } catch (err) {
-            addToast('error', err instanceof Error ? err.message : String(err));
-          }
-        }}
-      />
-      <ImportModal
-        isOpen={importModalOpen}
-        onClose={() => setImportModalOpen(false)}
-        onImport={async (fmt, text, asNewSheet) => {
-          try {
-            await controller.importOutline(fmt, text, { asNewSheet });
-            refreshState();
-            addToast('success', 'Outline importato');
-          } catch (err: any) {
-            addToast('error', `Import non riuscito: ${err.message}`);
-          }
-        }}
-      />
+      <Suspense fallback={null}>
+        {latexMounted && (
+          <LatexEditorModal
+            // Rimontato a ogni apertura: la bozza riparte dalla formula del blocco.
+            key={latexTopic?.id ?? 'closed'}
+            topic={latexTopic}
+            onClose={() => setLatexTopicId(undefined)}
+            controller={controller}
+            darkMode={darkMode}
+            onChanged={refreshState}
+            onToast={addToast}
+          />
+        )}
+        {exportMounted && (
+          <ExportModal
+            isOpen={exportModalOpen}
+            onClose={() => setExportModalOpen(false)}
+            getExportContent={(fmt, scope) => controller.export(fmt, scope)}
+            layout={currentLayout}
+            compactLayout={printCompactLayout}
+            screenIsCompact={mapStructure === 'tree'}
+            resourceResolver={resolveResource}
+            sheetCount={sheetCount}
+            activeSheetIndex={activeSheetIndex}
+            selection={
+              selectedTopic
+                ? { id: selectedTopic.id, title: selectedTopic.title, isEquation: selectedTopic.kind === 'equation' }
+                : null
+            }
+            onSaveAs={handleSaveAs}
+            onExportEquation={handleExportEquation}
+            onImageSaved={(message) => addToast('success', message)}
+            suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+          />
+        )}
+        {printMounted && (
+          <PrintModal
+            isOpen={printModalOpen}
+            onClose={() => setPrintModalOpen(false)}
+            layout={currentLayout}
+            compactLayout={printCompactLayout}
+            screenIsCompact={mapStructure === 'tree'}
+            resourceResolver={resolveResource}
+            suggestedBase={sanitizeName(controller.mapTitle() || 'mappa')}
+          />
+        )}
+        {themeMounted && (
+          <ThemeEditorModal
+            isOpen={themeModalOpen && workbook !== null}
+            onClose={() => setThemeModalOpen(false)}
+            sheets={workbook?.sheets ?? []}
+            initialSheetIndex={activeSheetIndex}
+            onApply={(sheetIndex, patch) => {
+              try {
+                controller.setSheetTheme(sheetIndex, patch);
+                refreshState();
+              } catch (err) {
+                addToast('error', err instanceof Error ? err.message : String(err));
+              }
+            }}
+          />
+        )}
+        {importMounted && (
+          <ImportModal
+            isOpen={importModalOpen}
+            onClose={() => setImportModalOpen(false)}
+            onImport={async (fmt, text, asNewSheet) => {
+              try {
+                await controller.importOutline(fmt, text, { asNewSheet });
+                refreshState();
+                addToast('success', 'Outline importato');
+              } catch (err: any) {
+                addToast('error', `Import non riuscito: ${err.message}`);
+              }
+            }}
+          />
+        )}
+
+      </Suspense>
 
       <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title={APP_NAME} size="sm">
         <div className="flex flex-col gap-3">

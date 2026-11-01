@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { isDialogOpen } from '../../app/dialogOpen.js';
 import type { TopicView } from '@xmap/core';
 
 import type { TopicActions, TextStylePatch } from '../../app/useTopicActions.js';
@@ -87,7 +88,7 @@ export function useTextStyleShortcuts(target: StyleTarget) {
       if (isEditingText || !topic || topic.kind !== 'text') return;
       const source = e.target instanceof Element ? e.target : document.activeElement;
       if (source?.closest(TEXT_FIELD)) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (isDialogOpen()) return;
       e.preventDefault();
       toggleTextStyle(targetRef.current, style);
     };
