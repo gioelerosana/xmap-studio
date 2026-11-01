@@ -204,26 +204,33 @@ export const ToolbarPopover: React.FC<ToolbarPopoverProps> = ({
       setPlacement(null);
       return;
     }
-    const anchor = root.getBoundingClientRect();
-    const width = panel.offsetWidth;
-    const height = panel.offsetHeight;
-    const dock = root.closest<HTMLElement>('[data-dock]')?.dataset.dock;
-    if (dock === 'left' || dock === 'right') {
-      setPlacement({
-        left: sideLeft(dock, anchor, width),
-        top: clampToViewport(anchor.top, height, window.innerHeight),
-      });
-      return;
-    }
-    const roomBelow = window.innerHeight - anchor.bottom - PANEL_GAP - VIEWPORT_MARGIN;
-    const roomAbove = anchor.top - PANEL_GAP - VIEWPORT_MARGIN;
-    const docked = dock === 'bottom';
-    // Lato preferito dall'ancoraggio della barra; si inverte solo se non c'è spazio e l'altro lato ne ha di più.
-    const up = docked ? roomAbove >= height || roomAbove > roomBelow : roomBelow < height && roomAbove > roomBelow;
-    const left = clampToViewport(alignedLeft(align, anchor, width), width, window.innerWidth);
-    setPlacement(
-      up ? { left, bottom: window.innerHeight - anchor.top + PANEL_GAP } : { left, top: anchor.bottom + PANEL_GAP },
-    );
+    // Ricalcolata anche quando il contenuto cambia misura dopo l'apertura (es. reso da un portale).
+    const place = () => {
+      const anchor = root.getBoundingClientRect();
+      const width = panel.offsetWidth;
+      const height = panel.offsetHeight;
+      const dock = root.closest<HTMLElement>('[data-dock]')?.dataset.dock;
+      if (dock === 'left' || dock === 'right') {
+        setPlacement({
+          left: sideLeft(dock, anchor, width),
+          top: clampToViewport(anchor.top, height, window.innerHeight),
+        });
+        return;
+      }
+      const roomBelow = window.innerHeight - anchor.bottom - PANEL_GAP - VIEWPORT_MARGIN;
+      const roomAbove = anchor.top - PANEL_GAP - VIEWPORT_MARGIN;
+      const docked = dock === 'bottom';
+      // Lato preferito dall'ancoraggio della barra; si inverte solo se non c'è spazio e l'altro lato ne ha di più.
+      const up = docked ? roomAbove >= height || roomAbove > roomBelow : roomBelow < height && roomAbove > roomBelow;
+      const left = clampToViewport(alignedLeft(align, anchor, width), width, window.innerWidth);
+      setPlacement(
+        up ? { left, bottom: window.innerHeight - anchor.top + PANEL_GAP } : { left, top: anchor.bottom + PANEL_GAP },
+      );
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(panel);
+    return () => observer.disconnect();
   }, [open, align]);
 
   return (

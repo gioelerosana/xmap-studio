@@ -12,6 +12,23 @@ const SELECTION_HALO_OUT = 3.75;
 const COLLAPSE_TOGGLE_RADIUS = 7.5;
 /** Distanza del centro del pulsante dal bordo destro del blocco: il cerchio tocca l'alone di selezione. */
 const COLLAPSE_TOGGLE_OFFSET = SELECTION_HALO_OUT + COLLAPSE_TOGGLE_RADIUS;
+
+/** Ascissa dell'indicatore di collasso: sta fuori dal bordo da cui escono i figli. */
+function collapseToggleX(node: LayoutNode, isCoarse: boolean): number {
+  const reach = isCoarse ? 20 : COLLAPSE_TOGGLE_OFFSET;
+  return node.side === 'left' ? -reach : node.w + reach;
+}
+
+/** Freccia dell'indicatore quando il ramo è collassato: punta verso i figli. */
+function collapsedChevron(node: LayoutNode): string {
+  if (node.childrenBelow) return 'M -3 -2 L 0 2 L 3 -2';
+  return node.side === 'left' ? 'M 2 -3 L -2 0 L 2 3' : 'M -2 -3 L 2 0 L -2 3';
+}
+
+/** Le maniglie sul bordo (larghezza, immagine) si specchiano sui rami sinistri: il bordo esterno è a sinistra. */
+function edgeMirror(node: LayoutNode): string | undefined {
+  return node.side === 'left' ? `translate(${node.w}, 0) scale(-1, 1)` : undefined;
+}
 /** Raggio degli angoli del blocco per la forma del tema (default: rettangolo arrotondato). */
 function cornerRadius(node: LayoutNode): number {
   switch (node.shape) {
@@ -316,6 +333,7 @@ function NodeCardView({
           data-print-hide
           data-map-ui
           data-resize-handle="width"
+          transform={edgeMirror(node)}
           className="select-none"
           style={{ touchAction: 'none' }}
           onPointerDown={(e) => onStartResize(e, node, 'width')}
@@ -359,7 +377,7 @@ function NodeCardView({
           transform={
             node.childrenBelow
               ? `translate(${trunkX(node) - node.x}, ${node.h + 8})`
-              : `translate(${node.w + (isCoarse ? 20 : COLLAPSE_TOGGLE_OFFSET)}, ${node.h / 2})`
+              : `translate(${collapseToggleX(node, isCoarse)}, ${node.h / 2})`
           }
           className="text-muted-foreground hover:text-foreground transition-colors"
           onClick={(e) => {
@@ -372,7 +390,7 @@ function NodeCardView({
           <circle r={7} fill="var(--popover)" stroke={node.accent || 'var(--input)'} strokeWidth={1} />
           {node.collapsed ? (
             <path
-              d={node.childrenBelow ? 'M -3 -2 L 0 2 L 3 -2' : 'M -2 -3 L 2 0 L -2 3'}
+              d={collapsedChevron(node)}
               fill="none"
               stroke="currentColor"
               strokeWidth={1.5}
@@ -391,6 +409,7 @@ function NodeCardView({
           data-print-hide
           data-map-ui
           data-resize-handle="image"
+          transform={edgeMirror(node)}
           className="select-none"
           style={{ touchAction: 'none' }}
           onPointerDown={(e) => onStartResize(e, node, 'image')}

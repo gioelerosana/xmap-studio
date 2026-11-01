@@ -15,6 +15,9 @@ export const BRANCH_COLORS: string[] = [
 /** Struttura XMind della Tree Chart verso destra: radice in alto, tronco verticale. */
 export const TREE_RIGHT_STRUCTURE = 'org.xmind.ui.tree.right';
 
+/** Lato della radice su cui sta un ramo nella mappa mentale. */
+export type BranchSide = 'left' | 'right';
+
 /** Larghezza della graffa di un sommario (px logici). */
 export const SUMMARY_BRACE_W = 14.0;
 
@@ -109,6 +112,11 @@ export interface LayoutNode {
    * verticale in `trunkX(node)` e l'indicatore di collasso sta sotto il blocco.
    */
   childrenBelow: boolean;
+  /**
+   * Solo nella mappa mentale: lato della radice su cui sta il blocco (e il suo
+   * sottoalbero). Assente nelle altre strutture e sulla radice stessa.
+   */
+  side?: BranchSide;
   textStyle?: TextStyle;
   titleRuns?: TitleRun[];
   /** Font del tema per il livello del blocco (nome singolo, la UI aggiunge il fallback). */
@@ -133,7 +141,10 @@ export interface LayoutEdge {
   kind: EdgeKind;
 }
 
-/** Graffa di un sommario: verticale in `x` da `y1` a `y2`, punta verso il nodo `topic`. */
+/**
+ * Graffa di un sommario: verticale in `x` da `y1` a `y2`, punta verso il nodo `topic`.
+ * Sul lato sinistro la graffa sta a sinistra dei figli raccolti, e `x` resta il bordo sinistro.
+ */
 export interface LayoutSummary {
   x: number;
   y1: number;
@@ -189,8 +200,11 @@ export interface NodeMetrics {
   measure(node: MapNode): { w: number; h: number };
 }
 
-/** Disposizione della radice: Tree Chart (radice in alto, tronco verticale) o Logic Chart. */
-export type MapStructure = 'tree' | 'logic';
+/**
+ * Disposizione della radice: Tree Chart (radice in alto, tronco verticale), Logic
+ * Chart (tutto a destra) o mappa mentale (radice al centro, rami su entrambi i lati).
+ */
+export type MapStructure = 'tree' | 'logic' | 'map';
 
 export interface LayoutOpts {
   hGap: number;
@@ -198,7 +212,8 @@ export interface LayoutOpts {
   sheetGap: number;
   /**
    * Forza la disposizione della radice solo in visualizzazione; se assente vale
-   * la `structureClass` del file. Non modifica mai `content.json`.
+   * la `structureClass` del file. Con `map` la mappa mentale usa le varianti
+   * `clockwise`/`anticlockwise` del file. Non modifica mai `content.json`.
    */
   structure?: MapStructure;
 }

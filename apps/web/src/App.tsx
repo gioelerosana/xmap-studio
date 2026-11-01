@@ -57,6 +57,8 @@ export const App: React.FC = () => {
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   // Cresce a ogni documento aperto: la mappa si riadatta solo allora (o al cambio di foglio).
   const [documentKey, setDocumentKey] = useState(0);
+  // Spazio della barra degli strumenti agganciata in basso (schermi stretti) per i controlli di zoom.
+  const [mapControlsSlot, setMapControlsSlot] = useState<HTMLDivElement | null>(null);
   const { settings, darkMode, update: updateSettings, reset: resetSettings } = useSettings();
   const cycleTheme = useCallback(() => updateSettings({ theme: nextTheme(settings.theme) }), [settings.theme, updateSettings]);
 
@@ -489,6 +491,7 @@ export const App: React.FC = () => {
                 canPaste={canPaste}
                 isConnectingRelationship={Boolean(connectingTopicId)}
                 onConnectRelationshipTarget={handleConnectRelationshipTarget}
+                mapControlsSlot={mapControlsSlot}
               />
 
               {!zen && (
@@ -504,6 +507,7 @@ export const App: React.FC = () => {
                   onOpenLatex={openLatex}
                   onStartConnectRelationship={(id) => setConnectingTopicId(id)}
                   onInsertImage={(file) => void insertImage(file, 'picker')}
+                  mapControlsSlotRef={setMapControlsSlot}
                 />
               )}
 

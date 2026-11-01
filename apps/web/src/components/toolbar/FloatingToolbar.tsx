@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Braces, ImagePlus, PaintBucket, Sigma } from 'lucide-react';
+import { Braces, ImagePlus, PaintBucket, Sigma, ZoomIn } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
 
 import { COMPACT_QUERY, TEXT_FIELD } from '../../app/constants.js';
@@ -10,7 +10,13 @@ import { DockGuides, dockStyle } from './DockGuides.js';
 import { LinkPopover } from './LinkPopover.js';
 import { MarkersPopover } from './MarkersPopover.js';
 import { NotesPopover } from './NotesPopover.js';
-import { ToolbarButton, ToolbarOrientationContext, ToolbarSeparator, ToolbarSwatch } from './primitives.js';
+import {
+  ToolbarButton,
+  ToolbarOrientationContext,
+  ToolbarPopover,
+  ToolbarSeparator,
+  ToolbarSwatch,
+} from './primitives.js';
 import { StructurePopover } from './StructurePopover.js';
 import { TextStyleControls } from './TextStyleControls.js';
 import type { FloatingToolbarProps } from './types.js';
@@ -42,6 +48,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onOpenLatex,
   onStartConnectRelationship,
   onInsertImage,
+  mapControlsSlotRef,
 }) => {
   const compact = useMediaQuery(COMPACT_QUERY);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -155,6 +162,28 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
           <LinkPopover topic={topic} actions={actions} />
           <MarkersPopover topic={topic} actions={actions} />
+
+          {/* Su mobile vista e zoom servono di rado (si usano i gesti): stanno in un pannello, non in vista. */}
+          {compact && (
+            <ToolbarPopover
+              align="end"
+              panelClassName="p-1"
+              trigger={({ open, toggle }) => (
+                <ToolbarButton
+                  label="Vista e zoom"
+                  active={open}
+                  aria-haspopup="dialog"
+                  aria-expanded={open}
+                  onClick={toggle}
+                >
+                  <ZoomIn className="size-4" />
+                </ToolbarButton>
+              )}
+            >
+              {/* MapView rende qui i controlli con un portale: lo stato dello zoom resta suo. */}
+              {() => <div ref={mapControlsSlotRef} />}
+            </ToolbarPopover>
+          )}
 
           {multiple && (
             <>

@@ -6,11 +6,13 @@ import { inlineMathFontSize, titleBaseFontPx, TITLE_LEADING_RATIO } from '../lat
 import { parseRange } from '../model/utils.js';
 import {
   BRANCH_COLORS,
+  BranchSide,
   Layout,
   LayoutOpts,
   LayoutSummary,
   EdgeKind,
   MapNode,
+  MapStructure,
   MapSummary,
   NodeMetrics,
   SUMMARY_BRACE_W,
@@ -552,6 +554,29 @@ function isTreeRight(structureClass?: string): boolean {
   return structureClass === TREE_RIGHT_STRUCTURE;
 }
 
+/** Come si dispongono i figli della radice della mappa mentale. */
+type MindVariant = 'base' | 'clockwise' | 'anticlockwise';
+
+/** Strutture XMind a radice centrale; `org.xmind.ui.map` è la forma precedente di `unbalanced`. */
+const MIND_MAP_VARIANTS = new Map<string, MindVariant>([
+  ['org.xmind.ui.map', 'base'],
+  ['org.xmind.ui.map.unbalanced', 'base'],
+  ['org.xmind.ui.map.clockwise', 'clockwise'],
+  ['org.xmind.ui.map.anticlockwise', 'anticlockwise'],
+]);
+
+function mindVariant(structureClass?: string): MindVariant {
+  const variant = structureClass === undefined ? undefined : MIND_MAP_VARIANTS.get(structureClass);
+  return variant ?? 'base';
+}
+
+/** La scelta forzata (impostazioni) vince sul file; senza, la `structureClass` decide. */
+function resolveStructure(structureClass: string | undefined, forced: MapStructure | undefined): MapStructure {
+  if (forced) return forced;
+  if (isTreeRight(structureClass)) return 'tree';
+  return structureClass !== undefined && MIND_MAP_VARIANTS.has(structureClass) ? 'map' : 'logic';
+}
+
 /** px per pt (1pt = 4/3 px). */
 const PX_PER_PT = 4 / 3;
 
@@ -677,9 +702,11 @@ export function layoutSheets(
       const ctx: PlaceCtx = { collapsed, metrics, opts, sizes };
 
       let totalH: number;
-      const asTree = opts.structure ? opts.structure === 'tree' : isTreeRight(tree.structureClass);
-      if (asTree) {
+      const structure = resolveStructure(tree.structureClass, opts.structure);
+      if (structure === 'tree') {
         totalH = placeTreeRoot(tree, left, top, ctx, out);
+      } else if (structure === 'map') {
+        totalH = placeMindRoot(tree, left, top, ctx, out, mindVariant(tree.structureClass));
       } else {
         placeSubtree(tree, left, top, undefined, ctx, out);
         totalH = sizes.get(tree.id)?.h ?? 0.0;
@@ -809,7 +836,8 @@ function pushLayoutNode(
   w: number,
   h: number,
   collapsed: boolean,
-  childrenBelow: boolean
+  childrenBelow: boolean,
+  side?: BranchSide
 ): number {
   const index = out.nodes.length;
   out.nodes.push({
@@ -845,6 +873,7 @@ function pushLayoutNode(
     branchLine: node.branchLine,
     branchLineWidth: node.branchLineWidth,
     childrenBelow,
+    ...(side ? { side } : {}),
   });
   return index;
 }
@@ -860,12 +889,17 @@ interface Column {
 }
 
 function column(node: MapNode, sizes: Sizes, opts: LayoutOpts): Column {
-  const n = node.children.length;
-  const childH = (i: number): number => sizes.get(node.children[i].id)?.h ?? 0.0;
+  return columnOf(node.children, node.summaries, sizes, opts);
+}
+
+/** Colonna di una lista di figli e dei loro sommari (indici di `children`). */
+function columnOf(children: MapNode[], summaries: MapSummary[], sizes: Sizes, opts: LayoutOpts): Column {
+  const n = children.length;
+  const childH = (i: number): number => sizes.get(children[i].id)?.h ?? 0.0;
   const padBefore = new Array<number>(n).fill(0);
   const padAfter = new Array<number>(n).fill(0);
 
-  for (const s of node.summaries) {
+  for (const s of summaries) {
     if (s.end >= n) continue;
     let rangeH = opts.vGap * (s.end - s.start);
     for (let i = s.start; i <= s.end; i++) rangeH += childH(i);
@@ -892,11 +926,11 @@ function maxWidth(nodes: MapNode[], sizes: Sizes): number {
   return nodes.reduce((max, c) => Math.max(max, sizes.get(c.id)?.w ?? 0.0), 0.0);
 }
 
-/** Larghezza occupata a destra della colonna dei figli, sommari compresi. */
-function columnWidth(node: MapNode, sizes: Sizes): number {
-  let width = maxWidth(node.children, sizes);
-  for (const s of node.summaries) {
-    const rangeW = maxWidth(node.children.slice(s.start, s.end + 1), sizes);
+/** Larghezza occupata dalla colonna dei figli, sommari compresi, da un lato della radice. */
+function columnWidthOf(children: MapNode[], summaries: MapSummary[], sizes: Sizes): number {
+  let width = maxWidth(children, sizes);
+  for (const s of summaries) {
+    const rangeW = maxWidth(children.slice(s.start, s.end + 1), sizes);
     const summaryW = sizes.get(s.node.id)?.w ?? 0.0;
     width = Math.max(width, rangeW + SUMMARY_OFFSET + summaryW);
   }
@@ -922,7 +956,7 @@ function computeSizes(
     for (const s of node.summaries) computeSizes(s.node, collapsed, metrics, opts, sizes);
     const col = column(node, sizes, opts);
     size = {
-      w: self.w + opts.hGap + columnWidth(node, sizes),
+      w: self.w + opts.hGap + columnWidthOf(node.children, node.summaries, sizes),
       h: Math.max(self.h, col.height),
     };
   }
@@ -938,29 +972,26 @@ interface PlaceCtx {
   sizes: Sizes;
 }
 
-/** Posiziona un sotto-albero nella fascia che inizia in (`left`, `top`). */
+/**
+ * Posiziona un sotto-albero nella fascia che inizia in `top`. `anchor` è il bordo del
+ * blocco dal lato da cui cresce il ramo: il sinistro per `side` assente o `right`, il
+ * destro per `left` (il sottoalbero si estende verso sinistra).
+ */
 function placeSubtree(
   node: MapNode,
-  left: number,
+  anchor: number,
   top: number,
   parent: { index: number; kind: EdgeKind } | undefined,
   ctx: PlaceCtx,
-  out: Layout
+  out: Layout,
+  side?: BranchSide
 ): number {
   const { w, h } = ctx.metrics.measure(node);
   const subH = ctx.sizes.get(node.id)?.h ?? h;
+  const x = side === 'left' ? anchor - w : anchor;
 
   // Il blocco è centrato verticalmente nella fascia del proprio sotto-albero.
-  const index = pushLayoutNode(
-    out,
-    node,
-    left,
-    top + (subH - h) / 2.0,
-    w,
-    h,
-    ctx.collapsed.has(node.id),
-    false
-  );
+  const index = pushLayoutNode(out, node, x, top + (subH - h) / 2.0, w, h, ctx.collapsed.has(node.id), false, side);
 
   if (parent) {
     out.edges.push({ parent: parent.index, child: index, group: node.group, kind: parent.kind });
@@ -969,7 +1000,12 @@ function placeSubtree(
   if (hasVisibleChildren(node, ctx.collapsed)) {
     const col = column(node, ctx.sizes, ctx.opts);
     const colTop = top + (subH - col.height) / 2.0;
-    placeChildren(node, index, left + w + ctx.opts.hGap, colTop, col, 'logic', ctx, out);
+    const childAnchor = side === 'left' ? x - ctx.opts.hGap : x + w + ctx.opts.hGap;
+    placeColumn(
+      { children: node.children, summaries: node.summaries, parent: index, anchor: childAnchor, top: colTop, col, kind: 'logic', side },
+      ctx,
+      out
+    );
   }
   return index;
 }
@@ -984,57 +1020,178 @@ function placeTreeRoot(node: MapNode, left: number, top: number, ctx: PlaceCtx, 
   if (!hasVisibleChildren(node, ctx.collapsed)) return h;
 
   const col = column(node, ctx.sizes, ctx.opts);
-  placeChildren(
-    node,
-    index,
-    trunkX(out.nodes[index]) + TREE_STUB,
-    top + h + TREE_TOP_GAP,
-    col,
-    'tree',
+  placeColumn(
+    {
+      children: node.children,
+      summaries: node.summaries,
+      parent: index,
+      anchor: trunkX(out.nodes[index]) + TREE_STUB,
+      top: top + h + TREE_TOP_GAP,
+      col,
+      kind: 'tree',
+    },
     ctx,
     out
   );
   return h + TREE_TOP_GAP + col.height;
 }
 
-/** Dispone la colonna dei figli e i sommari, con le graffe a destra dei figli raccolti. */
-function placeChildren(
-  node: MapNode,
-  index: number,
-  childX: number,
-  colTop: number,
-  col: Column,
-  kind: EdgeKind,
-  ctx: PlaceCtx,
-  out: Layout
-): void {
-  node.children.forEach((child, i) => {
-    placeSubtree(child, childX, colTop + col.tops[i], { index, kind }, ctx, out);
+/** Una colonna di figli con i suoi sommari, da disporre a partire dal bordo `anchor`. */
+interface ColumnSpec {
+  children: MapNode[];
+  summaries: MapSummary[];
+  /** Indice del genitore in `out.nodes`. */
+  parent: number;
+  /** Bordo interno della colonna: sinistro per i figli a destra, destro per quelli a sinistra. */
+  anchor: number;
+  top: number;
+  col: Column;
+  kind: EdgeKind;
+  side?: BranchSide;
+}
+
+/**
+ * Dispone la colonna dei figli e i sommari: le graffe stanno dal lato dei figli, con il
+ * topic di sommario oltre la punta della graffa.
+ */
+function placeColumn(spec: ColumnSpec, ctx: PlaceCtx, out: Layout): void {
+  const { children, summaries, parent, anchor, top, col, kind, side } = spec;
+  children.forEach((child, i) => {
+    placeSubtree(child, anchor, top + col.tops[i], { index: parent, kind }, ctx, out, side);
   });
 
   const heightOf = (c: MapNode): number => ctx.sizes.get(c.id)?.h ?? 0.0;
-  for (const s of node.summaries) {
-    if (s.end >= node.children.length) continue;
-    const y1 = colTop + col.tops[s.start];
-    const y2 = colTop + col.tops[s.end] + heightOf(node.children[s.end]);
-    const rangeW = maxWidth(node.children.slice(s.start, s.end + 1), ctx.sizes);
-    const braceX = childX + rangeW + SUMMARY_GAP_BEFORE;
+  const toLeft = side === 'left';
+  for (const s of summaries) {
+    if (s.end >= children.length) continue;
+    const y1 = top + col.tops[s.start];
+    const y2 = top + col.tops[s.end] + heightOf(children[s.end]);
+    const rangeW = maxWidth(children.slice(s.start, s.end + 1), ctx.sizes);
+    const braceX = toLeft
+      ? anchor - rangeW - SUMMARY_GAP_BEFORE - SUMMARY_BRACE_W
+      : anchor + rangeW + SUMMARY_GAP_BEFORE;
     const sumTop = (y1 + y2) / 2.0 - heightOf(s.node) / 2.0;
-    const topic = placeSubtree(
-      s.node,
-      braceX + SUMMARY_BRACE_W + SUMMARY_GAP_AFTER,
-      sumTop,
-      undefined,
-      ctx,
-      out
-    );
+    const topicAnchor = toLeft ? braceX - SUMMARY_GAP_AFTER : braceX + SUMMARY_BRACE_W + SUMMARY_GAP_AFTER;
+    const topic = placeSubtree(s.node, topicAnchor, sumTop, undefined, ctx, out, side);
     const summary: LayoutSummary = {
       x: braceX,
       y1,
       y2,
       topic,
-      accent: s.node.accent ?? node.accent,
+      accent: s.node.accent ?? out.nodes[parent]?.accent,
     };
     out.summaries.push(summary);
   }
+}
+
+const SIDES: readonly BranchSide[] = ['right', 'left'];
+
+/**
+ * Indici dei figli della radice per lato, dall'alto in basso. Base: la prima metà
+ * (arrotondata per eccesso) a destra, il resto a sinistra. Clockwise: a sinistra il resto
+ * dal basso verso l'alto, così il giro è orario. Anticlockwise è lo specchio: prima metà a
+ * sinistra, il resto a destra dal basso verso l'alto.
+ */
+function mindOrders(count: number, variant: MindVariant): Record<BranchSide, number[]> {
+  const indexes = Array.from({ length: count }, (_, i) => i);
+  const firstHalf = indexes.slice(0, Math.ceil(count / 2.0));
+  const secondHalf = indexes.slice(firstHalf.length);
+  if (variant === 'base') return { right: firstHalf, left: secondHalf };
+  if (variant === 'clockwise') return { right: firstHalf, left: secondHalf.reverse() };
+  return { left: firstHalf, right: secondHalf.reverse() };
+}
+
+/**
+ * Il sommario ristretto alle posizioni di `order` (nel lato) i cui figli cadono nel suo
+ * intervallo. Gli indici di un lato sono monotoni, quindi le posizioni sono consecutive.
+ */
+function restrictSummary(s: MapSummary, order: number[]): MapSummary | undefined {
+  const positions = order.flatMap((original, pos) => (original >= s.start && original <= s.end ? [pos] : []));
+  const first = positions[0];
+  const last = positions[positions.length - 1];
+  if (first === undefined || last === undefined) return undefined;
+  return { start: first, end: last, node: s.node };
+}
+
+interface MindColumn {
+  children: MapNode[];
+  summaries: MapSummary[];
+}
+
+const summarySpan = (s: MapSummary): number => s.end - s.start;
+
+/**
+ * Figli e sommari della radice per lato. Un sommario va sul lato dove cade più del suo
+ * intervallo; a parità vince destra. Il resto dell'intervallo non è raccolto dalla graffa.
+ */
+function mindColumns(node: MapNode, variant: MindVariant): Record<BranchSide, MindColumn> {
+  const orders = mindOrders(node.children.length, variant);
+  const columns: Record<BranchSide, MindColumn> = {
+    right: { children: orders.right.map((i) => node.children[i]), summaries: [] },
+    left: { children: orders.left.map((i) => node.children[i]), summaries: [] },
+  };
+  for (const s of node.summaries) {
+    const candidates = SIDES.flatMap((side) => {
+      const summary = restrictSummary(s, orders[side]);
+      return summary ? [{ side, summary }] : [];
+    });
+    // `reduce` tiene il primo a parità: la destra.
+    const best = candidates.reduce<{ side: BranchSide; summary: MapSummary } | undefined>(
+      (acc, cur) => (acc && summarySpan(acc.summary) >= summarySpan(cur.summary) ? acc : cur),
+      undefined
+    );
+    if (best) columns[best.side].summaries.push(best.summary);
+  }
+  return columns;
+}
+
+/**
+ * Mappa mentale: la radice sta al centro, con i rami su entrambi i lati. Le colonne sono
+ * centrate sulla radice; il lato sinistro si estende a sinistra dal bordo della radice,
+ * quindi la radice parte già da `left + spazio sinistro` e nulla va traslato.
+ */
+function placeMindRoot(
+  node: MapNode,
+  left: number,
+  top: number,
+  ctx: PlaceCtx,
+  out: Layout,
+  variant: MindVariant
+): number {
+  const { w, h } = ctx.metrics.measure(node);
+  const columns = mindColumns(node, variant);
+  const visible = hasVisibleChildren(node, ctx.collapsed);
+  const sideCol = (side: BranchSide): Column =>
+    visible ? columnOf(columns[side].children, columns[side].summaries, ctx.sizes, ctx.opts) : { tops: [], height: 0.0 };
+  const extentOf = (side: BranchSide): number =>
+    visible && columns[side].children.length > 0
+      ? ctx.opts.hGap + columnWidthOf(columns[side].children, columns[side].summaries, ctx.sizes)
+      : 0.0;
+
+  const rootX = left + extentOf('left');
+  const cols = { right: sideCol('right'), left: sideCol('left') };
+  const tall = Math.max(h, cols.right.height, cols.left.height);
+  const index = pushLayoutNode(out, node, rootX, top + (tall - h) / 2.0, w, h, ctx.collapsed.has(node.id), false);
+  if (!visible) return h;
+
+  const centerY = top + tall / 2.0;
+  for (const side of SIDES) {
+    const anchor = side === 'right' ? rootX + w + ctx.opts.hGap : rootX - ctx.opts.hGap;
+    const col = cols[side];
+    placeColumn(
+      {
+        children: columns[side].children,
+        summaries: columns[side].summaries,
+        parent: index,
+        anchor,
+        top: centerY - col.height / 2.0,
+        col,
+        kind: 'logic',
+        side,
+      },
+      ctx,
+      out
+    );
+  }
+  return tall;
 }

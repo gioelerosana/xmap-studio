@@ -46,11 +46,14 @@ export function useTopicResize({
     if (nodeIdx === -1) return layout;
     const targetNode = layout.nodes[nodeIdx];
     const deltaW = resizing.width - targetNode.w;
+    // Sul lato sinistro il blocco resta agganciato al bordo destro: cresce verso sinistra e i figli lo seguono.
+    const toLeft = targetNode.side === 'left';
     const desc = subtreeOf(layout, nodeIdx);
     const newNodes = layout.nodes.map((n, i) => {
       if (i === nodeIdx) {
         return {
           ...n,
+          x: toLeft ? n.x - deltaW : n.x,
           w: resizing.width,
           h: resizing.height ?? n.h,
           imageW: resizing.imageSize ? resizing.imageSize.width : n.imageW,
@@ -58,7 +61,7 @@ export function useTopicResize({
         };
       }
       if (desc.has(i)) {
-        return { ...n, x: n.x + deltaW };
+        return { ...n, x: n.x + (toLeft ? -deltaW : deltaW) };
       }
       return n;
     });
@@ -109,7 +112,8 @@ export function useTopicResize({
         if (!state.moved) return;
 
         const currWorld = toWorld(pe.clientX, pe.clientY);
-        const dx = currWorld.x - state.startWorld.x;
+        // Sul lato sinistro il bordo che si trascina è quello sinistro: trascinare a sinistra allarga il blocco.
+        const dx = (node.side === 'left' ? -1 : 1) * (currWorld.x - state.startWorld.x);
 
         if (state.type === 'width') {
           const liveW = Math.max(40, Math.round(state.startWidth + dx));
