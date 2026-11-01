@@ -3,7 +3,7 @@ import type { GuardedSaveResult } from '@xmap/core/node';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { checkAndDownloadUpdate } from './updater.js';
+import { registerUpdater, relaunchIfRequested } from './updater.js';
 import type { PrintToPdfOptions } from './preload.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
@@ -229,6 +229,7 @@ async function readFileForRenderer(filePath: string) {
 }
 
 // IPC handlers
+registerUpdater();
 ipcMain.handle('app:getInitialFile', (event) => {
   const id = event.sender.id;
   const filePath = initialFiles.get(id) ?? null;
@@ -236,7 +237,6 @@ ipcMain.handle('app:getInitialFile', (event) => {
   return filePath;
 });
 
-ipcMain.handle('update:checkAndDownload', () => checkAndDownloadUpdate());
 ipcMain.handle('app:platform', () => process.platform);
 
 ipcMain.handle('safety:checkXMind', async () => (await loadCore()).xmindProcesses());
@@ -391,5 +391,6 @@ ipcMain.on('window:close', (event) => senderWindow(event)?.close());
 ipcMain.handle('window:isMaximized', (event) => senderWindow(event)?.isMaximized() ?? false);
 
 app.on('window-all-closed', () => {
+  if (relaunchIfRequested()) return;
   if (process.platform !== 'darwin') app.quit();
 });

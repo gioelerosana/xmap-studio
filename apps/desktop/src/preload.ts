@@ -9,12 +9,50 @@ export type SaveBytesOutcome =
   | { path: string }
   | { ok: false; code: string; message: string; processes?: string[]; path: string };
 
-/** Esito del controllo aggiornamenti (vedi `updater.ts`). */
-export type UpdateOutcome =
-  | { status: 'unsupported'; message: string }
-  | { status: 'upToDate'; version: string }
-  | { status: 'downloaded'; version: string; path: string }
-  | { status: 'error'; message: string };
+/**
+ * Aggiornamenti (vedi `updater.ts`). Lo stato vive nel main process ed è
+ * unico per tutta l'app: ogni finestra lo riceve con `onUpdateStatus`.
+ *
+ * - `appimage`: AppImage avviata da un file scrivibile, si aggiorna in place con zsync;
+ * - `portable`: exe portable di Windows, la nuova versione si scarica accanto alla vecchia;
+ * - `manual`: altre installazioni (pacchetto Arch, sviluppo): si segnala soltanto.
+ */
+export type UpdateInstallMode = 'appimage' | 'portable' | 'manual';
+
+export type UpdateRelease = {
+  /** "26.3.0", senza prefisso. */
+  version: string;
+  /** "v26.3.0". */
+  tag: string;
+  /** Pagina della release su GitHub. */
+  url: string;
+  /** Note della release (Markdown di GitHub), eventualmente vuote. */
+  notes: string;
+  publishedAt: string | null;
+};
+
+export type UpdateStep = 'scanning' | 'downloading' | 'verifying' | 'installing';
+
+export type UpdateState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'upToDate'; latestVersion: string }
+  | { phase: 'available'; release: UpdateRelease }
+  /** `progress` da 0 a 1, `null` se non stimabile. */
+  | { phase: 'downloading'; release: UpdateRelease; step: UpdateStep; progress: number | null }
+  /** Installata (AppImage) o scaricata (exe in `path`): si applica al riavvio. */
+  | { phase: 'ready'; release: UpdateRelease; path: string; downloadedBytes: number; reusedBytes: number }
+  | { phase: 'error'; message: string; release: UpdateRelease | null };
+
+export type UpdateStatus = {
+  currentVersion: string;
+  mode: UpdateInstallMode;
+  /** Controllo automatico all'avvio e ogni poche ore. */
+  autoCheck: boolean;
+  /** Ultimo controllo riuscito (ms dall'epoch). */
+  lastCheckedAt: number | null;
+  state: UpdateState;
+};
 
 /** File letto dal main process; `bytes` arriva come Uint8Array (structured clone di IPC). */
 /** Formato del PDF: carta standard oppure dimensioni personalizzate in mm (pagina grande quanto la mappa). */
@@ -25,8 +63,15 @@ export type PrintToPdfOptions = {
 export type OpenedFile = { path: string; name: string; bytes: Uint8Array };
 
 export interface ElectronAPI {
-  /** Windows: controlla GitHub e scarica l'exe portable più recente nei Download. */
-  checkAndDownloadUpdate: () => Promise<UpdateOutcome>;
+  getUpdateStatus: () => Promise<UpdateStatus>;
+  /** Controlla l'ultima release su GitHub. */
+  checkForUpdates: () => Promise<UpdateStatus>;
+  /** AppImage: aggiorna in place con zsync; exe portable: scarica la nuova versione. */
+  installUpdate: () => Promise<UpdateStatus>;
+  /** Chiude le finestre (con la solita conferma per le modifiche) e riavvia sulla nuova versione. */
+  restartToUpdate: () => void;
+  setUpdateAutoCheck: (enabled: boolean) => Promise<UpdateStatus>;
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
   platform: () => Promise<string>;
   openFileDialog: () => Promise<OpenedFile | null>;
   openFilePath: (filePath: string) => Promise<OpenedFile | null>;
@@ -65,7 +110,16 @@ export interface ElectronAPI {
 }
 
 const api: ElectronAPI = {
-  checkAndDownloadUpdate: () => ipcRenderer.invoke('update:checkAndDownload'),
+  getUpdateStatus: () => ipcRenderer.invoke('update:getStatus'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  restartToUpdate: () => ipcRenderer.send('update:restart'),
+  setUpdateAutoCheck: (enabled) => ipcRenderer.invoke('update:setAutoCheck', enabled),
+  onUpdateStatus: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, status: UpdateStatus) => callback(status);
+    ipcRenderer.on('update:status', handler);
+    return () => ipcRenderer.removeListener('update:status', handler);
+  },
   platform: () => ipcRenderer.invoke('app:platform'),
   openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
   openFilePath: (filePath: string) => ipcRenderer.invoke('fs:openPath', filePath),
