@@ -62,6 +62,10 @@ export interface ElectronAPI {
   onBeforeClose: (callback: () => void) => () => void;
   /** Zoom di Chromium sulla pagina (Impostazioni > Scala interfaccia): 1 = 100%. */
   setZoomFactor: (factor: number) => void;
+  /** Tema effettivo dell'app: allinea lo sfondo nativo della finestra. */
+  setDarkMode: (dark: boolean) => void;
+  /** Avvisa quando cambia l'aspetto del sistema (`nativeTheme` di Electron). */
+  onThemeUpdated: (callback: (dark: boolean) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -95,6 +99,12 @@ const api: ElectronAPI = {
   },
   setZoomFactor: (factor) => {
     if (Number.isFinite(factor) && factor > 0) webFrame.setZoomFactor(factor);
+  },
+  setDarkMode: (dark) => ipcRenderer.send('theme:setDark', dark),
+  onThemeUpdated: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, dark: boolean) => callback(dark);
+    ipcRenderer.on('theme:updated', handler);
+    return () => ipcRenderer.removeListener('theme:updated', handler);
   },
 };
 
