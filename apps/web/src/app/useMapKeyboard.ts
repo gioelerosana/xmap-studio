@@ -1,4 +1,5 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
+import { isDialogOpen } from './dialogOpen.js';
 import type { Layout, TopicView } from '@xmap/core';
 import type { MapEditing } from '../components/MapView.js';
 import { neighborId } from '../components/map/navigation.js';
@@ -43,7 +44,7 @@ export function useMapKeyboard({
       // Scorciatoia Ctrl+D / Cmd+D: duplica il blocco selezionato
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'd') {
         const target = e.target as Element | null;
-        if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+        if (target?.closest?.(INTERACTIVE) || isDialogOpen()) return;
         if (selectedTopic && selectedTopic.depth > 0) {
           e.preventDefault();
           handleDuplicateTopic(selectedTopic.id);
@@ -53,7 +54,7 @@ export function useMapKeyboard({
 
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as Element | null;
-      if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+      if (target?.closest?.(INTERACTIVE) || isDialogOpen()) return;
       const sel = selectedTopic;
       if (!sel) return;
       const c = keyCtx.current;

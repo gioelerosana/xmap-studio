@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isDialogOpen } from '../../app/dialogOpen.js';
 import type { MapEditing, MapHandlers } from './types.js';
 
 const INTERACTIVE = 'input, textarea, select, button, [contenteditable="true"]';
@@ -24,7 +25,7 @@ export function useMapShortcuts({
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
       if (!isCtrlOrMeta || e.altKey) return;
       const target = e.target as Element | null;
-      if (target?.closest?.(INTERACTIVE) || document.querySelector('[role="dialog"]')) return;
+      if (target?.closest?.(INTERACTIVE) || isDialogOpen()) return;
 
       const key = e.key.toLowerCase();
       // Ctrl+] (sommario) è una scorciatoia globale (useGlobalShortcuts): gestirla

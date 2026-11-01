@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { isDialogOpen } from './dialogOpen.js';
 import type { AppController, TopicView } from '@xmap/core';
 import type { MapEditing } from '../components/MapView.js';
 import type { SelectionState } from './useSelection.js';
@@ -44,7 +45,7 @@ export function useClipboardEvents({
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       if (e.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (isDialogOpen()) return;
       if (editing) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
@@ -123,7 +124,7 @@ export function useClipboardEvents({
 
     const onCopy = (e: ClipboardEvent) => {
       if (editing || hasTextSelection()) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (isDialogOpen()) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
       if (!selectedTopic) return;
@@ -134,7 +135,7 @@ export function useClipboardEvents({
 
     const onCut = (e: ClipboardEvent) => {
       if (editing || hasTextSelection()) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (isDialogOpen()) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
       if (!selectedTopic || selectedTopic.depth === 0) return;
