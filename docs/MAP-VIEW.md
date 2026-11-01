@@ -112,7 +112,7 @@ Principi:
 |---|---|
 | Misura dei nodi stimata, non reale | `EstimatedMetrics` con limiti di larghezza; da rivalutare se servono misure esatte |
 | Strutture XMind non ad albero (org, fishbone, timeline) | Rese come albero orizzontale; solo la Tree Chart verso destra ha un layout dedicato |
-| Mappe grandi / molte formule | Cache SVG delle formule; MathJax gira nel renderer, non in un worker |
+| Mappe grandi / molte formule | Cache SVG delle formule; MathJax si carica su richiesta e gira nel renderer, non in un worker (vedi ARCHITECTURE.md §"Prestazioni e limiti") |
 | Layout e rendering nel thread UI | Possibile evoluzione: spostarli in un worker |
 
 ## 6. Fuori scope
