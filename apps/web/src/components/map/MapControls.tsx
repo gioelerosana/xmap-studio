@@ -1,4 +1,4 @@
-import { GitFork, ListTree, Maximize2, Minus, Plus } from 'lucide-react';
+import { GitFork, ListTree, Maximize2, Minus, Network, Plus } from 'lucide-react';
 import { IconButton, Separator, cn } from '@xmap/ui-kit';
 import type { MapStructure } from '@xmap/core';
 
@@ -21,6 +21,16 @@ export function ZoomControls({
       data-map-ui
       // Sotto `sm` la barra flottante è agganciata in basso: lo zoom sale sopra di lei.
       className="absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] max-sm:bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))] z-20 flex items-center gap-0.5 p-1 surface-glass border rounded-xl shadow-composer">
+      <IconButton
+        size="sm"
+        variant="ghost"
+        label="Vista a mappa mentale"
+        aria-pressed={structure === 'map'}
+        className={cn(structure === 'map' && 'bg-accent text-foreground')}
+        onClick={() => onStructureChange('map')}
+      >
+        <Network className="size-4" />
+      </IconButton>
       <IconButton
         size="sm"
         variant="ghost"

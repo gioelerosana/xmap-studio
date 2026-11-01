@@ -1,6 +1,9 @@
-import type { Layout, LayoutNode } from '@xmap/core';
+import type { BranchSide, Layout, LayoutNode } from '@xmap/core';
 
 export type NavDirection = 'up' | 'down' | 'left' | 'right';
+
+/** Lato di un blocco: solo la mappa mentale ha rami a sinistra; le altre strutture sono a destra. */
+const sideOf = (n: LayoutNode): BranchSide => n.side ?? 'right';
 
 interface Index {
   parent: Map<number, number>;
@@ -27,8 +30,10 @@ const cy = (n: LayoutNode) => n.y + n.h / 2;
 /**
  * Blocco raggiunto con una freccia, in base alle coordinate del layout:
  * sinistra = genitore, destra = primo figlio (nella Tree Chart, giù dalla radice
- * = primo figlio); su/giù = blocco più vicino in verticale allo stesso livello,
- * a partire dal genitore più prossimo. `undefined` se non c'è nulla in quella direzione.
+ * = primo figlio); su/giù = blocco più vicino in verticale allo stesso livello e
+ * dallo stesso lato, a partire dal genitore più prossimo. Su un ramo sinistro le
+ * frecce si invertono: sinistra va al figlio, destra al genitore. La radice della
+ * mappa mentale manda ai figli del lato scelto. `undefined` se non c'è nulla in quella direzione.
  */
 export function neighborId(layout: Layout, id: string, dir: NavDirection): string | undefined {
   const i = layout.nodes.findIndex((n) => n.id === id);
@@ -38,8 +43,14 @@ export function neighborId(layout: Layout, id: string, dir: NavDirection): strin
   const kids = children.get(i) ?? [];
   const p = parent.get(i);
 
-  if (dir === 'left') return p === undefined ? undefined : layout.nodes[p].id;
-  if (dir === 'right') return kids.length > 0 ? layout.nodes[kids[0]].id : undefined;
+  if (dir === 'left' || dir === 'right') {
+    if (p === undefined) {
+      const onSide = kids.find((c) => sideOf(layout.nodes[c]) === dir);
+      return onSide === undefined ? undefined : layout.nodes[onSide].id;
+    }
+    if (sideOf(node) !== dir) return layout.nodes[p].id;
+    return kids.length > 0 ? layout.nodes[kids[0]].id : undefined;
+  }
   if (dir === 'down' && node.childrenBelow && kids.length > 0) return layout.nodes[kids[0]].id;
 
   const sign = dir === 'down' ? 1 : -1;
@@ -47,6 +58,7 @@ export function neighborId(layout: Layout, id: string, dir: NavDirection): strin
   let bestScore = Infinity;
   layout.nodes.forEach((n, j) => {
     if (j === i || n.depth !== node.depth || n.sheetIndex !== node.sheetIndex) return;
+    if (sideOf(n) !== sideOf(node)) return;
     const dy = (cy(n) - cy(node)) * sign;
     if (dy <= 1) return;
     const score = dy + Math.abs(n.x - node.x) * 0.1;
