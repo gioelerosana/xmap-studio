@@ -159,6 +159,8 @@ export function resetSettings(): void {
  * automatico al tramonto): `matches` è aggiornato ma nessuno lo rilegge. Per
  * questo la preferenza si rilegge anche quando l'app torna visibile o in primo
  * piano; `useSyncExternalStore` ridisegna solo se il valore è cambiato.
+ * Nell'app desktop rilegge anche quando il main process segnala un cambio di
+ * `nativeTheme` di Electron.
  */
 function subscribeDarkScheme(listener: () => void): () => void {
   const mql = window.matchMedia?.(DARK_QUERY);
@@ -167,7 +169,9 @@ function subscribeDarkScheme(listener: () => void): () => void {
   document.addEventListener('visibilitychange', listener);
   window.addEventListener('pageshow', listener);
   window.addEventListener('focus', listener);
+  const offElectron = window.electronAPI?.onThemeUpdated?.(listener);
   return () => {
+    offElectron?.();
     if (mql?.removeEventListener) mql.removeEventListener('change', listener);
     else mql?.removeListener?.(listener);
     document.removeEventListener('visibilitychange', listener);
@@ -197,6 +201,11 @@ export function useSettings(): SettingsHandle {
   useEffect(() => {
     document.documentElement.classList.toggle('reduce-motion', settings.reduceMotion);
   }, [settings.reduceMotion]);
+
+  // Desktop: lo sfondo nativo della finestra segue il tema effettivo.
+  useLayoutEffect(() => {
+    window.electronAPI?.setDarkMode?.(darkMode);
+  }, [darkMode]);
 
   // Layout effect: lo zoom si applica prima del primo disegno, senza un frame al 100%.
   useLayoutEffect(() => {

@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { isDialogOpen } from './dialogOpen.js';
 import type { TopicView } from '@xmap/core';
 import type { MapEditing } from '../components/MapView.js';
 import type { SelectionState } from './useSelection.js';
@@ -52,7 +53,7 @@ export function useGlobalShortcuts({
       const inField = (e.target as Element | null)?.closest?.(TEXT_FIELD);
       // Con un dialogo aperto (editor LaTeX, conferme, …) le azioni sulla mappa
       // sotto di lui non partono: valgono solo salvataggio, impostazioni e Zen.
-      const inDialog = document.querySelector('[role="dialog"]') !== null;
+      const inDialog = isDialogOpen();
       if (inDialog && !(key === 's' || key === ',' || (e.altKey && e.code === 'KeyZ'))) return;
       // Ctrl+Alt+Z: modalità Zen (prima di Ctrl+Z, che è l'annulla).
       if (e.altKey && (key === 'z' || e.code === 'KeyZ')) {
@@ -102,7 +103,7 @@ export function useGlobalShortcuts({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (isDialogOpen()) return;
       if (editing) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;

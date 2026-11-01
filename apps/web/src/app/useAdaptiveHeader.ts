@@ -19,16 +19,19 @@ export interface HeaderLayout {
 export function useAdaptiveHeader(hasWorkbook: boolean, visible: boolean = true) {
   const headerRef = useRef<HTMLElement>(null);
   const [headerLevel, setHeaderLevel] = useState(0);
-  const [, forceHeaderMeasure] = useReducer((n: number) => n + 1, 0);
+  const [measureTick, forceHeaderMeasure] = useReducer((n: number) => n + 1, 0);
   // Cambiano i pulsanti presenti: si riparte dal livello pieno. Va prima della misura,
   // così i due aggiornamenti si compongono invece di annullarsi.
   useLayoutEffect(() => setHeaderLevel(0), [hasWorkbook, visible]);
+  // Misura solo quando può cambiare qualcosa: livello, pulsanti presenti o un
+  // ridimensionamento visto dal ResizeObserver. Leggere `scrollWidth` forza un reflow
+  // sincrono di tutta la pagina (mappa compresa): a ogni render costava decine di ms.
   useLayoutEffect(() => {
     const el = headerRef.current;
     if (el && el.scrollWidth > el.clientWidth + 1 && headerLevel < HEADER_LEVEL.max) {
       setHeaderLevel((l) => l + 1);
     }
-  });
+  }, [headerLevel, measureTick, hasWorkbook, visible]);
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;

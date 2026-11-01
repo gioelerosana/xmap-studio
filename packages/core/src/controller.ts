@@ -75,7 +75,7 @@ import {
   topicTitle,
 } from './model/utils.js';
 import { applyEquation, removeEquation, TitleMode } from './latex/equation.js';
-import { renderLatexToSvg } from './latex/mathjax.js';
+import { loadMathJax, renderLatexToSvg } from './latex/mathjax.js';
 import { svgToPng } from './latex/raster.js';
 import { clearTask, writeTask, TaskData } from './task/task.js';
 import { isMarkerKnown } from './markers/catalog.js';
@@ -201,6 +201,7 @@ export class AppController {
     return await this.open(bytes, resolved);
   }
 
+  /** Anteprima sincrona: richiede MathJax caricato (`loadMathJax`). */
   public preview(latex: string, emPx: number = 23.33) {
     return renderLatexToSvg(latex, emPx);
   }
@@ -1117,6 +1118,7 @@ export class AppController {
 
     const fontPx = fontSizePx(topic);
     const emPx = fontPx ? fontPx * 1.25 : 23.33;
+    await loadMathJax();
     const render = renderLatexToSvg(latex, emPx);
     if (render.error) throw new XmapError(CODE_LATEX, `LaTeX non valido: ${render.error}`);
 

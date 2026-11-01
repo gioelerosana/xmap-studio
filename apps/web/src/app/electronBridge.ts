@@ -72,6 +72,8 @@ declare global {
       onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;
       onBeforeClose: (callback: () => void) => () => void;
       setZoomFactor: (factor: number) => void;
+      setDarkMode: (dark: boolean) => void;
+      onThemeUpdated: (callback: (dark: boolean) => void) => () => void;
     };
   }
 }

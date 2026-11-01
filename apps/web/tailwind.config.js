@@ -93,6 +93,12 @@ export default {
       },
     },
   },
+  // Le variabili `--tw-*` di default (transform, ring, shadow, filter…) vanno solo sugli
+  // elementi che usano quelle utility, non su `*, ::before, ::after`: con migliaia di
+  // elementi nella mappa la regola universale rendeva ogni ricalcolo di stile più caro (~20%).
+  experimental: {
+    optimizeUniversalDefaults: true,
+  },
   plugins: [
     // Dispositivi touch (iPad, telefono): puntatore grossolano. È una variante e
     // non uno `screen` raw: in Tailwind 3 uno screen raw disattiva tutte le

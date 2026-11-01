@@ -55,8 +55,10 @@ File System Access API quando disponibile; il fallback scarica i byte.
 
 ## Renderer e rasterizzazione
 
-`mathjax-full` è dipendenza di `@xmap/core`. La preview usa MathJax per produrre
-SVG; quando disponibile `@resvg/resvg-js` produce PNG. Nel browser si usa il
+`mathjax-full` è dipendenza di `@xmap/core`, caricata con `import()` da
+`loadMathJax()` (va attesa prima di `renderLatexToSvg`, vedi
+[`ARCHITECTURE.md`](ARCHITECTURE.md) §"Avvio e caricamento su richiesta"). La
+preview usa MathJax per produrre SVG; quando disponibile `@resvg/resvg-js` produce PNG. Nel browser si usa il
 percorso Canvas predisposto dal core.
 
 ## Convenzioni

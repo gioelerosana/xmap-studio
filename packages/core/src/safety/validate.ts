@@ -1,5 +1,6 @@
 import { CODE_VALIDATION, XmapError } from '../errors.js';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
+import { loadJSZip } from '../archive/zip.js';
 import { collectAttachmentRefs, collectResourceRefs } from '../model/utils.js';
 
 export interface ValidationReport {
@@ -19,9 +20,10 @@ const ZIP_RESOURCE_DIR = 'resources/';
  * 5. content.json e metadata.json sono registrati nel manifest.
  */
 export async function validateArchiveBytes(bytes: Uint8Array): Promise<ValidationReport> {
+  const JSZipLib = await loadJSZip();
   let zip: JSZip;
   try {
-    zip = await JSZip.loadAsync(bytes, { checkCRC32: true });
+    zip = await JSZipLib.loadAsync(bytes, { checkCRC32: true });
   } catch (err) {
     throw new XmapError(CODE_VALIDATION, `Lo ZIP prodotto non si riapre: ${err}`);
   }

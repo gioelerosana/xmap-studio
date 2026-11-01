@@ -88,3 +88,17 @@ describe('OpenWorkbook dirty flag', () => {
     expect(dto.dirty).toBe(true);
   });
 });
+
+describe('OpenWorkbook memoria della cronologia', () => {
+  it('scarta i passi più vecchi oltre il tetto di memoria, mai lo stato corrente', () => {
+    const wb = workbook();
+    // Snapshot da ~30 milioni di caratteri: nel tetto di 64 Mi ne stanno al massimo due.
+    const big = 'x'.repeat(30 * 1024 * 1024);
+    for (const suffix of ['A', 'B', 'C', 'D']) edit(wb, big + suffix);
+    expect(wb.history.length).toBeLessThanOrEqual(2);
+    expect(wb.content[0].rootTopic!.title.endsWith('D')).toBe(true);
+    wb.undo();
+    expect(wb.content[0].rootTopic!.title.endsWith('C')).toBe(true);
+    expect(wb.canUndo()).toBe(false);
+  });
+});

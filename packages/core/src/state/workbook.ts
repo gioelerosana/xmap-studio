@@ -28,6 +28,12 @@ import {
 } from './types.js';
 
 const MAX_HISTORY = 200;
+/**
+ * Tetto della cronologia in caratteri (~64 MB per testo latino): con una mappa
+ * grande 200 snapshot completi occuperebbero centinaia di MB, e su iPad/telefono
+ * il sistema chiude la PWA. Si scartano i passi più vecchi, mai l'ultimo.
+ */
+const MAX_HISTORY_CHARS = 64 * 1024 * 1024;
 
 export class OpenWorkbook {
   public path: string | null;
@@ -50,6 +56,8 @@ export class OpenWorkbook {
   /** Revisione scritta su disco; `null` se nessuno snapshot coincide più con il file. */
   private savedRevision: number | null;
   public pos: number;
+  /** Somma delle lunghezze degli snapshot in `history`. */
+  private historyChars: number;
   public xmindRunning: string[];
   public originalHash: string;
 
@@ -69,6 +77,7 @@ export class OpenWorkbook {
     this.content = JSON.parse(snapshot) as Sheet[];
     this.manifest = manifest;
     this.history = [snapshot];
+    this.historyChars = snapshot.length;
     this.revisions = [0];
     this.nextRevision = 1;
     this.savedRevision = 0;
@@ -101,12 +110,17 @@ export class OpenWorkbook {
     if (snapshot === this.history[this.pos]) return;
     // Troncamento se siamo tornati indietro: il ramo redo si scarta.
     if (this.pos + 1 < this.history.length) {
-      this.history.splice(this.pos + 1);
+      for (const dropped of this.history.splice(this.pos + 1)) this.historyChars -= dropped.length;
       this.revisions.splice(this.pos + 1);
     }
     this.history.push(snapshot);
+    this.historyChars += snapshot.length;
     this.revisions.push(this.nextRevision++);
-    if (this.history.length > MAX_HISTORY) {
+    while (
+      this.history.length > 1 &&
+      (this.history.length > MAX_HISTORY || this.historyChars > MAX_HISTORY_CHARS)
+    ) {
+      this.historyChars -= this.history[0].length;
       this.history.shift();
       this.revisions.shift();
     }
@@ -121,6 +135,7 @@ export class OpenWorkbook {
     }
     const snapshot = JSON.stringify(this.content);
     if (snapshot === this.history[this.pos]) return;
+    this.historyChars += snapshot.length - this.history[this.pos].length;
     this.history[this.pos] = snapshot;
     // Contenuto nuovo, revisione nuova: se lo snapshot era quello salvato, ora non lo è più.
     this.revisions[this.pos] = this.nextRevision++;

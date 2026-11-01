@@ -1,4 +1,5 @@
 import React, { createContext, forwardRef, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { isListboxOpen } from '../../app/dialogOpen.js';
 import { createPortal } from 'react-dom';
 import { cn } from '@xmap/ui-kit';
 
@@ -180,7 +181,7 @@ export const ToolbarPopover: React.FC<ToolbarPopoverProps> = ({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       // Un elenco a tendina aperto (ui-kit `Select`) gestisce da sé l'Esc: chiude lui, non il pannello.
-      if (document.querySelector('[role="listbox"]')) return;
+      if (isListboxOpen()) return;
       e.stopPropagation();
       setOpen(false);
     };

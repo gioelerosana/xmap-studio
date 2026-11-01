@@ -86,6 +86,19 @@ export default defineConfig({
       '@resvg/resvg-js': path.resolve(__dirname, './src/shims/resvg.ts'),
     },
   },
+  build: {
+    // L'unico chunk oltre i 500 kB è `mathjax-engine`, caricato su richiesta (latex/mathjax.ts):
+    // non pesa sull'avvio, l'avviso sarebbe solo rumore.
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        // React cambia di rado: in un chunk suo resta nella cache HTTP tra una release e l'altra.
+        manualChunks(id) {
+          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(react|react-dom|scheduler)\//.test(id)) return 'react';
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
     host: true,

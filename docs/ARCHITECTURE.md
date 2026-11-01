@@ -99,8 +99,8 @@ sovrascriverlo; in assenza di handle produce un download.
 
 ## Prestazioni e limiti
 
-MathJax e parte del calcolo del layout girano nel renderer React, non in un
-worker; mappe grandi o formule pesanti possono quindi causare pause visibili.
+MathJax (caricato su richiesta, vedi sotto) e il calcolo del layout girano nel
+renderer React, non in un worker; mappe grandi o formule pesanti possono quindi causare pause visibili.
 Per contenerle:
 
 - la cronologia undo/redo tiene gli snapshot come stringhe JSON (una sola
@@ -114,6 +114,52 @@ Per contenerle:
   ridisegnano solo i blocchi che cambiano; le immagini si codificano in base64
   una volta per risorsa;
 - nell'app desktop i file passano l'IPC come `Uint8Array`, non come array di numeri.
+
+### Avvio e caricamento su richiesta
+
+Il bundle iniziale contiene solo ciò che serve a mostrare l'app; il resto sono
+chunk separati:
+
+- **MathJax** (`latex/mathjax-engine.ts`, circa i 2/3 del codice) si carica con
+  `import()` da `loadMathJax()`. La UI lo precarica a browser libero
+  (`preloadMathJax` in `apps/web/src/mathReady.ts`). `renderLatexToSvg` resta
+  sincrona: se il motore non c'è ancora lancia `XmapError(CODE_RENDERER)` e ne
+  avvia il caricamento. Il layout misura allora la formula come sorgente e,
+  all'arrivo del motore (`onMathJaxReady`), svuota la cache delle dimensioni;
+  `useMathJaxReady` fa ricalcolare layout e titoli. I percorsi che producono
+  dati (`applyEquation`, `exportEquation`) attendono `loadMathJax()`: mai una
+  misura stimata finisce nel file. I test lo caricano in `tests/setup.ts`.
+- **JSZip** (`archive/zip.ts`) si carica alla prima apertura, salvataggio o
+  validazione.
+- **Finestre secondarie** (export, stampa, tema, import, impostazioni, editor
+  LaTeX) sono `React.lazy` in `apps/web/src/app/lazyPanels.ts`: si montano alla
+  prima apertura, poi restano montate (conservano lo stato), e si precaricano a
+  browser libero.
+- **React** ha un chunk suo (`manualChunks` in `vite.config.ts`), che resta in
+  cache tra una release e l'altra.
+
+### Rendering della mappa
+
+Con mappe grandi il costo di una modifica è quasi tutto del browser (ricalcolo
+dello stile e paint di migliaia di elementi SVG), non di JavaScript. Per non
+aggravarlo:
+
+- niente letture di geometria (`scrollWidth`, `getBoundingClientRect`…) in
+  effetti che girano a ogni render: forzano un reflow sincrono di tutta la
+  pagina. L'header adattivo misura solo quando cambiano livello, pulsanti o
+  dimensioni (ResizeObserver);
+- Tailwind usa `experimental.optimizeUniversalDefaults`: le variabili `--tw-*`
+  stanno solo sugli elementi che usano le utility corrispondenti, non su
+  `*, ::before, ::after` (≈20% in meno sul ricalcolo dello stile);
+- le scorciatoie verificano un dialog aperto con `isDialogOpen()`
+  (`app/dialogOpen.ts`): una sola query sul documento per pressione di tasto;
+- la cronologia undo ha anche un tetto di memoria (`MAX_HISTORY_CHARS`, ~64 MB
+  di testo): con mappe grandi 200 snapshot completi farebbero chiudere la PWA
+  su iPad.
+
+Un clone del DOM vivo della mappa serve a stampa ed export immagine
+(`print/mapClone.ts`): per questo la mappa disegna tutti i blocchi, anche
+quelli fuori schermo.
 La divisione di file e le altre scritture `.xmind` passano per la scrittura
 atomica desktop (`atomicWrite` in `packages/core/src/node/atomic.ts`) o per
 l'API di salvataggio del browser. La suite automatica non

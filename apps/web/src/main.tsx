@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { installTextMeasurer } from './textMeasure';
+import { preloadMathJax } from './mathReady';
 import './index.css';
 
 installTextMeasurer();
@@ -12,6 +13,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 );
+
+preloadMathJax();
 
 // PWA: solo nella build web servita via http(s); in sviluppo (HMR) e in Electron no.
 if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.startsWith('http') && !window.electronAPI) {

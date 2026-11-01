@@ -27,6 +27,8 @@ const WINDOW_HEIGHT = 800;
 const MIN_WINDOW_WIDTH = 720;
 const MIN_WINDOW_HEIGHT = 520;
 const ERR_ABORTED = -3;
+const DARK_BACKGROUND = '#0a0a0a';
+const LIGHT_BACKGROUND = '#fcfcfc';
 const MAX_BYTE = 255;
 /**
  * Accetta "mappa.xmind" e "MAPPA.XMIND"; rifiuta "mappa.xmap" e "mappa.xmind.bak".
@@ -113,7 +115,7 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     frame: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#fcfcfc',
+    backgroundColor: windowBackground(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -189,6 +191,28 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
 
   return window;
 }
+
+function windowBackground(dark = nativeTheme.shouldUseDarkColors): string {
+  return dark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
+}
+
+/*
+ * Tema «Sistema» sul desktop: quando cambia l'aspetto del sistema si avvisano i
+ * renderer, che rileggono `prefers-color-scheme` anche se l'evento `change` non
+ * arriva. `nativeTheme.themeSource` non si tocca: su Linux, una volta forzato,
+ * tornare a 'system' lascia Electron fermo sul tema forzato.
+ */
+nativeTheme.on('updated', () => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('theme:updated', nativeTheme.shouldUseDarkColors);
+  }
+});
+
+// Sfondo nativo della finestra (visibile ridimensionando) allineato al tema effettivo dell'app.
+ipcMain.on('theme:setDark', (event, dark: unknown) => {
+  if (typeof dark !== 'boolean') return;
+  senderWindow(event)?.setBackgroundColor(windowBackground(dark));
+});
 
 function senderWindow(event: { sender: Electron.WebContents }): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
