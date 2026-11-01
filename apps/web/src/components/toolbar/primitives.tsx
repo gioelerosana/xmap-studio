@@ -215,14 +215,16 @@ export const ToolbarPopover: React.FC<ToolbarPopoverProps> = ({
       });
       return;
     }
+    // Sotto `sm` la barra in basso porta sopra di sé la riga dello zoom: il pannello sale sopra entrambe.
+    const topEdge = root.closest<HTMLElement>('[data-popover-top]')?.getBoundingClientRect().top ?? anchor.top;
     const roomBelow = window.innerHeight - anchor.bottom - PANEL_GAP - VIEWPORT_MARGIN;
-    const roomAbove = anchor.top - PANEL_GAP - VIEWPORT_MARGIN;
+    const roomAbove = topEdge - PANEL_GAP - VIEWPORT_MARGIN;
     const docked = dock === 'bottom';
     // Lato preferito dall'ancoraggio della barra; si inverte solo se non c'è spazio e l'altro lato ne ha di più.
     const up = docked ? roomAbove >= height || roomAbove > roomBelow : roomBelow < height && roomAbove > roomBelow;
     const left = clampToViewport(alignedLeft(align, anchor, width), width, window.innerWidth);
     setPlacement(
-      up ? { left, bottom: window.innerHeight - anchor.top + PANEL_GAP } : { left, top: anchor.bottom + PANEL_GAP },
+      up ? { left, bottom: window.innerHeight - topEdge + PANEL_GAP } : { left, top: anchor.bottom + PANEL_GAP },
     );
   }, [open, align]);
 

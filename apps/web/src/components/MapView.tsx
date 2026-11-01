@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { titleBaseFontPx, type Layout, type LayoutNode } from '@xmap/core';
 import { Braces, CornerDownLeft, Edit3, Network, Plus, Trash2 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
@@ -61,6 +62,7 @@ export const MapView: React.FC<MapViewProps> = ({
   canPaste = false,
   isConnectingRelationship = false,
   onConnectRelationshipTarget,
+  mapControlsSlot = null,
 }) => {
   const isCoarse = useMediaQuery('(pointer: coarse)');
   const editingRef = useRef(editing);
@@ -284,16 +286,30 @@ export const MapView: React.FC<MapViewProps> = ({
         onClearSelection?.();
       }}
     >
-      {/* Controlli zoom flottanti in basso a destra (nascosti in modalità Zen) */}
-      {!zen && (
-        <ZoomControls
-          structure={structure}
-          onStructureChange={onStructureChange}
-          zoom={view.k}
-          onZoom={zoomByButton}
-          onFit={fitAnimated}
-        />
-      )}
+      {/* Controlli di vista e zoom (nascosti in modalità Zen): flottanti in basso a destra, oppure
+          dentro la barra degli strumenti quando questa offre il suo spazio (schermi stretti). */}
+      {!zen &&
+        (mapControlsSlot ? (
+          createPortal(
+            <ZoomControls
+              docked
+              structure={structure}
+              onStructureChange={onStructureChange}
+              zoom={view.k}
+              onZoom={zoomByButton}
+              onFit={fitAnimated}
+            />,
+            mapControlsSlot,
+          )
+        ) : (
+          <ZoomControls
+            structure={structure}
+            onStructureChange={onStructureChange}
+            zoom={view.k}
+            onZoom={zoomByButton}
+            onFit={fitAnimated}
+          />
+        ))}
 
       {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse), nascosta in modalità Zen */}
       {!zen && isCoarse && selectedNode && (

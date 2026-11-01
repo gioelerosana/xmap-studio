@@ -24,4 +24,9 @@ export interface FloatingToolbarProps {
   onStartConnectRelationship: (topicId: string) => void;
   /** Immagine scelta dal selettore file: stesso instradamento dell'incolla (vedi `useImageInsert`). */
   onInsertImage: (file: Blob) => void;
+  /**
+   * Riceve lo spazio in cui MapView rende i controlli di vista e zoom quando la barra è agganciata
+   * in basso (schermi stretti); `null` quando lo spazio non c'è.
+   */
+  mapControlsSlotRef?: (slot: HTMLDivElement | null) => void;
 }

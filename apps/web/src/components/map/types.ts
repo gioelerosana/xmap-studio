@@ -63,6 +63,11 @@ export interface MapViewProps {
   darkMode?: boolean;
   /** Modalità Zen: nasconde controlli di navigazione/zoom per mostrare solo la tela. */
   zen?: boolean;
+  /**
+   * Spazio offerto dalla barra degli strumenti agganciata in basso (schermi stretti): se presente,
+   * i controlli di vista e zoom vi si rendono dentro invece di flottare sulla mappa.
+   */
+  mapControlsSlot?: HTMLElement | null;
   structure: MapStructure;
   onStructureChange: (structure: MapStructure) => void;
   /** Rilascio di un blocco trascinato sulla mappa; stessa firma di `onMove` dell'albero. */
