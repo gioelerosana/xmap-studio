@@ -1,7 +1,21 @@
 import type { Layout } from '@xmap/core';
+import type { DropIndicator } from './dragTarget.js';
 import { nodeLook } from './nodeLook.js';
 import { textStyleCss } from './RichTitle.js';
 import type { DragOverlay } from './types.js';
+
+type ChildIndicator = Extract<DropIndicator, { kind: 'child' }>;
+
+/** Curva dal bordo del genitore al nuovo figlio; sul lato sinistro la curva va all'indietro. */
+function childPath({ from, to, side }: ChildIndicator): string {
+  const dir = side === 'left' ? -1 : 1;
+  return `M ${from.x} ${from.y} C ${from.x + dir * 28} ${from.y}, ${to.x - dir * 28} ${to.y}, ${to.x} ${to.y}`;
+}
+
+/** Angolo sinistro del riquadro dell'anteprima: sul lato sinistro `to` è il suo bordo destro. */
+function childBoxX({ to, side, w }: ChildIndicator): number {
+  return side === 'left' ? to.x - w : to.x;
+}
 
 /** Fantasma del blocco trascinato e indicatore del bersaglio, sopra tutto il resto della mappa. */
 export function TopicDragOverlay({
@@ -44,13 +58,13 @@ export function TopicDragOverlay({
       {ind?.kind === 'child' && (
         <g stroke="var(--primary)" fill="none">
           <path
-            d={`M ${ind.from.x} ${ind.from.y} C ${ind.from.x + 28} ${ind.from.y}, ${ind.to.x - 28} ${ind.to.y}, ${ind.to.x} ${ind.to.y}`}
+            d={childPath(ind)}
             strokeWidth={2.5}
             strokeDasharray="6 4"
             strokeLinecap="round"
           />
           <rect
-            x={ind.to.x}
+            x={childBoxX(ind)}
             y={ind.to.y - ind.h / 2}
             width={ind.w}
             height={ind.h}

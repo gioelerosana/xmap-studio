@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
-export type MapStructureSetting = 'tree' | 'logic';
+export type MapStructureSetting = 'tree' | 'logic' | 'map';
 
 export interface Settings {
   /** Sistema segue `prefers-color-scheme`; chiaro/scuro sono espliciti. */
@@ -33,7 +33,7 @@ const LEGACY_STRUCTURE_KEY = 'xmap-studio.map-structure';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 const REDUCE_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 const THEMES: readonly ThemePreference[] = ['system', 'light', 'dark'];
-const STRUCTURES: readonly MapStructureSetting[] = ['tree', 'logic'];
+const STRUCTURES: readonly MapStructureSetting[] = ['tree', 'logic', 'map'];
 
 function systemPrefers(query: string): boolean {
   return typeof window !== 'undefined' && Boolean(window.matchMedia?.(query).matches);

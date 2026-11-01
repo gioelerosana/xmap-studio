@@ -16,6 +16,8 @@ const NEAR_DY_WEIGHT = 1.5;
 /** Distanza orizzontale tipica genitore → figlio (come `hGap` del layout). */
 const CHILD_GAP_X = 50;
 const SIBLING_GAP_Y = 16;
+/** Larghezza massima dell'anteprima del nuovo figlio. */
+const PREVIEW_MAX_W = 220;
 
 /** Relazioni genitore/figli ricostruite dagli archi del layout (indici in `layout.nodes`). */
 export interface DragIndex {
@@ -70,7 +72,8 @@ export type DropIndicator =
   /** Linea di inserimento tra fratelli. */
   | { kind: 'line'; x1: number; x2: number; y: number }
   /** Anteprima del connettore e del posto del nuovo ultimo figlio. */
-  | { kind: 'child'; from: Point; to: Point; w: number; h: number };
+  /** `to` è il bordo interno dell'anteprima: sinistro a destra, destro sul lato sinistro. */
+  | { kind: 'child'; from: Point; to: Point; w: number; h: number; side: 'left' | 'right' };
 
 export interface DropTarget {
   targetId: string;
@@ -109,19 +112,23 @@ function makeTarget(
     if (all[all.length - 1] === sourceIndex) return null;
     const last = kids.length > 0 ? nodes[kids[kids.length - 1]] : undefined;
     const below = target.childrenBelow;
+    const toLeft = target.side === 'left';
     const from: Point = below
       ? { x: trunkX(target), y: target.y + target.h }
-      : { x: target.x + target.w, y: target.y + target.h / 2 };
+      : { x: toLeft ? target.x : target.x + target.w, y: target.y + target.h / 2 };
+    // Sul lato sinistro la colonna dei figli è allineata a destra: `to` è il suo bordo destro.
     const to: Point = last
-      ? { x: last.x, y: last.y + last.h + SIBLING_GAP_Y + source.h / 2 }
+      ? { x: toLeft ? last.x + last.w : last.x, y: last.y + last.h + SIBLING_GAP_Y + source.h / 2 }
       : below
       ? { x: trunkX(target) + 24, y: target.y + target.h + SIBLING_GAP_Y + source.h / 2 }
+      : toLeft
+      ? { x: target.x - CHILD_GAP_X, y: target.y + target.h / 2 }
       : { x: target.x + target.w + CHILD_GAP_X, y: target.y + target.h / 2 };
     return {
       targetId: target.id,
       targetIndex,
       placement,
-      indicator: { kind: 'child', from, to, w: Math.min(source.w, 220), h: source.h },
+      indicator: { kind: 'child', from, to, w: Math.min(source.w, PREVIEW_MAX_W), h: source.h, side: toLeft ? 'left' : 'right' },
     };
   }
 
@@ -188,8 +195,9 @@ export function computeDropTarget(
   if (hit >= 0) {
     const n = nodes[hit];
     const band = Math.min(Math.max(n.h * BAND_FRACTION, BAND_MIN_PX), n.h * 0.45);
-    const leftHalf = p.x < n.x + n.w / 2;
-    if (canBeSibling(layout, idx, hit) && leftHalf) {
+    // Il lato dei figli è quello verso cui il blocco si aggancia: la metà opposta dà before/after.
+    const siblingHalf = n.side === 'left' ? p.x >= n.x + n.w / 2 : p.x < n.x + n.w / 2;
+    if (canBeSibling(layout, idx, hit) && siblingHalf) {
       if (p.y < n.y + band) return makeTarget(layout, idx, sourceIndex, hit, 'before');
       if (p.y > n.y + n.h - band) return makeTarget(layout, idx, sourceIndex, hit, 'after');
     }

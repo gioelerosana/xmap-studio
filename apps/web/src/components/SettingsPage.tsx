@@ -46,6 +46,7 @@ const THEME_ITEMS: { id: ThemePreference; label: string }[] = [
 const STRUCTURE_ITEMS: { id: MapStructureSetting; label: string }[] = [
   { id: 'tree', label: 'Albero' },
   { id: 'logic', label: 'Logica' },
+  { id: 'map', label: 'Mappa mentale' },
 ];
 
 const UI_SCALE_ITEMS = UI_SCALE_PRESETS.map((value) => ({ id: String(value), label: `${value}%` }));
