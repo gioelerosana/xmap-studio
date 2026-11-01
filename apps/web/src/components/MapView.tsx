@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { titleBaseFontPx, type Layout, type LayoutNode } from '@xmap/core';
 import { Braces, CornerDownLeft, Edit3, Network, Plus, Trash2 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
@@ -9,6 +10,7 @@ import { buildDragIndex } from './map/dragTarget.js';
 import { backgroundMenuItems, nodeMenuItems } from './map/menus.js';
 import { MapEdges } from './map/MapEdges.js';
 import { ZoomControls } from './map/MapControls.js';
+import { COMPACT_QUERY } from '../app/constants.js';
 import { NodeCard } from './map/NodeCard.js';
 import { TopicDragOverlay } from './map/TopicDragOverlay.js';
 import { buildFormulaSvgCache, buildResourceUrls } from './map/assets.js';
@@ -61,8 +63,10 @@ export const MapView: React.FC<MapViewProps> = ({
   canPaste = false,
   isConnectingRelationship = false,
   onConnectRelationshipTarget,
+  mapControlsSlot = null,
 }) => {
   const isCoarse = useMediaQuery('(pointer: coarse)');
+  const compact = useMediaQuery(COMPACT_QUERY);
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const viewport = useViewport(layout);
@@ -284,16 +288,31 @@ export const MapView: React.FC<MapViewProps> = ({
         onClearSelection?.();
       }}
     >
-      {/* Controlli zoom flottanti in basso a destra (nascosti in modalità Zen) */}
-      {!zen && (
-        <ZoomControls
-          structure={structure}
-          onStructureChange={onStructureChange}
-          zoom={view.k}
-          onZoom={zoomByButton}
-          onFit={fitAnimated}
-        />
-      )}
+      {/* Controlli di vista e zoom (nascosti in modalità Zen): flottanti in basso a destra; sotto `sm`
+          stanno nel pannello "Vista e zoom" della barra degli strumenti, solo mentre è aperto. */}
+      {!zen &&
+        (compact ? (
+          mapControlsSlot &&
+          createPortal(
+            <ZoomControls
+              embedded
+              structure={structure}
+              onStructureChange={onStructureChange}
+              zoom={view.k}
+              onZoom={zoomByButton}
+              onFit={fitAnimated}
+            />,
+            mapControlsSlot,
+          )
+        ) : (
+          <ZoomControls
+            structure={structure}
+            onStructureChange={onStructureChange}
+            zoom={view.k}
+            onZoom={zoomByButton}
+            onFit={fitAnimated}
+          />
+        ))}
 
       {/* Barra contestuale flottante sul nodo selezionato: visibile solo su dispositivi touch (pointer: coarse), nascosta in modalità Zen */}
       {!zen && isCoarse && selectedNode && (

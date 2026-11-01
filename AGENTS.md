@@ -236,7 +236,9 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
 - non ci sono pannelli laterali: l'editing del blocco passa dalla barra flottante
   (`components/toolbar/`), agganciabile sul desktop in alto, in basso o in verticale su un
   lato (`useToolbarPosition.ts`, orientamento via `ToolbarOrientationContext`) e agganciata in basso sotto `sm`;
-  i suoi popover devono restare visibili in tutte le posizioni;
+  i suoi popover devono restare visibili in tutte le posizioni; sotto `sm` vista e zoom non
+  flottano sulla mappa ma stanno nel pannello "Vista e zoom" della barra (MapView li rende
+  lì con un portale, nello spazio `mapControlsSlot`);
 - la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
   `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
   disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (barra
