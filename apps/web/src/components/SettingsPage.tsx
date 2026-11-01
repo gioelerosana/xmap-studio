@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, FileLock2, Info, Keyboard, Network, Palette } from 'lucide-react';
+import { ArrowLeft, FileLock2, Info, Keyboard, Network, Palette, RefreshCw } from 'lucide-react';
 import {
   Button,
   IconButton,
@@ -20,13 +20,21 @@ import {
   type ThemePreference,
 } from '../settings.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from '../appInfo.js';
+import type { UpdateStatus } from '../app/electronBridge.js';
+import { hasPendingUpdate } from '../app/useUpdateStatus.js';
 import { AppMark } from './AppMark.js';
+import { SettingRow, SettingsSection } from './SettingsLayout.js';
+import { UpdatesSection } from './UpdatesSection.js';
 
 interface SettingsPageProps {
   onClose: () => void;
   settings: Settings;
   onUpdate: (patch: Partial<Settings>) => void;
   onReset: () => void;
+  /** Sezione mostrata all'apertura; `appearance` se assente. */
+  initialSection?: SettingsSectionId;
+  /** Stato degli aggiornamenti dell'app desktop; `null` nel browser. */
+  updateStatus: UpdateStatus | null;
 }
 
 const THEME_ITEMS: { id: ThemePreference; label: string }[] = [
@@ -63,86 +71,19 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 
-type SectionId = 'appearance' | 'map' | 'files' | 'shortcuts' | 'about';
+type SectionId = 'appearance' | 'map' | 'files' | 'shortcuts' | 'updates' | 'about';
 
-const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode }[] = [
+export type SettingsSectionId = SectionId;
+
+/** La sezione Aggiornamenti esiste solo nell'app desktop: nel browser non ha nulla da mostrare. */
+const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; desktopOnly?: boolean }[] = [
   { id: 'appearance', label: 'Aspetto', icon: <Palette className="size-4" /> },
   { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
   { id: 'files', label: 'File e sicurezza', icon: <FileLock2 className="size-4" /> },
   { id: 'shortcuts', label: 'Scorciatoie', icon: <Keyboard className="size-4" /> },
+  { id: 'updates', label: 'Aggiornamenti', icon: <RefreshCw className="size-4" />, desktopOnly: true },
   { id: 'about', label: 'Informazioni', icon: <Info className="size-4" /> },
 ];
-
-/** Riga di impostazione: su schermi stretti il controllo va sotto l'etichetta. */
-function SettingRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <div className="min-w-0">
-        <div className="text-sm">{label}</div>
-        {hint ? <div className="mt-0.5 text-2xs text-muted-foreground">{hint}</div> : null}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col gap-1">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="flex flex-col divide-y">{children}</div>
-    </section>
-  );
-}
-
-type UpdateState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; message: string };
-
-/** Windows: controlla GitHub e scarica la nuova versione; Linux: la gestisce il gestore di AppImage. */
-function UpdateControl() {
-  const [platform, setPlatform] = useState<string | null>(null);
-  const [state, setState] = useState<UpdateState>({ kind: 'idle' });
-  useEffect(() => {
-    void window.electronAPI?.platform().then(setPlatform);
-  }, []);
-
-  const check = async () => {
-    if (!window.electronAPI) return;
-    setState({ kind: 'busy' });
-    const outcome = await window.electronAPI.checkAndDownloadUpdate();
-    const message = {
-      unsupported: () => 'Gli aggiornamenti non sono gestiti da qui su questo sistema.',
-      upToDate: () => 'Hai già la versione più recente.',
-      downloaded: () =>
-        outcome.status === 'downloaded'
-          ? `Versione ${outcome.version} scaricata in ${outcome.path}. Chiudi l'app e avvia il nuovo file.`
-          : '',
-      error: () => (outcome.status === 'error' ? `Controllo non riuscito: ${outcome.message}` : ''),
-    }[outcome.status]();
-    setState({ kind: 'done', message });
-  };
-
-  if (platform === null) return null;
-  if (platform !== 'win32') {
-    return (
-      <SettingRow
-        label="Aggiornamenti"
-        hint="L'AppImage si aggiorna dal tuo gestore di AppImage (AppImageUpdate, Gear Lever, …) tramite zsync."
-      >
-        {null}
-      </SettingRow>
-    );
-  }
-  return (
-    <SettingRow
-      label="Aggiornamenti"
-      hint={state.kind === 'done' ? state.message : 'Controlla GitHub e scarica l’ultima versione nei Download.'}
-    >
-      <Button size="sm" variant="secondary" disabled={state.kind === 'busy'} onClick={() => void check()}>
-        {state.kind === 'busy' ? 'Controllo in corso…' : 'Controlla aggiornamenti'}
-      </Button>
-    </SettingRow>
-  );
-}
 
 /**
  * Scala dell'interfaccia: valori proposti più un campo libero.
@@ -200,9 +141,11 @@ function UiScaleControl({ value, onChange }: { value: number; onChange: (uiScale
  * finestra di Electron) e copre mappa e dettagli con una superficie opaca.
  * Il componente si monta solo da aperto, così lo stato locale riparte pulito.
  */
-export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsPageProps) {
+export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSection, updateStatus }: SettingsPageProps) {
   const isElectron = Boolean(window.electronAPI);
-  const [active, setActive] = useState<SectionId>('appearance');
+  const [active, setActive] = useState<SectionId>(initialSection ?? 'appearance');
+  const visibleSections = SECTIONS.filter((section) => !section.desktopOnly || isElectron);
+  const updateDot = hasPendingUpdate(updateStatus);
   const pageRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -236,7 +179,7 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsP
           <h1 className="text-base font-semibold">Impostazioni</h1>
         </div>
         <nav aria-label="Sezioni" className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
-          {SECTIONS.map((section) => (
+          {visibleSections.map((section) => (
             <button
               key={section.id}
               type="button"
@@ -251,6 +194,10 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsP
             >
               {section.icon}
               {section.label}
+              {section.id === 'updates' && updateDot ? (
+                <span aria-hidden className="size-2 rounded-full bg-primary" />
+              ) : null}
+              {section.id === 'updates' && updateDot ? <span className="sr-only">, aggiornamento disponibile</span> : null}
             </button>
           ))}
         </nav>
@@ -337,6 +284,8 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsP
             </SettingsSection>
           )}
 
+          {active === 'updates' && isElectron && <UpdatesSection status={updateStatus} />}
+
           {active === 'about' && (
             <SettingsSection title="Informazioni">
               <div className="flex items-start gap-3 py-2.5">
@@ -347,7 +296,6 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset }: SettingsP
                   <p className="mt-1 text-sm text-muted-foreground">{APP_DESCRIPTION}</p>
                 </div>
               </div>
-              {isElectron ? <UpdateControl /> : null}
             </SettingsSection>
           )}
 

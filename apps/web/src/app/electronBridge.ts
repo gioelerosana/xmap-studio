@@ -1,13 +1,44 @@
 // Tipi del ponte Electron (preload): il file è incluso dal tsconfig, quindi non serve importarlo.
+// I tipi degli aggiornamenti ricalcano quelli di apps/desktop/src/preload.ts.
+
+export type UpdateInstallMode = 'appimage' | 'portable' | 'manual';
+
+export type UpdateRelease = {
+  version: string;
+  tag: string;
+  url: string;
+  notes: string;
+  publishedAt: string | null;
+};
+
+export type UpdateStep = 'scanning' | 'downloading' | 'verifying' | 'installing';
+
+export type UpdateState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'upToDate'; latestVersion: string }
+  | { phase: 'available'; release: UpdateRelease }
+  | { phase: 'downloading'; release: UpdateRelease; step: UpdateStep; progress: number | null }
+  | { phase: 'ready'; release: UpdateRelease; path: string; downloadedBytes: number; reusedBytes: number }
+  | { phase: 'error'; message: string; release: UpdateRelease | null };
+
+export type UpdateStatus = {
+  currentVersion: string;
+  mode: UpdateInstallMode;
+  autoCheck: boolean;
+  lastCheckedAt: number | null;
+  state: UpdateState;
+};
+
 declare global {
   interface Window {
     electronAPI?: {
-      checkAndDownloadUpdate: () => Promise<
-        | { status: 'unsupported'; message: string }
-        | { status: 'upToDate'; version: string }
-        | { status: 'downloaded'; version: string; path: string }
-        | { status: 'error'; message: string }
-      >;
+      getUpdateStatus: () => Promise<UpdateStatus>;
+      checkForUpdates: () => Promise<UpdateStatus>;
+      installUpdate: () => Promise<UpdateStatus>;
+      restartToUpdate: () => void;
+      setUpdateAutoCheck: (enabled: boolean) => Promise<UpdateStatus>;
+      onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
       platform: () => Promise<string>;
       openFileDialog: () => Promise<{ path: string; name: string; bytes: Uint8Array } | null>;
       openFilePath: (filePath: string) => Promise<{ path: string; name: string; bytes: Uint8Array } | null>;
@@ -45,4 +76,3 @@ declare global {
   }
 }
 
-export {};

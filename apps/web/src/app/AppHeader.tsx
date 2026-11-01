@@ -16,6 +16,8 @@ interface AppHeaderProps {
   /** Preferenza salvata (non il tema risolto): il pulsante cicla Sistema → Chiaro → Scuro. */
   theme: ThemePreference;
   settingsOpen: boolean;
+  /** Versione nuova disponibile o pronta al riavvio: il pulsante Impostazioni mostra un pallino. */
+  updateAvailable?: boolean;
   isElectron: boolean;
   isWindowMaximized: boolean;
   menuItems: MenuItem[];
@@ -37,6 +39,7 @@ export function AppHeader({
   busy,
   theme,
   settingsOpen,
+  updateAvailable = false,
   isElectron,
   isWindowMaximized,
   menuItems,
@@ -101,14 +104,19 @@ export function AppHeader({
               <FilePlus className="size-4" />
             </IconButton>
           )}
-          <IconButton
-            size="sm"
-            active={settingsOpen}
-            onClick={onToggleSettings}
-            label="Impostazioni (Ctrl+,)"
-          >
-            <Settings className="size-4" />
-          </IconButton>
+          <span className="relative inline-flex">
+            <IconButton
+              size="sm"
+              active={settingsOpen}
+              onClick={onToggleSettings}
+              label={updateAvailable ? 'Impostazioni (Ctrl+,) – aggiornamento disponibile' : 'Impostazioni (Ctrl+,)'}
+            >
+              <Settings className="size-4" />
+            </IconButton>
+            {updateAvailable ? (
+              <span aria-hidden className="pointer-events-none absolute right-0.5 top-0.5 size-2 rounded-full bg-primary ring-2 ring-background" />
+            ) : null}
+          </span>
           <Menu items={menuItems} widthClass="w-72" trigger={
             <IconButton size="sm" label="Menu">
               <MoreVertical className="size-4" />

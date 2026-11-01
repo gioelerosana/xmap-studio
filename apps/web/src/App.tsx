@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minimize2 } from 'lucide-react';
 import { Banner, Button, Modal, ToastContainer } from '@xmap/ui-kit';
 import { AppController, DEFAULT_LAYOUT_OPTS, layoutSheets, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
@@ -12,6 +12,7 @@ import { ImportModal } from './components/ImportModal.js';
 import { EmptyState } from './components/EmptyState.js';
 import { AppMark } from './components/AppMark.js';
 import { SettingsPage } from './components/SettingsPage.js';
+import { hasPendingUpdate, useUpdateStatus } from './app/useUpdateStatus.js';
 import { SheetTabs } from './components/SheetTabs.js';
 import { useSettings } from './settings.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
@@ -49,6 +50,16 @@ export const App: React.FC = () => {
   const selection = useSelection();
   const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
   const { toasts, addToast, removeToast } = useToasts();
+  const updateStatus = useUpdateStatus();
+  // Versione già annunciata con un toast in questa sessione: il toast non si ripete a ogni controllo.
+  const announcedUpdateRef = useRef<string | null>(null);
+  useEffect(() => {
+    const state = updateStatus?.state;
+    if (state?.phase !== 'available') return;
+    if (announcedUpdateRef.current === state.release.version) return;
+    announcedUpdateRef.current = state.release.version;
+    addToast('info', `Disponibile XMap Studio ${state.release.version}: vai in Impostazioni › Aggiornamenti.`);
+  }, [updateStatus, addToast]);
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
@@ -353,6 +364,7 @@ export const App: React.FC = () => {
           busy={busy}
           theme={settings.theme}
           settingsOpen={settingsOpen}
+          updateAvailable={hasPendingUpdate(updateStatus)}
           isElectron={isElectron}
           isWindowMaximized={isWindowMaximized}
           menuItems={menuItems}
@@ -374,6 +386,7 @@ export const App: React.FC = () => {
             settings={settings}
             onUpdate={updateSettings}
             onReset={resetSettings}
+            updateStatus={updateStatus}
           />
         )}
         {!workbook ? (
