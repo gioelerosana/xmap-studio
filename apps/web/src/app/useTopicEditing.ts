@@ -18,7 +18,6 @@ interface TopicEditingOptions {
   currentLayout: Layout | null;
   editing: MapEditing | null;
   setEditing: Dispatch<SetStateAction<MapEditing | null>>;
-  setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
   /** Apre l'editor LaTeX del blocco (blocchi equazione, che non hanno un titolo modificabile in place). */
   openLatex: (id: string) => void;
 }
@@ -35,7 +34,6 @@ export function useTopicEditing({
   currentLayout,
   editing,
   setEditing,
-  setCollapsedIds,
   openLatex,
 }: TopicEditingOptions) {
   const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
@@ -48,13 +46,6 @@ export function useTopicEditing({
           kind === 'child'
             ? controller.addTopic(anchorId, 'Nuovo blocco')
             : controller.addSiblingTopic(anchorId, 'Nuovo blocco', kind);
-        // Il genitore collassato va espanso (per i fratelli il genitore non cambia, ma è innocuo).
-        setCollapsedIds((prev) => {
-          if (!prev.has(anchorId)) return prev;
-          const next = new Set(prev);
-          next.delete(anchorId);
-          return next;
-        });
         selectSingle(newId);
         setEditing({ id: newId, mode: 'all', isNew: true });
         refreshState();
@@ -62,34 +53,35 @@ export function useTopicEditing({
         addToast('error', err.message);
       }
     },
-    [controller, refreshState, addToast, selectSingle, setCollapsedIds, setEditing]
+    [controller, refreshState, addToast, selectSingle, setEditing]
   );
 
   const handleAddChild = useCallback(
     (parentId: string) => {
       try {
         const { newId } = controller.addTopic(parentId, 'Nuovo blocco');
-        setCollapsedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(parentId);
-          return next;
-        });
         selectSingle(newId);
         refreshState();
       } catch (err: any) {
         addToast('error', err.message);
       }
     },
-    [controller, refreshState, addToast, selectSingle, setCollapsedIds]
+    [controller, refreshState, addToast, selectSingle]
   );
 
-  const handleToggleCollapse = useCallback((topicId: string) => {
-    setCollapsedIds((prev) => {
-      const next = new Set(prev);
-      next.has(topicId) ? next.delete(topicId) : next.add(topicId);
-      return next;
-    });
-  }, [setCollapsedIds]);
+  // Piega/apre nel modello: la vista deriva lo stato dal DTO, quindi va aggiornata dopo il comando.
+  const handleToggleCollapse = useCallback(
+    (topicId: string) => {
+      try {
+        const folded = allTopics.some((t) => t.id === topicId && t.folded);
+        controller.setTopicFolded(topicId, !folded);
+        refreshState();
+      } catch (err: unknown) {
+        addToast('error', err instanceof Error ? err.message : String(err));
+      }
+    },
+    [controller, refreshState, addToast, allTopics]
+  );
 
   const handleMove = useCallback(
     (id: string, targetId: string, placement: DropPlacement) => {

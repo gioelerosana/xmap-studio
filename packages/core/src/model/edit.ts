@@ -20,6 +20,9 @@ import {
 
 export { setTitleRuns } from './style.js';
 
+/** Valore di `topic.branch` per un ramo chiuso (il solo che XMind scrive). */
+const FOLDED_BRANCH = 'folded';
+
 export function setTitle(topic: Topic, title: string): void {
   topic.title = title;
   delete topic.titleUnedited;
@@ -222,6 +225,23 @@ export function setHref(topic: Topic, href?: string | null): void {
     topic.href = `xmind:${clean}`;
   } else {
     topic.href = clean;
+  }
+}
+
+/** Ramo chiuso come lo scrive XMind: `branch: "folded"`; assente = aperto. */
+export function isTopicFolded(topic: Topic): boolean {
+  return topic.branch === FOLDED_BRANCH;
+}
+
+/**
+ * Piega o apre un ramo tocando solo `branch`. Aprire rimuove il campo solo se
+ * vale `"folded"`: un valore sconosciuto resta com'è.
+ */
+export function setTopicFolded(topic: Topic, folded: boolean): void {
+  if (folded) {
+    topic.branch = FOLDED_BRANCH;
+  } else if (isTopicFolded(topic)) {
+    delete topic.branch;
   }
 }
 

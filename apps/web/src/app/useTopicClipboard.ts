@@ -32,7 +32,6 @@ interface TopicClipboardOptions {
   refreshState: () => void;
   addToast: AddToast;
   selection: SelectionState;
-  setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
   setEditing: Dispatch<SetStateAction<MapEditing | null>>;
   insertImage: (file: Blob, source: ImageInsertSource) => Promise<void>;
 }
@@ -46,7 +45,6 @@ export function useTopicClipboard({
   refreshState,
   addToast,
   selection,
-  setCollapsedIds,
   setEditing,
   insertImage,
 }: TopicClipboardOptions) {
@@ -146,12 +144,6 @@ export function useTopicClipboard({
       if (text && text.includes('"xmapStudioClipboard"')) {
         try {
           const { newId } = controller.pasteTopic(targetId, text);
-          setCollapsedIds((prev) => {
-            if (!prev.has(targetId)) return prev;
-            const next = new Set(prev);
-            next.delete(targetId);
-            return next;
-          });
           selectSingle(newId);
           refreshState();
           addToast('success', 'Blocco incollato');
@@ -167,12 +159,6 @@ export function useTopicClipboard({
       if (clean.length > 0) {
         try {
           const { newId } = controller.addTopic(targetId, clean);
-          setCollapsedIds((prev) => {
-            if (!prev.has(targetId)) return prev;
-            const next = new Set(prev);
-            next.delete(targetId);
-            return next;
-          });
           selectSingle(newId);
           refreshState();
           addToast('success', 'Nuovo blocco creato dal testo');
@@ -182,7 +168,7 @@ export function useTopicClipboard({
         }
       }
     },
-    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, setCollapsedIds, insertImage]
+    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, insertImage]
   );
 
   return {

@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useEffect } from 'react';
 import { isDialogOpen } from './dialogOpen.js';
 import type { AppController, TopicView } from '@xmap/core';
 import type { MapEditing } from '../components/MapView.js';
@@ -15,7 +15,6 @@ interface ClipboardEventsOptions {
   selection: SelectionState;
   refreshState: () => void;
   addToast: AddToast;
-  setCollapsedIds: Dispatch<SetStateAction<Set<string>>>;
   inMemoryClipboard: { current: string | null };
   insertImage: (file: Blob, source: ImageInsertSource) => Promise<void>;
   handleCopyTopic: (topicId?: string) => void;
@@ -34,7 +33,6 @@ export function useClipboardEvents({
   selection,
   refreshState,
   addToast,
-  setCollapsedIds,
   inMemoryClipboard,
   insertImage,
   handleCopyTopic,
@@ -78,12 +76,6 @@ export function useClipboardEvents({
         e.preventDefault();
         try {
           const { newId } = controller.pasteTopic(targetParentId, text);
-          setCollapsedIds((prev) => {
-            if (!prev.has(targetParentId)) return prev;
-            const next = new Set(prev);
-            next.delete(targetParentId);
-            return next;
-          });
           selectSingle(newId);
           refreshState();
           addToast('success', 'Blocco incollato');
@@ -100,12 +92,6 @@ export function useClipboardEvents({
         e.preventDefault();
         try {
           const { newId } = controller.addTopic(selectedTopic.id, clean);
-          setCollapsedIds((prev) => {
-            if (!prev.has(selectedTopic.id)) return prev;
-            const next = new Set(prev);
-            next.delete(selectedTopic.id);
-            return next;
-          });
           selectSingle(newId);
           refreshState();
           addToast('success', 'Nuovo blocco creato dal testo');
@@ -178,5 +164,5 @@ export function useClipboardEvents({
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, setCollapsedIds, inMemoryClipboard]);
+  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, inMemoryClipboard]);
 }

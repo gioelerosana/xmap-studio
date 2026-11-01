@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minimize2 } from 'lucide-react';
 import { Banner, Button, Modal, ToastContainer } from '@xmap/ui-kit';
-import { AppController, DEFAULT_LAYOUT_OPTS, layoutSheets, loadMathJax, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
+import { AppController, DEFAULT_LAYOUT_OPTS, layoutBoundaries, layoutSheets, loadMathJax, type BoundaryFrame, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
 import { MapView, type MapEditing } from './components/MapView.js';
 import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
 import { EmptyState } from './components/EmptyState.js';
@@ -74,7 +74,6 @@ export const App: React.FC = () => {
     addToast('info', `Disponibile XMap Studio ${state.release.version}: vai in Impostazioni › Aggiornamenti.`);
   }, [updateStatus, addToast]);
 
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
   const [busy, setBusy] = useState(false);
 
@@ -103,7 +102,6 @@ export const App: React.FC = () => {
       setFileHandle(handle);
       setActiveSheetIndex(0);
       setDocumentKey((k) => k + 1);
-      setCollapsedIds(new Set());
       selectSingle(undefined);
     },
     [selectSingle]
@@ -126,6 +124,8 @@ export const App: React.FC = () => {
 
   const currentSheet = workbook?.sheets[activeSheetIndex];
   const allTopics = useMemo(() => currentSheet?.topics || [], [currentSheet]);
+  // Rami chiusi = `branch: "folded"` nel modello: la vista ne deriva lo stato, così undo, redo, cambio di foglio e riapertura restano coerenti.
+  const collapsedIds = useMemo(() => new Set(allTopics.filter((t) => t.folded).map((t) => t.id)), [allTopics]);
   const selectedTopic = useMemo(
     () => allTopics.find((t) => t.id === selectedTopicId) || null,
     [allTopics, selectedTopicId]
@@ -142,6 +142,12 @@ export const App: React.FC = () => {
     if (!currentSheet) return null;
     return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: mapStructure });
   }, [currentSheet, collapsedIds, mapStructure, mathReady]);
+
+  // Cornici del foglio: stesso layout della mappa, così seguono le posizioni dei blocchi (rami chiusi compresi).
+  const boundaryFrames = useMemo<BoundaryFrame[]>(
+    () => (currentLayout && currentSheet ? layoutBoundaries(currentLayout, [currentSheet]) : []),
+    [currentLayout, currentSheet]
+  );
 
   // Per la stampa la mappa si può ridisporre ad albero compatto anche se a schermo è un Logic Chart.
   const printCompactLayout = useMemo<Layout | null>(() => {
@@ -244,7 +250,6 @@ export const App: React.FC = () => {
     currentLayout,
     editing,
     setEditing,
-    setCollapsedIds,
     openLatex,
   });
 
@@ -266,7 +271,6 @@ export const App: React.FC = () => {
     refreshState,
     addToast,
     selection,
-    setCollapsedIds,
   });
 
   const {
@@ -284,7 +288,6 @@ export const App: React.FC = () => {
     refreshState,
     addToast,
     selection,
-    setCollapsedIds,
     setEditing,
     insertImage,
   });
@@ -297,7 +300,6 @@ export const App: React.FC = () => {
     selection,
     refreshState,
     addToast,
-    setCollapsedIds,
     inMemoryClipboard,
     insertImage,
     handleCopyTopic,
@@ -450,6 +452,7 @@ export const App: React.FC = () => {
               )}
               <MapView
                 layout={currentLayout}
+                boundaries={boundaryFrames}
                 viewKey={`${documentKey}:${activeSheetIndex}`}
                 selectedTopicId={selectedTopicId}
                 selectedTopicIds={selectedTopicIds}

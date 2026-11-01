@@ -45,6 +45,8 @@ import {
   setHref,
   setLabels,
   setNotes,
+  setTopicFolded,
+  isTopicFolded,
   setTopicPosition,
   setTopicCustomWidth,
   setTopicImageSize,
@@ -507,9 +509,28 @@ export class AppController {
     if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
 
     const newId = addChild(parent, title);
+    // Il figlio nuovo deve vedersi: un ramo chiuso si apre nello stesso passo di undo.
+    setTopicFolded(parent, false);
     wb.pushHistory();
     this.lastCreated = { id: newId, wb, pos: wb.pos };
     return { dto: wb.toDto(), newId };
+  }
+
+  /**
+   * Piega o apre un ramo (`branch: "folded"`). È una modifica del file come le
+   * altre: un passo di undo proprio e il file risulta modificato. Fonderla con il
+   * passo precedente riscriverebbe lo snapshot d'apertura e renderebbe la piega
+   * impossibile da annullare.
+   */
+  public setTopicFolded(topicId: string, folded: boolean): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+
+    if (isTopicFolded(topic) === folded) return wb.toDto();
+    setTopicFolded(topic, folded);
+    wb.pushHistory();
+    return wb.toDto();
   }
 
   /**
@@ -644,6 +665,7 @@ export class AppController {
       parent.children.attached = [];
     }
     parent.children.attached.push(cloned);
+    setTopicFolded(parent, false);
 
     wb.pushHistory();
     this.lastCreated = { id: cloned.id!, wb, pos: wb.pos };
@@ -1036,6 +1058,7 @@ export class AppController {
     const resourceName = this.storeImageResource(wb, bytes, mimeType);
 
     const { newId } = addImageChild(parent, resourceName, size, opts);
+    setTopicFolded(parent, false);
     wb.pushHistory();
     this.lastCreated = { id: newId, wb, pos: wb.pos };
     return { dto: wb.toDto(), newId };

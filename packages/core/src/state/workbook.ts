@@ -3,7 +3,8 @@ import { readTextStyle, readTitleRuns } from '../model/style.js';
 import { readSheetTheme } from '../model/theme.js';
 import { CODE_INVALID_INPUT, XmapError } from '../errors.js';
 import { RawArchive } from '../archive/types.js';
-import { CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
+import { isTopicFolded } from '../model/edit.js';
+import { Boundary, CHILD_GROUPS, Sheet, Topic } from '../model/types.js';
 import {
   topicCustomWidth,
   topicFillColor,
@@ -220,6 +221,29 @@ export function cloneSheets(sheets: Sheet[]): Sheet[] {
   return JSON.parse(JSON.stringify(sheets));
 }
 
+/** Oggetto JSON (non `null`): restringe `unknown` senza cast. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Legge una proprietà di `style.properties` solo se è una stringa. */
+function styleString(style: unknown, key: string): string | undefined {
+  if (!isRecord(style) || !isRecord(style.properties)) return undefined;
+  const value = style.properties[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function boundaryView(boundary: Boundary): BoundaryView {
+  const title = typeof boundary.title === 'string' ? boundary.title.trim() : '';
+  return {
+    id: boundary.id || '',
+    range: boundary.range || '',
+    title: title.length > 0 ? title : undefined,
+    fillColor: styleString(boundary.style, 'svg:fill'),
+    lineColor: styleString(boundary.style, 'line-color'),
+  };
+}
+
 function collectTopicViews(
   topic: Topic,
   sheetIndex: number,
@@ -257,10 +281,7 @@ function collectTopicViews(
     }
   }
 
-  const boundaries: BoundaryView[] = (topic.boundaries || []).map((b) => ({
-    id: b.id || '',
-    range: b.range || '',
-  }));
+  const boundaries: BoundaryView[] = (topic.boundaries || []).map(boundaryView);
 
   const summaries: SummaryView[] = (topic.summaries || []).map((s) => ({
     id: s.topicId || s.id || '',
@@ -302,6 +323,7 @@ function collectTopicViews(
     href: topicHref(topic),
     path: currentPath,
     childCount,
+    folded: isTopicFolded(topic),
     boundaries,
     summaries,
     task,

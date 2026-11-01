@@ -83,7 +83,7 @@ e le forme.
 | `href` | web `http(s)://…`/`mailto:…`, file `file:…`, topic `xmind:#<topicId>` |
 | `markers` | `[{ markerId }]` |
 | `position` | `{ x, y }` (topic staccati) |
-| `branch` | `"folded"` o assente |
+| `branch` | `"folded"` o assente. Il DTO lo legge in `folded`; chiudere/aprire un ramo lo scrive/rimuove (`setTopicFolded`), senza toccare gli altri campi. Un valore sconosciuto non viene toccato. |
 | `boundaries` | `[{ id, class:"boundary", range:"(start,end)" \| "master", title?, attributedTitle?, style? }]` |
 | `summaries` | `[{ id, class:"summary", range:"(start,end)", topicId, style? }]` **+** topic in `children.summary` |
 | `style` | `{ id, properties:{ "svg:fill"?, "svg:opacity"?, "fill-pattern"?, "line-color/-width/-pattern"?, "border-line-*"?, "shape-class"?, "line-class"?, "arrow-*-class"?, "fo:*"? } }` |
@@ -137,6 +137,12 @@ se mancano): tutto il resto del tema resta com'è.
 progress, startDate, dueDate, assignees, dependencies, creator}`),
 `org.xmind.ui.extended-style`, `org.xmind.ui.working-day-settings`.
 Non esistono `org.xmind.ui.attachment` né `org.xmind.ui.equation`.
+
+**Cornici.** `layoutBoundaries` (`layout/boundary.ts`) calcola il rettangolo di
+ogni boundary dalle coordinate del layout: racchiude i blocchi visibili del
+range (o del ramo, per `master`), quindi un ramo chiuso non ha blocchi nascosti
+nella cornice. Il range non valido o oltre i figli `attached` è ignorato, senza
+errore. Il layout non riserva spazio alle cornici (XMind invece lo fa).
 
 **Struttura (Fase 3).** `sheet.relationships[]` riferisce per id (`end1Id` =
 sorgente, `end2Id` = destinazione); su `Topic` `boundaries[]` e `summaries[]`
