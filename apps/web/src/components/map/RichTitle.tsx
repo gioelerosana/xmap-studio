@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
+import { useMathJaxReady } from '../../mathReady.js';
 import {
   inlineMathFontSize,
   splitInlineMath,
@@ -76,53 +77,26 @@ const mathCacheKey = ({ math, display, fontSizePx = 13 }: InlineMathProps) =>
 
 /**
  * Rende una singola formula MathJax in linea o display.
- * Il rendering è memoizzato e asincrono se non già presente in cache.
- * Il `key` rimonta il componente a ogni cambio di formula: lo stato `rendered`
- * nasce da `math`, senza il rimontaggio dopo una modifica resterebbe la formula vecchia.
+ * Il rendering è memoizzato (cache per formula, dimensione e modo).
  */
-const InlineMath: React.FC<InlineMathProps> = (props) => (
-  <InlineMathView key={mathCacheKey(props)} {...props} />
-);
-
-const InlineMathView: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 }) => {
+const InlineMath: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 }) => {
   const cacheKey = mathCacheKey({ math, display, fontSizePx });
-
-  const [rendered, setRendered] = useState<{ svg: string; error: string | null } | null>(() => {
+  // Prima che MathJax sia caricato si mostra il sorgente; al caricamento il hook ridisegna.
+  const mathReady = useMathJaxReady();
+  const rendered = useMemo(() => {
+    if (!mathReady) return null;
     const cached = inlineSvgCache.get(cacheKey);
     if (cached) return cached;
+    let entry: { svg: string; error: string | null };
     try {
-      // Se già presente nella cache sincrona del core (es. calcolata in EstimatedMetrics)
       const res = renderLatexToSvg(math, fontSizePx, display ?? false);
-      const entry = { svg: res.svg, error: res.error };
-      rememberInlineSvg(cacheKey, entry);
-      return entry;
-    } catch {
-      return null;
+      entry = { svg: res.svg, error: res.error };
+    } catch (err: unknown) {
+      entry = { svg: '', error: err instanceof Error ? err.message : 'Errore LaTeX' };
     }
-  });
-
-  useEffect(() => {
-    if (rendered) return;
-
-    let active = true;
-    const timer = setTimeout(() => {
-      try {
-        const res = renderLatexToSvg(math, fontSizePx, display ?? false);
-        const entry = { svg: res.svg, error: res.error };
-        rememberInlineSvg(cacheKey, entry);
-        if (active) setRendered(entry);
-      } catch (err: any) {
-        const entry = { svg: '', error: err?.message || 'Errore LaTeX' };
-        rememberInlineSvg(cacheKey, entry);
-        if (active) setRendered(entry);
-      }
-    }, 0);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [cacheKey, math, display, fontSizePx, rendered]);
+    rememberInlineSvg(cacheKey, entry);
+    return entry;
+  }, [mathReady, cacheKey, math, display, fontSizePx]);
 
   const rawSource = display ? `$$${math}$$` : `$${math}$`;
 
