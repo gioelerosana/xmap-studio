@@ -48,6 +48,12 @@ usare offline.
 Per il desktop scarica l'**AppImage** (Linux) o l'**exe portable** (Windows) dalle
 [Release](https://github.com/gioelerosana/xmap-studio/releases).
 
+L'app si aggiorna da **Impostazioni › Aggiornamenti**: controlla GitHub all'avvio
+e ogni 6 ore (si può disattivare; la richiesta è l'unico traffico verso l'esterno)
+e segnala la nuova versione. L'AppImage si aggiorna da sé scaricando solo le
+parti cambiate (zsync); su Windows la nuova versione si scarica accanto all'exe e
+si avvia al riavvio.
+
 Su Arch Linux:
 
 ```bash

@@ -11,7 +11,8 @@
 # Produce due artefatti standalone, allegati alla GitHub Release del tag (nei
 # lanci manuali restano scaricabili dalla pagina del run):
 #   - XMap-Studio-<versione>-portable-x64.exe   Windows, eseguibile portable
-#   - XMap-Studio-<versione>-x86_64.AppImage    Linux, AppImage
+#   - XMap-Studio-<versione>-x86_64.AppImage    Linux, AppImage, con il suo
+#     `.zsync` per l'aggiornamento differenziale (apps/desktop/scripts/appimage-zsync.mjs)
 # Il pacchetto Arch non si compila qui: vedi packaging/arch/README.md.
 name: Release
 
@@ -73,15 +74,27 @@ jobs:
           - target: windows
             script: dist:win
             pattern: XMap-Studio-*-portable-x64.exe
+            extra: ''
           - target: linux
             script: dist:linux
             pattern: XMap-Studio-*-x86_64.AppImage
+            extra: XMap-Studio-*-x86_64.AppImage.zsync
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
       - uses: ./.github/actions/setup
       - run: pnpm ${{ matrix.script }}
+      # Update information nell'AppImage e file .zsync: va fatto prima del
+      # checksum, perché modifica l'AppImage.
+      - name: zsync (AppImage)
+        if: matrix.target == 'linux'
+        working-directory: apps/desktop/release
+        run: |
+          apt-get update -qq && apt-get install -y -qq zsync
+          for file in ${{ matrix.pattern }}; do
+            node ../scripts/appimage-zsync.mjs "$file" "$GITHUB_REPOSITORY"
+          done
       - name: Checksum
         working-directory: apps/desktop/release
         run: sha256sum ${{ matrix.pattern }} > SHA256SUMS-${{ matrix.target }}.txt
@@ -90,6 +103,7 @@ jobs:
           name: xmap-studio-${{ matrix.target }}
           path: |
             apps/desktop/release/${{ matrix.pattern }}
+            ${{ matrix.extra && format('apps/desktop/release/{0}', matrix.extra) || '' }}
             apps/desktop/release/SHA256SUMS-${{ matrix.target }}.txt
           if-no-files-found: error
 
