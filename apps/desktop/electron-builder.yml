@@ -30,6 +30,15 @@ nodeGypRebuild: false
 
 compression: normal
 forceCodeSigning: false
+
+# AppImage con il runtime statico di AppImage/type2-runtime invece di quello FUSE 2
+# legacy: lo squashfs è compresso con zstd (con `compression: normal`) invece che
+# con gzip, e all'avvio il binario Electron (≈180 MB) si legge dal mount FUSE in
+# circa metà tempo; misurato: finestra pronta ~30% prima. Il runtime è statico,
+# quindi sull'host basta `fusermount` o `fusermount3` (FUSE 2 o 3), senza libfuse2.
+# Ha la sezione ELF `.upd_info` usata da scripts/appimage-zsync.mjs.
+toolsets:
+  appimage: "1.0.3"
 publish: null
 
 fileAssociations:
