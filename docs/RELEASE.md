@@ -184,8 +184,12 @@ done
 magick $B/icons/{16x16,32x32,48x48,64x64,128x128,256x256}.png $B/icon.ico
 ```
 
-L'AppImage richiede FUSE 2 sull'host (limite di AppImage); altrimenti si avvia
-con `--appimage-extract-and-run`. Il lancio aggiunge da sé `--no-sandbox` dove
+L'AppImage usa il runtime statico di AppImage (`toolsets.appimage` in
+`electron-builder.yml`) con lo squashfs compresso in zstd: sull'host serve FUSE
+(`fusermount` o `fusermount3`, versione 2 o 3), non `libfuse2`; senza FUSE si
+avvia con `--appimage-extract-and-run`. Rispetto al runtime FUSE 2 legacy con
+gzip il binario Electron si legge dal mount in circa metà tempo, e la finestra
+è pronta ~30% prima. Il lancio aggiunge da sé `--no-sandbox` dove
 i user namespace non privilegiati non sono disponibili.
 
 ## Aggiornamenti automatici
