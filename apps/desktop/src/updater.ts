@@ -13,6 +13,7 @@
  * Si scarica solo da asset della release del repository, mai da URL arbitrari.
  */
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -477,9 +478,61 @@ function restartToUpdate(): void {
  */
 export function relaunchIfRequested(): boolean {
   if (state.phase !== 'ready' || !relaunchPath || !restartRequested) return false;
-  app.relaunch({ execPath: relaunchPath, args: [] });
+  if (installMode() === 'appimage') relaunchAppImage(relaunchPath);
+  else app.relaunch({ execPath: relaunchPath, args: [] });
   app.quit();
   return true;
+}
+
+/**
+ * Variabili che il runtime AppImage e l'AppRun impostano per l'istanza in uso:
+ * puntano al mount FUSE della vecchia versione, che sparisce alla chiusura.
+ */
+const APPIMAGE_ENV = ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD'];
+const APPIMAGE_PATH_LISTS = ['PATH', 'LD_LIBRARY_PATH', 'XDG_DATA_DIRS', 'GSETTINGS_SCHEMA_DIR'];
+
+/**
+ * Lo script chiude i descrittori ereditati oltre stdin/stdout/stderr, aspetta
+ * (al massimo 60 s) che il vecchio main process esca e poi avvia l'AppImage.
+ * Senza la chiusura la nuova istanza erediterebbe la pipe keepalive del vecchio
+ * runtime e i file aperti nel vecchio mount, tenendolo montato finché resta aperta.
+ * Bash c'è sempre: lo richiede già l'AppRun di electron-builder.
+ */
+const RELAUNCH_SCRIPT = [
+  'for fd in /proc/$$/fd/*; do fd=${fd##*/}; [ "$fd" -gt 2 ] 2>/dev/null && eval "exec $fd>&-"; done',
+  'i=0; while kill -0 "$1" 2>/dev/null && [ "$i" -lt 300 ]; do sleep 0.2; i=$((i+1)); done',
+  'exec "$2"',
+].join('\n');
+
+/**
+ * `app.relaunch` non funziona da un'AppImage: il processo `--type=relauncher` di
+ * Electron gira dentro il mount FUSE della vecchia versione e muore quando il
+ * runtime lo smonta, prima di avviare quella nuova. Si avvia quindi un processo
+ * staccato, fuori dal mount e con l'ambiente ripulito, che aspetta la chiusura
+ * di questa istanza (il lock d'istanza singola e il profilo devono essere liberi).
+ */
+function relaunchAppImage(target: string): void {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const mount = process.env.APPDIR;
+  APPIMAGE_ENV.forEach((name) => delete env[name]);
+  if (mount) {
+    APPIMAGE_PATH_LISTS.forEach((name) => {
+      const value = env[name];
+      if (value) env[name] = value.split(':').filter((entry) => entry !== '' && !entry.startsWith(mount)).join(':');
+    });
+  }
+  try {
+    const child = spawn('bash', ['-c', RELAUNCH_SCRIPT, 'xmap-relaunch', String(process.pid), target], {
+      detached: true,
+      stdio: 'ignore',
+      env,
+      cwd: path.dirname(target),
+    });
+    child.on('error', (error) => console.warn('[xmap] riavvio dopo l\'aggiornamento non riuscito:', error));
+    child.unref();
+  } catch (error: unknown) {
+    console.warn('[xmap] riavvio dopo l\'aggiornamento non riuscito:', error);
+  }
 }
 
 export function registerUpdater(): void {
