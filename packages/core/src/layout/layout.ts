@@ -1,5 +1,14 @@
 import { relationshipGeometry } from './relationship.js';
-import { SheetDto, SheetTheme, TextStyle, ThemeLevel, ThemeLevelStyle, TitleRun, TopicView } from '../state/types.js';
+import {
+  SheetDto,
+  SheetTheme,
+  SummaryView,
+  TextStyle,
+  ThemeLevel,
+  ThemeLevelStyle,
+  TitleRun,
+  TopicView,
+} from '../state/types.js';
 import { onMathJaxReady, renderLatexToSvg } from '../latex/mathjax.js';
 import { splitInlineMath } from '../latex/inline.js';
 import { inlineMathFontSize, titleBaseFontPx, TITLE_LEADING_RATIO } from '../latex/size.js';
@@ -35,8 +44,7 @@ let textMeasurer: TextMeasurer | null = null;
  */
 export function setTextMeasurer(measurer: TextMeasurer | null): void {
   textMeasurer = measurer;
-  // Le dimensioni in cache valgono solo per la misura con cui sono state calcolate.
-  nodeSizeCache.clear();
+  invalidateSizeCaches();
 }
 
 /** Margine (px) sotto la larghezza utile: il browser arrotonda i sub-pixel, meglio andare a capo un po' prima. */
@@ -344,8 +352,22 @@ export interface NodeSizeInput {
  */
 const nodeSizeCache = new Map<string, { w: number; h: number }>();
 const NODE_SIZE_CACHE_MAX = 20000;
+/**
+ * Ultima misura di ogni blocco per id, con i campi da cui dipende. A ogni modifica
+ * il layout rimisura tutta la mappa: confrontare una decina di campi costa molto
+ * meno che costruire e cercare la chiave JSON di `nodeSizeCache`, che resta come
+ * secondo livello (blocchi nuovi, undo, blocchi uguali con id diversi).
+ */
+const sizeById = new Map<string, { inputs: SizeInputs; size: Size }>();
+
+/** Svuota le dimensioni calcolate con una misura del testo ormai superata. */
+function invalidateSizeCaches(): void {
+  nodeSizeCache.clear();
+  sizeById.clear();
+}
+
 // Prima che MathJax sia caricato le formule si misurano come sorgente: dopo, quelle misure non valgono più.
-onMathJaxReady(() => nodeSizeCache.clear());
+onMathJaxReady(invalidateSizeCaches);
 
 function nodeSizeKey(node: NodeSizeInput, overrideWidth: number | null | undefined): string {
   return JSON.stringify([
@@ -491,14 +513,104 @@ function computeNodeSize(
   return { w: Math.round(w), h: Math.round(h) };
 }
 
+/** Campi di misura di un blocco, copiati al momento della misura (i conteggi al posto degli array). */
+interface SizeInputs {
+  depth: number;
+  kind: string | undefined;
+  latex: string | undefined;
+  title: string | undefined;
+  displayTitle: string | undefined;
+  textStyle: TextStyle | undefined;
+  titleRuns: TitleRun[] | undefined;
+  fontFamily: string | undefined;
+  hasNotes: boolean | undefined;
+  markerCount: number;
+  labelCount: number;
+  imageW: number | undefined;
+  imageH: number | undefined;
+  customWidth: number | undefined;
+}
+
+function sizeInputsOf(node: NodeSizeInput): SizeInputs {
+  return {
+    depth: node.depth,
+    kind: node.kind,
+    latex: node.latex,
+    title: node.title,
+    displayTitle: node.displayTitle,
+    textStyle: node.textStyle,
+    titleRuns: node.titleRuns,
+    fontFamily: node.fontFamily,
+    hasNotes: node.hasNotes,
+    markerCount: node.markers?.length ?? 0,
+    labelCount: node.labels?.length ?? 0,
+    imageW: node.imageW,
+    imageH: node.imageH,
+    customWidth: node.customWidth,
+  };
+}
+
+/** Stile uguale campo per campo; i campi sono quelli di `TextStyle` e vanno aggiornati con lui. */
+function sameTextStyle(a: TextStyle | undefined, b: TextStyle | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return (
+    a.bold === b.bold &&
+    a.italic === b.italic &&
+    a.underline === b.underline &&
+    a.strikethrough === b.strikethrough &&
+    a.color === b.color &&
+    a.fontSizePx === b.fontSizePx
+  );
+}
+
+function sameTitleRuns(a: TitleRun[] | undefined, b: TitleRun[] | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].text !== b[i].text || !sameTextStyle(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+function sameSizeInputs(a: SizeInputs, node: NodeSizeInput): boolean {
+  return (
+    a.title === node.title &&
+    a.displayTitle === node.displayTitle &&
+    a.depth === node.depth &&
+    a.kind === node.kind &&
+    a.latex === node.latex &&
+    a.fontFamily === node.fontFamily &&
+    a.hasNotes === node.hasNotes &&
+    a.markerCount === (node.markers?.length ?? 0) &&
+    a.labelCount === (node.labels?.length ?? 0) &&
+    a.imageW === node.imageW &&
+    a.imageH === node.imageH &&
+    a.customWidth === node.customWidth &&
+    sameTextStyle(a.textStyle, node.textStyle) &&
+    sameTitleRuns(a.titleRuns, node.titleRuns)
+  );
+}
+
+/** Misura di un blocco della mappa: prima per id (campi invariati), poi per chiave di contenuto. */
+function measureMapNode(node: MapNode): Size {
+  const cached = sizeById.get(node.id);
+  if (cached !== undefined && sameSizeInputs(cached.inputs, node)) return cached.size;
+  const size = estimateNodeSize(node);
+  if (sizeById.size >= NODE_SIZE_CACHE_MAX) sizeById.clear();
+  sizeById.set(node.id, { inputs: sizeInputsOf(node), size });
+  return size;
+}
+
 export class EstimatedMetrics implements NodeMetrics {
   /** Ogni blocco si misura più volte per layout (dimensioni, posizionamento): una sola stima per nodo. */
-  private readonly measured = new WeakMap<MapNode, { w: number; h: number }>();
+  private readonly measured = new WeakMap<MapNode, Size>();
 
-  measure(node: MapNode): { w: number; h: number } {
+  /** Il risultato è condiviso con le misure successive: non va mutato. */
+  measure(node: MapNode): Size {
     const hit = this.measured.get(node);
     if (hit) return hit;
-    const size = estimateNodeSize(node);
+    const size = measureMapNode(node);
     this.measured.set(node, size);
     return size;
   }
@@ -601,6 +713,20 @@ function withThemeText(own: TextStyle | undefined, level: ThemeLevelStyle | unde
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
+/**
+ * Sommari del topic con l'intervallo dei figli dichiarato nel file. Senza descrittore
+ * valido (o con id ripetuto, dove vince il primo) il sommario abbraccia l'intera colonna.
+ */
+function summariesOf(declared: SummaryView[], summaryTopics: MapNode[], last: number): MapSummary[] {
+  // `Map` tiene l'ultimo valore per chiave: rovesciando le voci vince il primo, come `find`.
+  const ranges = new Map(declared.map((s): [string, string] => [s.id, s.range]).reverse());
+  return summaryTopics.map((node) => {
+    const parsed = parseRange(ranges.get(node.id));
+    const [start, end] = parsed ? [Math.min(parsed[0], last), Math.min(parsed[1], last)] : [0, last];
+    return { start, end, node };
+  });
+}
+
 function buildNodeRecursive(
   topic: TopicView,
   childrenMap: Map<string, TopicView[]>,
@@ -631,11 +757,8 @@ function buildNodeRecursive(
 
   // Senza descrittore valido il sommario abbraccia l'intera colonna.
   const last = Math.max(children.length - 1, 0);
-  const summaries: MapSummary[] = summaryTopics.map((node) => {
-    const parsed = parseRange(topic.summaries.find((s) => s.id === node.id)?.range);
-    const [start, end] = parsed ? [Math.min(parsed[0], last), Math.min(parsed[1], last)] : [0, last];
-    return { start, end, node };
-  });
+  const summaries: MapSummary[] =
+    summaryTopics.length === 0 ? [] : summariesOf(topic.summaries, summaryTopics, last);
 
   const effectiveLatex = topic.latex;
 

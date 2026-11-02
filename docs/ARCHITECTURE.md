@@ -106,9 +106,13 @@ Per contenerle:
 - la cronologia undo/redo tiene gli snapshot come stringhe JSON (una sola
   serializzazione per modifica) e una modifica senza cambiamenti non crea un
   passo; lo stato salvato si riconosce da una revisione, non dalla posizione;
-- il layout tiene in cache le dimensioni dei blocchi per contenuto (titolo,
-  stile, larghezza…): a ogni modifica si rimisurano solo i blocchi cambiati; la
-  cache si svuota quando la UI installa una nuova misura del testo;
+- il layout tiene in cache le dimensioni dei blocchi su due livelli: per id del
+  blocco, confrontando direttamente i campi che ne determinano la misura (titolo,
+  stile, font del tema, larghezza…), e per contenuto, con una chiave JSON (blocchi
+  nuovi, undo). A ogni modifica si rimisurano solo i blocchi cambiati; le cache si
+  svuotano quando la UI installa una nuova misura del testo o arriva MathJax;
+- il `TopicView` porta solo i campi che la UI legge: niente percorso dei titoli
+  né campi calcolati per nessuno (costavano un array e una regex per blocco);
 - la mappa si calcola dal `SheetDto` già in stato, senza ricostruire il DTO;
 - `NodeCard` e `MapEdges` sono memoizzati: selezione, editing e ridimensionamento
   ridisegnano solo i blocchi che cambiano; le immagini si codificano in base64
