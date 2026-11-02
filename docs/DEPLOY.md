@@ -54,6 +54,8 @@ Due strade, entrambe senza toccare il codice:
   - Build command: `pnpm install --frozen-lockfile && pnpm build:web`
   - Deploy command: `npx wrangler deploy` (default) oppure `npx wrangler versions upload`.
   - Branch di produzione: `main`. Nessun segreto su GitHub.
+  - Versione di Node: la fissa `.node-version` nella radice (24, come la CI). Senza,
+    l'immagine di build può usare Node 18, su cui TypeScript 7 e Vite 8 non partono.
   - Per le PR, la configurazione richiede il blocco `"previews": {}` in `wrangler.jsonc`.
   - Nota su `wrangler versions upload` nei branch/PR: Cloudflare inietta la variabile
     `WRANGLER_CI_MATCH_TAG` con un tag non associato al Worker principale, causando
