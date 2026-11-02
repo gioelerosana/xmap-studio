@@ -210,7 +210,14 @@ delle impostazioni e un toast quando c'è una versione nuova.
   un `rename` (l'istanza aperta continua sul vecchio inode). Se la cartella non è
   scrivibile si segnala l'errore e si rimanda alla pagina della release.
   "Riavvia ora" chiude le finestre (con la conferma per le modifiche non salvate)
-  e riapre l'AppImage. Lo stesso `.zsync` e l'update information scritta da
+  e riapre l'AppImage. Non con `app.relaunch`: il relauncher di Electron gira
+  dentro il mount FUSE della vecchia versione e muore quando il runtime lo
+  smonta. Si avvia invece un `bash` staccato (`relaunchAppImage`), con le
+  variabili dell'AppImage tolte dall'ambiente, che chiude i descrittori ereditati
+  (altrimenti il vecchio mount resterebbe montato), aspetta l'uscita del vecchio
+  main process e avvia la nuova AppImage. I gestori esterni (es. AppManager)
+  non vedono l'aggiornamento fatto dall'app: il file è giusto, ma la versione nel
+  loro registro resta quella che hanno installato. Lo stesso `.zsync` e l'update information scritta da
   `apps/desktop/scripts/appimage-zsync.mjs` nella sezione ELF `.upd_info`
   (`gh-releases-zsync|gioelerosana|xmap-studio|latest|XMap-Studio-*-x86_64.AppImage.zsync`)
   servono anche ai gestori esterni (AppImageUpdate, Gear Lever, …). Lo script va
