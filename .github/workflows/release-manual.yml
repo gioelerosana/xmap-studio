@@ -110,6 +110,8 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
+    # Il job `aur` usa il secret AUR_SSH_PRIVATE_KEY.
+    secrets: inherit
     with:
       tag: ${{ needs.tag.outputs.tag }}
 

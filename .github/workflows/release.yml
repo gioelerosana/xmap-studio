@@ -8,12 +8,16 @@
 # Nei lanci manuali su un branch non c'è un tag da confrontare: il controllo
 # tag/versione si salta, build e test girano comunque.
 #
-# Produce due artefatti standalone, allegati alla GitHub Release del tag (nei
-# lanci manuali restano scaricabili dalla pagina del run):
+# Produce tre artefatti, allegati alla GitHub Release del tag (nei lanci
+# manuali restano scaricabili dalla pagina del run):
 #   - XMap-Studio-<versione>-portable-x64.exe   Windows, eseguibile portable
 #   - XMap-Studio-<versione>-x86_64.AppImage    Linux, AppImage, con il suo
 #     `.zsync` per l'aggiornamento differenziale (apps/desktop/scripts/appimage-zsync.mjs)
-# Il pacchetto Arch non si compila qui: vedi packaging/arch/README.md.
+#   - xmap-studio-<versione>-linux-x86_64.tar.gz   Arch Linux, app precompilata
+#     senza Electron (packaging/arch/build-tarball.sh)
+# Dopo la Release, il job `aur` pubblica xmap-studio-bin su AUR, che scarica
+# quel tarball (packaging/arch/README.md). Serve il secret AUR_SSH_PRIVATE_KEY:
+# senza, il job lo segnala e non pubblica.
 name: Release
 
 on:
@@ -79,6 +83,10 @@ jobs:
             script: dist:linux
             pattern: XMap-Studio-*-x86_64.AppImage
             extra: XMap-Studio-*-x86_64.AppImage.zsync
+          - target: arch
+            script: dist:arch
+            pattern: xmap-studio-*-linux-x86_64.tar.gz
+            extra: ''
     steps:
       - uses: actions/checkout@v7
         with:
@@ -127,3 +135,40 @@ jobs:
             --title "XMap Studio $RELEASE_TAG" \
             --generate-notes \
             --verify-tag
+
+  # Pubblica su AUR il PKGBUILD di packaging/arch/aur/ con i checksum del
+  # tarball appena allegato alla Release (lo riscarica dall'URL pubblico, lo
+  # stesso che userà l'utente). Gira in un container Arch per makepkg.
+  aur:
+    if: inputs.tag || github.ref_type == 'tag'
+    needs: release
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Pubblicazione su AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          # Chiave host di aur.archlinux.org, fingerprint
+          # SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4 (pubblicata su
+          # https://aur.archlinux.org/).
+          AUR_HOST_KEY: aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::warning::Secret AUR_SSH_PRIVATE_KEY assente: AUR non aggiornato. Pubblica a mano con packaging/arch/aur-publish.sh."
+            exit 0
+          fi
+          pacman -Syu --noconfirm --needed git openssh
+          # makepkg non gira da root.
+          useradd -m builder
+          home=/home/builder
+          install -d -m 700 -o builder -g builder "$home/.ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$home/.ssh/aur"
+          printf '%s\n' "$AUR_HOST_KEY" > "$home/.ssh/known_hosts"
+          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n  IdentitiesOnly yes\n' > "$home/.ssh/config"
+          chmod 600 "$home/.ssh/aur" "$home/.ssh/config"
+          chown -R builder:builder "$home/.ssh"
+          su builder -c "git config --global user.name 'github-actions[bot]' && git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'"
+          su builder -c "bash '$GITHUB_WORKSPACE/packaging/arch/aur-publish.sh'"
