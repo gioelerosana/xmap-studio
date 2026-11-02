@@ -51,7 +51,7 @@ const BASE = [
   'whitespace-nowrap rounded-control border border-transparent text-sm font-medium',
   'transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-150',
   'active:scale-[0.97]',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+  'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
   'disabled:pointer-events-none disabled:opacity-disabled',
   // Le icone Lucide sono 16px salvo che il chiamante ne imponga la misura.
   '[&_svg]:pointer-events-none [&_svg]:shrink-0',
@@ -60,7 +60,7 @@ const BASE = [
 
 const VARIANTS: Record<ButtonVariant, string> = {
   default:
-    'border-primary bg-primary text-primary-foreground shadow-[shadow:var(--inset-shadow-control-highlight),0_1px_2px_color-mix(in_oklab,var(--primary)_24%,transparent)] hover:bg-primary/90',
+    'border-primary bg-primary text-primary-foreground shadow-[var(--inset-shadow-control-highlight),0_1px_2px_color-mix(in_oklab,var(--primary)_24%,transparent)] hover:bg-primary/90',
   outline:
     'border-input bg-popover text-foreground shadow-control hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/50',
   secondary: 'border-border bg-secondary text-secondary-foreground hover:bg-accent',
@@ -90,7 +90,7 @@ const SIZES: Record<ButtonSize, string> = {
  * così l'attenzione cade sulla label e non sul glifo.
  */
 const MUTED_ICON =
-  'text-muted-foreground transition-colors group-hover/button:text-foreground group-data-[active]/button:text-foreground';
+  'text-muted-foreground transition-colors group-hover/button:text-foreground group-data-active/button:text-foreground';
 const ICON_TONE: Partial<Record<ButtonVariant, string>> = {
   outline: MUTED_ICON,
   ghost: MUTED_ICON,

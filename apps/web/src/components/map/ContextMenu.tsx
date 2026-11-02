@@ -137,7 +137,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       onKeyDown={onKeyDown}
       style={{ left: coords.left, top: coords.top }}
       className={cn(
-        'bg-popover fixed z-50 min-w-[14rem] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
+        'bg-popover fixed z-50 min-w-56 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
         'animate-pop-in overflow-y-auto rounded-lg border p-1 text-sm text-popover-foreground shadow-dialog',
       )}
     >
@@ -153,7 +153,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               item.onSelect();
             }}
             className={cn(
-              'flex h-8 coarse:h-9 w-full select-none items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors',
+              'flex h-8 coarse:h-9 w-full select-none items-center gap-2 rounded-md px-2 text-left text-sm outline-hidden transition-colors',
               'disabled:pointer-events-none disabled:opacity-disabled',
               item.danger
                 ? 'text-error-foreground hover:bg-error/8 focus-visible:bg-error/8 dark:hover:bg-error/16 dark:focus-visible:bg-error/16'

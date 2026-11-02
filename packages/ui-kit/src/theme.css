@@ -3,7 +3,7 @@
  *
  * Perché qui e non in Tailwind: i valori cambiano col tema (classe `.dark` su
  * <html>) e devono essere leggibili anche da SVG inline e dal processo
- * Electron. Tailwind (apps/web/tailwind.config.js) espone solo alias verso
+ * Electron. Tailwind (`@theme` in apps/web/src/index.css) espone solo alias verso
  * queste variabili: ogni colore dell'interfaccia passa da qui.
  * Regole d'uso in docs/DESIGN-SYSTEM.md.
  */

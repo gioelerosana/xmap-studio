@@ -394,7 +394,7 @@ ipcMain.handle(
           : { width: opts.pageSize.widthMm / MM_PER_INCH, height: opts.pageSize.heightMm / MM_PER_INCH },
       landscape: opts.landscape,
       printBackground: true,
-      margins: { marginType: 'none' },
+      margins: { top: 0, right: 0, bottom: 0, left: 0 },
       preferCSSPageSize: true,
     });
     return toIpcBytes(buffer);

@@ -159,7 +159,7 @@ export function Menu({ items, trigger, align = 'end', className, widthClass = 'w
                   item.onSelect();
                 }}
                 className={cn(
-                  'flex h-8 w-full select-none items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors',
+                  'flex h-8 w-full select-none items-center gap-2 rounded-md px-2 text-left text-sm outline-hidden transition-colors',
                   'disabled:pointer-events-none disabled:opacity-disabled',
                   item.danger
                     ? 'text-error-foreground hover:bg-error/8 focus-visible:bg-error/8 dark:hover:bg-error/16 dark:focus-visible:bg-error/16'

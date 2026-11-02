@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /** Larghezza e altezza massima comuni ai pannelli: densi, con scroll interno. */
-export const POPOVER_PANEL_CLASS = 'w-[19rem] max-w-[calc(100vw-1rem)] max-h-[60dvh] overflow-y-auto p-3';
+export const POPOVER_PANEL_CLASS = 'w-76 max-w-[calc(100vw-1rem)] max-h-[60dvh] overflow-y-auto p-3';
 
 /** Intestazione di un gruppo dentro un pannello. */
 export const PopoverGroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (

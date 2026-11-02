@@ -528,7 +528,7 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       spellCheck={false}
       suppressContentEditableWarning
       className={cn(
-        'absolute overflow-hidden rounded-[10px] border border-primary bg-card px-2.5 py-1 leading-snug text-foreground shadow-composer outline-none ring-[3px] ring-primary/25 whitespace-pre-wrap break-words',
+        'absolute overflow-hidden rounded-[10px] border border-primary bg-card px-2.5 py-1 leading-snug text-foreground shadow-composer outline-hidden ring-[3px] ring-primary/25 whitespace-pre-wrap wrap-break-word',
         isRoot ? 'font-semibold tracking-tight' : 'font-medium'
       )}
       style={{ left: x, top: y, width: Math.max(w, 120), minHeight: h, fontSize: `${fontPx}px` }}

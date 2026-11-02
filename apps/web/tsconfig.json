@@ -24,9 +24,8 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
 
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
+      "@/*": ["./src/*"],
       "@xmap/core": ["../../packages/core/src/index.ts"],
       "@xmap/ui-kit": ["../../packages/ui-kit/src/index.ts"],
       "@xmap/ui-kit/theme.css": ["../../packages/ui-kit/src/theme.css"]

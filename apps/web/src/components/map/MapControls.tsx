@@ -69,7 +69,7 @@ export function ZoomControls({
       >
         <Minus className="size-4" />
       </IconButton>
-      <span className="text-2xs font-mono tabular-nums text-muted-foreground min-w-[3rem] text-center">
+      <span className="text-2xs font-mono tabular-nums text-muted-foreground min-w-12 text-center">
         {Math.round(zoom * 100)}%
       </span>
       <IconButton

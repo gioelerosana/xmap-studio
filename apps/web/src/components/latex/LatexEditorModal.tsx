@@ -15,7 +15,7 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [role="tab"][tabindex="0"], [tabindex]:not([tabindex="-1"])';
 
 const FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover';
+  'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover';
 
 // Editor LaTeX centrato: anteprima grande, campo con suggerimenti, tavolozza di simboli.
 export const LatexEditorModal: React.FC<LatexEditorModalProps> = ({ topic, ...rest }) => {
@@ -142,7 +142,7 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={handleDialogKeyDown}
-        className="flex max-h-[85dvh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-dialog outline-none max-sm:max-h-[92dvh] max-sm:rounded-b-none max-sm:border-b-0"
+        className="flex max-h-[85dvh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-dialog outline-hidden max-sm:max-h-[92dvh] max-sm:rounded-b-none max-sm:border-b-0"
       >
         <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-3 pt-5">
           <div className="min-w-0">
@@ -171,7 +171,7 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
               autoComplete="off"
               aria-label="Formula LaTeX"
               placeholder="\int_{0}^{1} x^2\,dx"
-              className="block max-h-48 min-h-[5.5rem] w-full resize-none rounded-lg border border-input bg-background p-3 font-mono text-sm leading-6 text-foreground shadow-control outline-none transition-shadow placeholder:text-muted-foreground focus:border-ring focus:shadow-[inset_0_0_0_3px_color-mix(in_oklab,var(--ring)_24%,transparent)] dark:bg-input/32"
+              className="block max-h-48 min-h-22 w-full resize-none rounded-lg border border-input bg-background p-3 font-mono text-sm leading-6 text-foreground shadow-control outline-hidden transition-shadow placeholder:text-muted-foreground focus:border-ring focus:shadow-[inset_0_0_0_3px_color-mix(in_oklab,var(--ring)_24%,transparent)] dark:bg-input/32"
             />
             {editor.suggestions.length > 0 && (
               <SuggestionList

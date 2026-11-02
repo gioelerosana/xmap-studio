@@ -2,7 +2,7 @@ import { cn } from '@xmap/ui-kit';
 
 // Anello di focus dei bottoni ui-kit, riusato dai controlli che non sono `Button`.
 export const FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
+  'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
 
 export const chipClass = (active: boolean) =>
   cn(

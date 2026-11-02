@@ -248,7 +248,7 @@ function NodeCardView({
               ) : (
                 <span
                   className={cn(
-                    'break-words whitespace-pre-wrap',
+                    'wrap-break-word whitespace-pre-wrap',
                     isRoot ? 'font-semibold tracking-tight' : isBranch ? 'font-semibold' : 'font-normal'
                   )}
                   style={{

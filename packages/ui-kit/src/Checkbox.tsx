@@ -57,7 +57,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(function Ch
       }}
       className={cn(
         'inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+        'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
         'disabled:pointer-events-none disabled:opacity-disabled',
         on
           ? 'border-primary bg-primary text-primary-foreground'

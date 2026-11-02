@@ -24,7 +24,7 @@ import { useTextStyleShortcuts } from './useTextStyleShortcuts.js';
 import { useToolbarPosition } from './useToolbarPosition.js';
 
 // Nasconde la barra di scorrimento (Firefox e WebKit) senza disattivare lo scorrimento.
-const HIDE_SCROLLBAR = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
+const HIDE_SCROLLBAR = 'scrollbar-none [&::-webkit-scrollbar]:hidden';
 
 // Quanti colori del ramo mostrare come pallini diretti nella barra (il resto sta nel pannello).
 const INLINE_BRANCH_COLORS = 5;

@@ -125,7 +125,7 @@ const CategoryTabs: React.FC<{
   <div
     role="tablist"
     aria-label="Categorie di marker"
-    className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-none [&::-webkit-scrollbar]:hidden"
   >
     {GROUPS.map((group) => {
       const selected = group.id === selectedId;
