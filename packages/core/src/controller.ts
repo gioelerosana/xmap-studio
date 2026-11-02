@@ -81,7 +81,7 @@ import { loadMathJax, renderLatexToSvg } from './latex/mathjax.js';
 import { svgToPng } from './latex/raster.js';
 import { clearTask, writeTask, TaskData } from './task/task.js';
 import { isMarkerKnown } from './markers/catalog.js';
-import { refreshManifest, registerEntries } from './safety/manifest.js';
+import { Manifest, refreshManifest, registerEntries } from './safety/manifest.js';
 import { validateArchiveBytes, ValidationReport } from './safety/validate.js';
 import { toMarkdown } from './exporters/markdown.js';
 import { toOPML } from './exporters/opml.js';
@@ -100,6 +100,14 @@ import {
   WorkbookDto,
 } from './state/types.js';
 import { cloneSheets, OpenWorkbook } from './state/workbook.js';
+
+/** Corpo di riferimento (px) delle formule quando il blocco non ha una dimensione del testo. */
+const DEFAULT_EM_PX = 23.33;
+/** Rapporto tra la formula e la dimensione del testo del blocco. */
+const FORMULA_TO_FONT_RATIO = 1.25;
+/** Fattore di rasterizzazione del PNG esportato dall'equazione. */
+const EQUATION_PNG_SCALE = 3;
+const XAP_PREFIX = 'xap:';
 
 export class AppController {
   private currentWorkbook: OpenWorkbook | null = null;
@@ -126,16 +134,11 @@ export class AppController {
 
   public resourceBytes(src: string): Uint8Array | null {
     if (!this.currentWorkbook) return null;
-    let clean = src.startsWith('xap:') ? src.slice(4) : src;
+    let clean = src.startsWith(XAP_PREFIX) ? src.slice(XAP_PREFIX.length) : src;
     if (clean.startsWith('/')) clean = clean.slice(1);
 
-    if (this.currentWorkbook.archive.resources.has(clean)) {
-      return this.currentWorkbook.archive.resources.get(clean)!;
-    }
-    if (this.currentWorkbook.archive.entries.has(clean)) {
-      return this.currentWorkbook.archive.entries.get(clean)!;
-    }
-    return null;
+    const { resources, entries } = this.currentWorkbook.archive;
+    return resources.get(clean) ?? entries.get(clean) ?? null;
   }
 
   public mapTitle(): string | null {
@@ -180,8 +183,7 @@ export class AppController {
     // Senza percorso il workbook non ha una destinazione su disco: il primo
     // salvataggio deve passare da "Salva con nome".
     const resolvedPath = path ?? null;
-    const name =
-      fileName || (resolvedPath ? resolvedPath.split(/[\\/]/).pop() : '') || 'workbook.xmind';
+    const name = fileName || (resolvedPath ? fileNameFromPath(resolvedPath) : '') || 'workbook.xmind';
 
     const originalHash = await sha256HexAsync(data instanceof Uint8Array ? data : new Uint8Array(data));
     this.currentWorkbook = new OpenWorkbook(
@@ -204,7 +206,7 @@ export class AppController {
   }
 
   /** Anteprima sincrona: richiede MathJax caricato (`loadMathJax`). */
-  public preview(latex: string, emPx: number = 23.33) {
+  public preview(latex: string, emPx: number = DEFAULT_EM_PX) {
     return renderLatexToSvg(latex, emPx);
   }
 
@@ -215,12 +217,88 @@ export class AppController {
     return this.currentWorkbook;
   }
 
+  private requireTopic(wb: OpenWorkbook, topicId: string): Topic {
+    const topic = findTopic(wb.content, topicId);
+    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    return topic;
+  }
+
+  private requireParentTopic(wb: OpenWorkbook, parentId: string): Topic {
+    const parent = findTopic(wb.content, parentId);
+    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
+    return parent;
+  }
+
+  private requireSheet(wb: OpenWorkbook, sheetIndex: number): Sheet {
+    const sheet = wb.content[sheetIndex];
+    if (!sheet) throw new XmapError(CODE_INVALID_INPUT, `Foglio ${sheetIndex + 1} non trovato`);
+    return sheet;
+  }
+
+  private requireSiblingRange(wb: OpenWorkbook, topicIds: string[]): SiblingRange {
+    const range = siblingRange(wb.content, topicIds);
+    if (!range) {
+      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati non sono validi per creare un sommario.');
+    }
+    return range;
+  }
+
+  /**
+   * Modifica il blocco e registra un passo di cronologia. Le verifiche che possono
+   * fallire vanno fatte dentro `edit` prima di mutare il blocco: se lanciano, nessun passo viene registrato.
+   */
+  private editTopic(topicId: string, edit: (topic: Topic, wb: OpenWorkbook) => void): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const topic = this.requireTopic(wb, topicId);
+    edit(topic, wb);
+    return this.commit(wb);
+  }
+
+  private commit(wb: OpenWorkbook): WorkbookDto {
+    wb.pushHistory();
+    return wb.toDto();
+  }
+
+  /** Registra la creazione di `newId` in un passo di cronologia e ne ricorda il blocco per fondere la rinomina successiva. */
+  private commitCreation(wb: OpenWorkbook, newId: string): WorkbookDto {
+    wb.pushHistory();
+    this.lastCreated = { id: newId, wb, pos: wb.pos };
+    return wb.toDto();
+  }
+
+  /**
+   * Chiude una modifica del titolo: con `mergeWithPrevious`, se l'ultimo passo è la
+   * creazione dello stesso blocco, ne sostituisce lo snapshot invece di aggiungerne uno.
+   */
+  private commitTitleChange(
+    wb: OpenWorkbook,
+    topicId: string,
+    mergeWithPrevious: boolean | undefined
+  ): WorkbookDto {
+    const lc = this.lastCreated;
+    if (mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
+      wb.replaceHistoryTop();
+      return wb.toDto();
+    }
+    return this.commit(wb);
+  }
+
   /** Registra i byte nell'archivio e nel manifest; restituisce il nome canonico della risorsa. */
   private storeImageResource(wb: OpenWorkbook, bytes: Uint8Array, mimeType: string): string {
     const resourceName = computeImageResourceName(bytes, mimeType);
     wb.archive.resources.set(resourceName, bytes);
     refreshManifest(wb.manifest, [resourceName], false);
     return resourceName;
+  }
+
+  private requirePlatform(): Platform {
+    if (!this.platform) {
+      throw new XmapError(
+        CODE_IO,
+        'Accesso al disco non disponibile in questo ambiente: usa prepareArchiveBytes() e l’adapter di filesystem.'
+      );
+    }
+    return this.platform;
   }
 
   public async apply(
@@ -235,14 +313,11 @@ export class AppController {
     } = {}
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) {
-      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-    }
+    const topic = this.requireTopic(wb, topicId);
 
     const fontPx = options.fontSizePx ?? fontSizePx(topic);
     const scale = options.scale !== undefined && options.scale > 0 ? options.scale : 1;
-    const emPx = (fontPx ? fontPx * 1.25 : 23.33) * scale;
+    const emPx = emPxForFontSize(fontPx) * scale;
 
     const { outcome, png } = await applyEquation(topic, latex, {
       emPx,
@@ -257,8 +332,7 @@ export class AppController {
       throw new XmapError(CODE_TOPIC_NOT_FOUND, 'La mappa è cambiata mentre si preparava la formula: riprova.');
     }
     wb.archive.resources.set(outcome.resource, png);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   public async applyBatch(specs: BatchSpec[]): Promise<BatchResultDto> {
@@ -278,8 +352,7 @@ export class AppController {
         break;
       }
       try {
-        const fontPx = spec.fontSizePx ?? fontSizePx(topic);
-        const emPx = fontPx ? fontPx * 1.25 : 23.33;
+        const emPx = emPxForFontSize(spec.fontSizePx ?? fontSizePx(topic));
         const { outcome, png } = await applyEquation(topic, spec.latex, {
           emPx,
           titleMode: spec.titleMode,
@@ -305,7 +378,7 @@ export class AppController {
     }
 
     wb.content = working;
-    for (const [name, bytes] of pendingResources) wb.archive.resources.set(name, bytes);
+    pendingResources.forEach(([name, bytes]) => wb.archive.resources.set(name, bytes));
     wb.pushHistory();
 
     return {
@@ -316,13 +389,7 @@ export class AppController {
   }
 
   public removeEquation(topicId: string, title?: string): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    removeEquation(topic, title);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => removeEquation(topic, title));
   }
 
   /**
@@ -337,18 +404,11 @@ export class AppController {
     opts?: { mergeWithPrevious?: boolean }
   ): WorkbookDto {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const topic = this.requireTopic(wb, topicId);
 
     if (topic.title === title && topic.titleUnedited === undefined) return wb.toDto();
     setTitle(topic, title);
-    const lc = this.lastCreated;
-    if (opts?.mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
-      wb.replaceHistoryTop();
-    } else {
-      wb.pushHistory();
-    }
-    return wb.toDto();
+    return this.commitTitleChange(wb, topicId, opts?.mergeWithPrevious);
   }
 
   /**
@@ -363,8 +423,7 @@ export class AppController {
     opts?: { mergeWithPrevious?: boolean }
   ): WorkbookDto {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const topic = this.requireTopic(wb, topicId);
 
     const prevTitle = topic.title;
     const prevAttributed = JSON.stringify(topic.attributedTitle);
@@ -378,62 +437,34 @@ export class AppController {
     if (prevTitle === nextTitle && prevAttributed === nextAttributed && prevUnedited === undefined) {
       return wb.toDto();
     }
-
-    const lc = this.lastCreated;
-    if (opts?.mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
-      wb.replaceHistoryTop();
-    } else {
-      wb.pushHistory();
-    }
-    return wb.toDto();
+    return this.commitTitleChange(wb, topicId, opts?.mergeWithPrevious);
   }
 
   /** Grassetto, corsivo, sottolineato, barrato, colore e dimensione del blocco intero. */
   public setTopicTextStyle(topicId: string, patch: TextStylePatch): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setTextStyle(topic, patch);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setTextStyle(topic, patch));
   }
 
   public setTopicNotes(topicId: string, text: string): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setNotes(topic, text);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setNotes(topic, text));
   }
 
   /** Sposta un topic libero (gruppo `detached`); `pos` è relativa al centro della radice. */
   public setTopicPosition(topicId: string, pos: { x: number; y: number }): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-    if (!isDetachedTopic(wb.content, topicId)) {
-      throw new XmapError(CODE_MOVE, 'Solo i topic liberi possono essere posizionati.');
-    }
-
-    setTopicPosition(topic, pos);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic, wb) => {
+      if (!isDetachedTopic(wb.content, topicId)) {
+        throw new XmapError(CODE_MOVE, 'Solo i topic liberi possono essere posizionati.');
+      }
+      setTopicPosition(topic, pos);
+    });
   }
+
   /**
    * Imposta o rimuove la larghezza manuale del blocco (`customWidth`).
    * Passando `null` rimuove la larghezza manuale tornando all'adattamento automatico.
    */
   public setTopicCustomWidth(topicId: string, width: number | null): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setTopicCustomWidth(topic, width);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setTopicCustomWidth(topic, width));
   }
 
   /**
@@ -444,76 +475,44 @@ export class AppController {
     topicId: string,
     size: { width: number; height: number }
   ): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setTopicImageSize(topic, size);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setTopicImageSize(topic, size));
   }
 
-
   public setTopicNotesDisplay(topicId: string, display?: 'icon' | 'block' | null): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setNotesDisplay(topic, topic.notes ? display : null);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setNotesDisplay(topic, topic.notes ? display : null));
   }
 
   public setTopicLabels(topicId: string, labels: string[]): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setLabels(topic, labels);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setLabels(topic, labels));
   }
 
   public toggleTopicMarker(topicId: string, markerId: string): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    const id = markerId.trim();
-    if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
-      throw new XmapError(CODE_INVALID_INPUT, 'Id marker non valido.');
-    }
-    const alreadyPresent = topic.markers?.some((marker) => marker.markerId === id) ?? false;
-    if (!alreadyPresent && !isMarkerKnown(id)) {
-      throw new XmapError(CODE_INVALID_INPUT, `Marker sconosciuto: ${id}`);
-    }
-
-    toggleMarker(topic, id);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => {
+      const id = markerId.trim();
+      // Id marker: solo lettere ASCII, cifre, "_" e "-". Accetta "star_1", rifiuta "star 1".
+      if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+        throw new XmapError(CODE_INVALID_INPUT, 'Id marker non valido.');
+      }
+      const alreadyPresent = topic.markers?.some((marker) => marker.markerId === id) ?? false;
+      if (!alreadyPresent && !isMarkerKnown(id)) {
+        throw new XmapError(CODE_INVALID_INPUT, `Marker sconosciuto: ${id}`);
+      }
+      toggleMarker(topic, id);
+    });
   }
 
   public setTopicHref(topicId: string, href?: string | null): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setHref(topic, href);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setHref(topic, href));
   }
 
   public addTopic(parentId: string, title: string): { dto: WorkbookDto; newId: string } {
     const wb = this.ensureWorkbook();
-    const parent = findTopic(wb.content, parentId);
-    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
+    const parent = this.requireParentTopic(wb, parentId);
 
     const newId = addChild(parent, title);
     // Il figlio nuovo deve vedersi: un ramo chiuso si apre nello stesso passo di undo.
     setTopicFolded(parent, false);
-    wb.pushHistory();
-    this.lastCreated = { id: newId, wb, pos: wb.pos };
-    return { dto: wb.toDto(), newId };
+    return { dto: this.commitCreation(wb, newId), newId };
   }
 
   /**
@@ -524,13 +523,11 @@ export class AppController {
    */
   public setTopicFolded(topicId: string, folded: boolean): WorkbookDto {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const topic = this.requireTopic(wb, topicId);
 
     if (isTopicFolded(topic) === folded) return wb.toDto();
     setTopicFolded(topic, folded);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   /**
@@ -543,15 +540,12 @@ export class AppController {
     where: 'after' | 'before' = 'after'
   ): { dto: WorkbookDto; newId: string } {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-    if (wb.content.some((s) => s.rootTopic?.id === topicId)) {
+    this.requireTopic(wb, topicId);
+    if (isRootTopic(wb.content, topicId)) {
       return this.addTopic(topicId, title);
     }
     const newId = insertSibling(wb.content, topicId, title, where);
-    wb.pushHistory();
-    this.lastCreated = { id: newId, wb, pos: wb.pos };
-    return { dto: wb.toDto(), newId };
+    return { dto: this.commitCreation(wb, newId), newId };
   }
 
   /**
@@ -560,20 +554,13 @@ export class AppController {
    */
   public copyTopic(topicId: string): string {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-    const resources: Record<string, string> = {};
-    for (const name of subtreeResourceNames(topic)) {
-      const bytes = wb.archive.resources.get(name);
-      if (bytes) resources[name] = bytesToBase64(bytes);
-    }
+    const topic = this.requireTopic(wb, topicId);
+
+    const resources = encodeAssets(wb.archive.resources, subtreeResourceNames(topic));
     const attachmentNames = new Set<string>();
     collectAttachmentRefs(topic, attachmentNames);
-    const attachments: Record<string, string> = {};
-    for (const name of attachmentNames) {
-      const bytes = wb.archive.entries.get(name);
-      if (bytes) attachments[name] = bytesToBase64(bytes);
-    }
+    const attachments = encodeAssets(wb.archive.entries, attachmentNames);
+
     const payload: XmapClipboardPayload = {
       xmapStudioClipboard: XMAP_CLIPBOARD_VERSION,
       topic,
@@ -599,77 +586,48 @@ export class AppController {
     const parent = findTopic(wb.content, parentId);
     if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic genitore ${parentId} non trovato`);
 
-    let data: XmapClipboardPayload;
-    if (typeof payload === "string") {
-      try {
-        data = JSON.parse(payload) as XmapClipboardPayload;
-      } catch {
-        throw new XmapError(
-          CODE_INVALID_INPUT,
-          "Dati negli appunti non validi: formato JSON non valido."
-        );
-      }
-    } else {
-      data = payload;
-    }
-
-    if (
-      !data ||
-      typeof data !== "object" ||
-      typeof data.xmapStudioClipboard !== "number" ||
-      !data.topic ||
-      typeof data.topic !== "object"
-    ) {
-      throw new XmapError(
-        CODE_INVALID_INPUT,
-        "Dati negli appunti non validi: blocco XMap Studio non riconosciuto."
-      );
-    }
-
-    // Le risorse mancanti (blocco copiato da un altro file) si aggiungono all'archivio,
-    // altrimenti la validazione prima del salvataggio fallirebbe.
-    const added: string[] = [];
-    if (data.resources && typeof data.resources === 'object') {
-      for (const [name, b64] of Object.entries(data.resources)) {
-        if (!name.startsWith('resources/') || typeof b64 !== 'string') continue;
-        if (wb.archive.resources.has(name)) continue;
-        try {
-          wb.archive.resources.set(name, base64ToBytes(b64));
-          added.push(name);
-        } catch {
-          throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: immagine danneggiata.');
-        }
-      }
-    }
-    if (added.length > 0) refreshManifest(wb.manifest, added, false);
-    const addedAttachments: string[] = [];
-    if (data.attachments && typeof data.attachments === 'object') {
-      for (const [name, b64] of Object.entries(data.attachments)) {
-        if (!name.startsWith('attachments/') || name.includes('..') || typeof b64 !== 'string') continue;
-        if (wb.archive.entries.has(name)) continue;
-        try {
-          wb.archive.entries.set(name, base64ToBytes(b64));
-          addedAttachments.push(name);
-        } catch {
-          throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: allegato danneggiato.');
-        }
-      }
-    }
-    if (addedAttachments.length > 0) registerEntries(wb.manifest, addedAttachments);
+    const data = parseClipboardPayload(payload);
+    this.importClipboardResources(wb, data);
+    this.importClipboardAttachments(wb, data);
 
     const cloned = cloneTopicSubtree(data.topic);
-    if (!parent.children) {
-      parent.children = {};
-    }
-    if (!parent.children.attached) {
-      parent.children.attached = [];
-    }
-    parent.children.attached.push(cloned);
+    appendAttachedChild(parent, cloned);
     setTopicFolded(parent, false);
+    const newId = cloned.id!;
+    return { dto: this.commitCreation(wb, newId), newId };
+  }
 
-    wb.pushHistory();
-    this.lastCreated = { id: cloned.id!, wb, pos: wb.pos };
-    return { dto: wb.toDto(), newId: cloned.id! };
+  /** Le risorse mancanti (blocco copiato da un altro file) si aggiungono all'archivio, altrimenti la validazione prima del salvataggio fallirebbe. */
+  private importClipboardResources(wb: OpenWorkbook, data: XmapClipboardPayload): void {
+    if (!data.resources || typeof data.resources !== 'object') return;
+    const added: string[] = [];
+    Object.entries(data.resources).forEach(([name, b64]) => {
+      if (!name.startsWith('resources/') || typeof b64 !== 'string') return;
+      if (wb.archive.resources.has(name)) return;
+      try {
+        wb.archive.resources.set(name, base64ToBytes(b64));
+        added.push(name);
+      } catch {
+        throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: immagine danneggiata.');
+      }
+    });
+    if (added.length > 0) refreshManifest(wb.manifest, added, false);
+  }
+
+  private importClipboardAttachments(wb: OpenWorkbook, data: XmapClipboardPayload): void {
+    if (!data.attachments || typeof data.attachments !== 'object') return;
+    const added: string[] = [];
+    Object.entries(data.attachments).forEach(([name, b64]) => {
+      if (!name.startsWith('attachments/') || name.includes('..') || typeof b64 !== 'string') return;
+      if (wb.archive.entries.has(name)) return;
+      try {
+        wb.archive.entries.set(name, base64ToBytes(b64));
+        added.push(name);
+      } catch {
+        throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: allegato danneggiato.');
+      }
+    });
+    if (added.length > 0) registerEntries(wb.manifest, added);
   }
 
   /**
@@ -679,18 +637,14 @@ export class AppController {
    */
   public duplicateTopic(topicId: string): { dto: WorkbookDto; newId: string } {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const topic = this.requireTopic(wb, topicId);
 
-    if (wb.content.some((s) => s.rootTopic?.id === topicId)) {
+    if (isRootTopic(wb.content, topicId)) {
       throw new XmapError(CODE_MOVE, "La radice non può essere duplicata come blocco fratello.");
     }
 
-    const cloned = cloneTopicSubtree(topic);
-    const newId = insertSiblingTopic(wb.content, topicId, cloned, "after");
-    wb.pushHistory();
-    this.lastCreated = { id: newId, wb, pos: wb.pos };
-    return { dto: wb.toDto(), newId };
+    const newId = insertSiblingTopic(wb.content, topicId, cloneTopicSubtree(topic), "after");
+    return { dto: this.commitCreation(wb, newId), newId };
   }
 
   public removeTopic(topicId: string): WorkbookDto {
@@ -699,8 +653,7 @@ export class AppController {
     if (!removed) {
       throw new XmapError(CODE_TOPIC_NOT_FOUND, `Impossibile rimuovere il topic ${topicId} (o è la radice)`);
     }
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   /**
@@ -713,15 +666,13 @@ export class AppController {
     if (!childIds) {
       throw new XmapError(CODE_TOPIC_NOT_FOUND, `Impossibile rimuovere il topic ${topicId} (o è la radice)`);
     }
-    wb.pushHistory();
-    return { dto: wb.toDto(), childIds };
+    return { dto: this.commit(wb), childIds };
   }
 
   public moveTopic(topicId: string, targetId: string, placement: MovePlacement): WorkbookDto {
     const wb = this.ensureWorkbook();
     moveTopic(wb.content, topicId, targetId, placement);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   public undo(): WorkbookDto {
@@ -745,11 +696,9 @@ export class AppController {
     if (sheetIdx !== end2SheetIdx) {
       throw new XmapError(CODE_INVALID_INPUT, 'I blocchi non appartengono allo stesso foglio.');
     }
-    const sheet = wb.content[sheetIdx];
 
-    addRelationship(sheet, end1Id, end2Id, title);
-    wb.pushHistory();
-    return wb.toDto();
+    addRelationship(wb.content[sheetIdx], end1Id, end2Id, title);
+    return this.commit(wb);
   }
 
   /**
@@ -761,37 +710,27 @@ export class AppController {
     points: [Point | null | undefined, Point | null | undefined]
   ): WorkbookDto {
     const wb = this.ensureWorkbook();
-    for (const sheet of wb.content) {
-      if (!sheet.relationships?.some((r) => r.id === relationshipId)) continue;
-      points.forEach((point, i) => {
-        if (point !== undefined) setRelationshipControlPoint(sheet, relationshipId, i as 0 | 1, point);
-      });
-      wb.pushHistory();
-      return wb.toDto();
-    }
-    throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
+    const sheet = wb.content.find((s) => s.relationships?.some((r) => r.id === relationshipId));
+    if (!sheet) throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
+
+    points.forEach((point, i) => {
+      if (point !== undefined) setRelationshipControlPoint(sheet, relationshipId, i as 0 | 1, point);
+    });
+    return this.commit(wb);
   }
 
   public setRelationshipShape(relationshipId: string, shape: RelationshipShape): WorkbookDto {
     const wb = this.ensureWorkbook();
-    for (const sheet of wb.content) {
-      if (setRelationshipShape(sheet, relationshipId, shape)) {
-        wb.pushHistory();
-        return wb.toDto();
-      }
-    }
-    throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
+    const applied = wb.content.some((sheet) => setRelationshipShape(sheet, relationshipId, shape));
+    if (!applied) throw new XmapError(CODE_INVALID_INPUT, `Relazione ${relationshipId} non trovata`);
+    return this.commit(wb);
   }
 
   public removeTopicRelationship(relationshipId: string): WorkbookDto {
     const wb = this.ensureWorkbook();
-    for (const sheet of wb.content) {
-      if (removeRelationship(sheet, relationshipId)) {
-        wb.pushHistory();
-        return wb.toDto();
-      }
-    }
-    throw new XmapError(CODE_TOPIC_NOT_FOUND, `Relazione ${relationshipId} non trovata`);
+    const removed = wb.content.some((sheet) => removeRelationship(sheet, relationshipId));
+    if (!removed) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Relazione ${relationshipId} non trovata`);
+    return this.commit(wb);
   }
 
   public addTopicBoundary(
@@ -800,29 +739,18 @@ export class AppController {
     end?: number,
     title?: string
   ): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    const childCount = topic.children?.attached?.length ?? 0;
-    const rangeStart = start ?? 0;
-    const rangeEnd = end ?? Math.max(0, childCount - 1);
-    validateChildRange(rangeStart, rangeEnd, childCount);
-    addBoundary(topic, rangeStart, rangeEnd, title);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => {
+      const range = resolveChildRange(topic, start, end);
+      addBoundary(topic, range.start, range.end, title);
+    });
   }
 
   public removeTopicBoundary(topicId: string, boundaryId: string): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    if (!removeBoundary(topic, boundaryId)) {
-      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Boundary ${boundaryId} non trovato`);
-    }
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => {
+      if (!removeBoundary(topic, boundaryId)) {
+        throw new XmapError(CODE_TOPIC_NOT_FOUND, `Boundary ${boundaryId} non trovato`);
+      }
+    });
   }
 
   /**
@@ -841,17 +769,11 @@ export class AppController {
     title: string = 'Sommario'
   ): { dto: WorkbookDto; summaryTopicId: string } {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const topic = this.requireTopic(wb, topicId);
 
-    const childCount = topic.children?.attached?.length ?? 0;
-    const rangeStart = start ?? 0;
-    const rangeEnd = end ?? Math.max(0, childCount - 1);
-    validateChildRange(rangeStart, rangeEnd, childCount);
-    const summaryTopicId = addSummary(topic, rangeStart, rangeEnd, title);
-    wb.pushHistory();
-    this.lastCreated = { id: summaryTopicId, wb, pos: wb.pos };
-    return { dto: wb.toDto(), summaryTopicId };
+    const range = resolveChildRange(topic, start, end);
+    const summaryTopicId = addSummary(topic, range.start, range.end, title);
+    return { dto: this.commitCreation(wb, summaryTopicId), summaryTopicId };
   }
 
   /**
@@ -863,10 +785,7 @@ export class AppController {
     title: string = 'Sommario'
   ): { dto: WorkbookDto; summaryTopicId: string } {
     const wb = this.ensureWorkbook();
-    const range = siblingRange(wb.content, topicIds);
-    if (!range) {
-      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati non sono validi per creare un sommario.');
-    }
+    const range = this.requireSiblingRange(wb, topicIds);
     return this.addTopicSummary(range.parentId, range.start, range.end, title);
   }
 
@@ -881,36 +800,25 @@ export class AppController {
     size: { width: number; height: number }
   ): { dto: WorkbookDto; summaryTopicId: string } {
     const wb = this.ensureWorkbook();
-    const range = siblingRange(wb.content, topicIds);
-    if (!range) {
-      throw new XmapError(CODE_INVALID_INPUT, 'I blocchi selezionati non sono validi per creare un sommario.');
-    }
+    const range = this.requireSiblingRange(wb, topicIds);
     if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
 
-    const parent = findTopic(wb.content, range.parentId);
-    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${range.parentId} non trovato`);
-
+    const parent = this.requireParentTopic(wb, range.parentId);
     const resourceName = this.storeImageResource(wb, bytes, mimeType);
     const summaryTopicId = addSummary(parent, range.start, range.end, '');
     const summaryTopic = parent.children?.summary?.find((t) => t.id === summaryTopicId);
     if (!summaryTopic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Summary ${summaryTopicId} non trovato`);
     setTopicImage(summaryTopic, resourceName, size);
 
-    wb.pushHistory();
-    this.lastCreated = { id: summaryTopicId, wb, pos: wb.pos };
-    return { dto: wb.toDto(), summaryTopicId };
+    return { dto: this.commitCreation(wb, summaryTopicId), summaryTopicId };
   }
 
   public removeTopicSummary(topicId: string, summaryTopicId: string): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    if (!removeSummary(topic, summaryTopicId)) {
-      throw new XmapError(CODE_TOPIC_NOT_FOUND, `Summary ${summaryTopicId} non trovato`);
-    }
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => {
+      if (!removeSummary(topic, summaryTopicId)) {
+        throw new XmapError(CODE_TOPIC_NOT_FOUND, `Summary ${summaryTopicId} non trovato`);
+      }
+    });
   }
 
   /**
@@ -937,8 +845,7 @@ export class AppController {
     const sheet = createSheet(title?.trim() || nextSheetTitle(wb.content));
     const at = atIndex === undefined ? wb.content.length : Math.max(0, Math.min(atIndex, wb.content.length));
     wb.content.splice(at, 0, sheet);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   /** Rinomina la linguetta del foglio (`sheet.title`). Titolo vuoto non valido; invariato = nessun passo di annullamento. */
@@ -960,8 +867,7 @@ export class AppController {
     const sheet = this.requireSheet(wb, sheetIndex);
     const base = sheet.title || `Foglio ${sheetIndex + 1}`;
     wb.content.splice(sheetIndex + 1, 0, cloneSheet(sheet, `${base} (copia)`));
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   /** Elimina un foglio (annullabile). L'ultimo foglio rimasto non si elimina. */
@@ -970,8 +876,7 @@ export class AppController {
     this.requireSheet(wb, sheetIndex);
     if (wb.content.length <= 1) throw new XmapError(CODE_INVALID_INPUT, 'Una mappa deve avere almeno un foglio');
     wb.content.splice(sheetIndex, 1);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   /** Sposta il foglio da `from` a `to` (posizione finale). */
@@ -987,55 +892,27 @@ export class AppController {
     return wb.toDto();
   }
 
-  private requireSheet(wb: OpenWorkbook, sheetIndex: number): Sheet {
-    const sheet = wb.content[sheetIndex];
-    if (!sheet) throw new XmapError(CODE_INVALID_INPUT, `Foglio ${sheetIndex + 1} non trovato`);
-    return sheet;
-  }
-
   public setTopicColor(topicId: string, color?: string | null): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    setFillColor(topic, color);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => setFillColor(topic, color));
   }
 
   public setTopicTask(topicId: string, task: TaskData): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    writeTask(topic, task);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => writeTask(topic, task));
   }
 
   public clearTopicTask(topicId: string): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-
-    clearTask(topic);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic) => clearTask(topic));
   }
 
   public attachFileToTopic(topicId: string, fileName: string, fileBytes: Uint8Array): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    return this.editTopic(topicId, (topic, wb) => {
+      if (fileBytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, 'Il file da allegare è vuoto.');
+      const attachmentPath = `attachments/${newTopicId()}.bin`;
 
-    if (fileBytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, 'Il file da allegare è vuoto.');
-    const attachmentPath = `attachments/${newTopicId()}.bin`;
-
-    wb.archive.entries.set(attachmentPath, fileBytes);
-    setHref(topic, `xap:${attachmentPath}`);
-    if (!topicTitle(topic).trim()) setTitle(topic, fileName.trim() || 'allegato');
-    wb.pushHistory();
-    return wb.toDto();
+      wb.archive.entries.set(attachmentPath, fileBytes);
+      setHref(topic, `xap:${attachmentPath}`);
+      if (!topicTitle(topic).trim()) setTitle(topic, fileName.trim() || 'allegato');
+    });
   }
 
   /**
@@ -1051,17 +928,14 @@ export class AppController {
     opts?: AddImageTopicOptions
   ): { dto: WorkbookDto; newId: string } {
     const wb = this.ensureWorkbook();
-    const parent = findTopic(wb.content, parentId);
-    if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Parent topic ${parentId} non trovato`);
+    const parent = this.requireParentTopic(wb, parentId);
     if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
 
     const resourceName = this.storeImageResource(wb, bytes, mimeType);
 
     const { newId } = addImageChild(parent, resourceName, size, opts);
     setTopicFolded(parent, false);
-    wb.pushHistory();
-    this.lastCreated = { id: newId, wb, pos: wb.pos };
-    return { dto: wb.toDto(), newId };
+    return { dto: this.commitCreation(wb, newId), newId };
   }
 
   /**
@@ -1074,16 +948,11 @@ export class AppController {
     mimeType: string,
     size: { width: number; height: number }
   ): WorkbookDto {
-    const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
-    if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
-
-    const resourceName = this.storeImageResource(wb, bytes, mimeType);
-
-    setTopicImage(topic, resourceName, size);
-    wb.pushHistory();
-    return wb.toDto();
+    return this.editTopic(topicId, (topic, wb) => {
+      if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
+      const resourceName = this.storeImageResource(wb, bytes, mimeType);
+      setTopicImage(topic, resourceName, size);
+    });
   }
 
   /**
@@ -1096,7 +965,7 @@ export class AppController {
     scope: { sheetIndex?: number; topicId?: string } = {},
   ): string {
     const wb = this.ensureWorkbook();
-    const sheets = this.sheetsForExport(wb.content, scope);
+    const sheets = this.sheetsForExport(wb, scope);
     switch (format) {
       case 'markdown':
         return toMarkdown(sheets);
@@ -1109,19 +978,18 @@ export class AppController {
     }
   }
 
-  private sheetsForExport(content: Sheet[], scope: { sheetIndex?: number; topicId?: string }): Sheet[] {
+  private sheetsForExport(wb: OpenWorkbook, scope: { sheetIndex?: number; topicId?: string }): Sheet[] {
     if (scope.topicId !== undefined) {
-      const topic = findTopic(content, scope.topicId);
-      if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${scope.topicId} non trovato`);
+      const topic = this.requireTopic(wb, scope.topicId);
       // Lettura sola: il ramo fa da radice di un foglio fittizio, senza copiarlo.
       return [{ id: 'export-branch', class: 'sheet', title: topicTitle(topic), rootTopic: topic } as Sheet];
     }
     if (scope.sheetIndex !== undefined) {
-      const sheet = content[scope.sheetIndex];
+      const sheet = wb.content[scope.sheetIndex];
       if (!sheet) throw new XmapError(CODE_VALIDATION, `Foglio ${scope.sheetIndex} non trovato`);
       return [sheet];
     }
-    return content;
+    return wb.content;
   }
 
   /**
@@ -1133,14 +1001,12 @@ export class AppController {
     format: 'svg' | 'png'
   ): Promise<{ bytes: Uint8Array; mime: string; extension: string }> {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const topic = this.requireTopic(wb, topicId);
 
     const latex = topicLatex(topic);
     if (!latex) throw new XmapError(CODE_LATEX, 'Il blocco selezionato non contiene un\'equazione');
 
-    const fontPx = fontSizePx(topic);
-    const emPx = fontPx ? fontPx * 1.25 : 23.33;
+    const emPx = emPxForFontSize(fontSizePx(topic));
     await loadMathJax();
     const render = renderLatexToSvg(latex, emPx);
     if (render.error) throw new XmapError(CODE_LATEX, `LaTeX non valido: ${render.error}`);
@@ -1153,7 +1019,7 @@ export class AppController {
       };
     }
 
-    const png = await svgToPng(render.svg, render.width, render.height, 3.0, '#000000');
+    const png = await svgToPng(render.svg, render.width, render.height, EQUATION_PNG_SCALE, '#000000');
     return { bytes: png, mime: 'image/png', extension: 'png' };
   }
 
@@ -1191,14 +1057,10 @@ export class AppController {
       // agganciare l'import, lo si aggiunge come foglio nuovo.
       wb.content.push(importedSheet);
     } else {
-      // Inserisci come figlio della radice del primo sheet
-      if (!root.children) root.children = {};
-      if (!root.children.attached) root.children.attached = [];
-      root.children.attached.push(importedSheet.rootTopic);
+      appendAttachedChild(root, importedSheet.rootTopic);
     }
 
-    wb.pushHistory();
-    return wb.toDto();
+    return this.commit(wb);
   }
 
   public async mergeWorkbook(otherBytes: Uint8Array): Promise<MergeResultDto> {
@@ -1219,7 +1081,7 @@ export class AppController {
     collectAttachmentRefs(otherSheets, attachmentRefs);
     const attachmentRemap = new Map<string, string>();
     const attachmentsToCopy: Array<[string, Uint8Array]> = [];
-    for (const sourcePath of attachmentRefs) {
+    attachmentRefs.forEach((sourcePath) => {
       const bytes = otherArchive.entries.get(sourcePath);
       if (!bytes) throw new XmapError(CODE_VALIDATION, `Allegato referenziato ma assente: ${sourcePath}`);
 
@@ -1227,31 +1089,28 @@ export class AppController {
       if (!existing || bytesEqual(existing, bytes)) {
         attachmentRemap.set(sourcePath, sourcePath);
         if (!existing) attachmentsToCopy.push([sourcePath, bytes]);
-        continue;
+        return;
       }
 
+      // Estensione finale del file: ".png" in "resources/abc.png", nessuna con 16 caratteri dopo il punto.
       const extension = sourcePath.match(/\.[a-zA-Z0-9]{1,12}$/)?.[0] ?? '.bin';
       const destinationPath = `attachments/${newTopicId()}${extension}`;
       attachmentRemap.set(sourcePath, destinationPath);
       attachmentsToCopy.push([destinationPath, bytes]);
-    }
+    });
     remapAttachmentRefs(otherSheets, attachmentRemap);
 
     let addedResources = 0;
-    for (const [name, bytes] of otherArchive.resources) {
+    otherArchive.resources.forEach((bytes, name) => {
       if (!wb.archive.resources.has(name)) {
         wb.archive.resources.set(name, bytes);
         addedResources++;
       }
-    }
+    });
 
     const addedSheets = otherSheets.length;
-    for (const s of otherSheets) {
-      wb.content.push(s);
-    }
-    for (const [name, bytes] of attachmentsToCopy) {
-      wb.archive.entries.set(name, bytes);
-    }
+    otherSheets.forEach((s) => wb.content.push(s));
+    attachmentsToCopy.forEach(([name, bytes]) => wb.archive.entries.set(name, bytes));
 
     wb.pushHistory();
     return {
@@ -1264,8 +1123,7 @@ export class AppController {
 
   public async splitTopic(topicId: string): Promise<Uint8Array> {
     const wb = this.ensureWorkbook();
-    const topic = findTopic(wb.content, topicId);
-    if (!topic) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    const topic = this.requireTopic(wb, topicId);
 
     const root = JSON.parse(JSON.stringify(topic)) as Topic;
 
@@ -1285,31 +1143,26 @@ export class AppController {
 
     const resourceRefs = new Set<string>();
     collectResourceRefs(standalone, resourceRefs);
-    for (const ref of resourceRefs) {
+    resourceRefs.forEach((ref) => {
       const resPath = `resources/${ref}`;
       const bytes = wb.archive.resources.get(resPath);
       if (!bytes) throw new XmapError(CODE_VALIDATION, `Risorsa referenziata ma assente: ${resPath}`);
       newArchive.resources.set(resPath, bytes);
-    }
+    });
 
     const attachmentRefs = new Set<string>();
     collectAttachmentRefs(standalone, attachmentRefs);
-    for (const attachment of attachmentRefs) {
+    attachmentRefs.forEach((attachment) => {
       const bytes = wb.archive.entries.get(attachment);
       if (!bytes) throw new XmapError(CODE_VALIDATION, `Allegato referenziato ma assente: ${attachment}`);
       newArchive.entries.set(attachment, bytes);
-    }
+    });
 
-    const manifestObj = refreshManifest({}, newArchive.resources.keys(), true);
-    registerEntries(
-      manifestObj,
-      Array.from(newArchive.entries.keys()).filter((name) => name.startsWith('attachments/'))
-    );
-    newArchive.entries.set('manifest.json', new TextEncoder().encode(JSON.stringify(manifestObj)));
-    newArchive.entries.set('content.json', new TextEncoder().encode(JSON.stringify([standalone])));
+    newArchive.entries.set('manifest.json', encodeJson(refreshArchiveManifest({}, newArchive)));
+    newArchive.entries.set('content.json', encodeJson([standalone]));
     newArchive.entries.set(
       'metadata.json',
-      new TextEncoder().encode(JSON.stringify({ creator: { name: 'XMap Studio', version: '2.0' } }))
+      encodeJson({ creator: { name: 'XMap Studio', version: '2.0' } })
     );
 
     const bytes = await buildArchiveBytes(newArchive);
@@ -1340,19 +1193,14 @@ export class AppController {
     // Rimuove thumbnail obsoleta (Regola 9)
     archive.entries.delete('Thumbnails/thumbnail.png');
 
-    // refreshManifest/registerEntries mutano il loro input: clone profondo.
-    const manifest = refreshManifest(
+    // Il manifest viene mutato: lo si clona in profondità per non toccare quello del workbook.
+    const manifest = refreshArchiveManifest(
       JSON.parse(JSON.stringify(wb.manifest ?? {})) as Record<string, unknown>,
-      archive.resources.keys(),
-      true
-    );
-    registerEntries(
-      manifest,
-      Array.from(archive.entries.keys()).filter((name) => name.startsWith('attachments/'))
+      archive
     );
 
-    archive.entries.set('manifest.json', new TextEncoder().encode(JSON.stringify(manifest)));
-    archive.entries.set('content.json', new TextEncoder().encode(JSON.stringify(wb.content)));
+    archive.entries.set('manifest.json', encodeJson(manifest));
+    archive.entries.set('content.json', encodeJson(wb.content));
 
     const bytes = await buildArchiveBytes(archive);
     const validation = await validateArchiveBytes(bytes);
@@ -1361,14 +1209,18 @@ export class AppController {
   }
 
   /**
-   * Segna il workbook come salvato dopo che i byte sono stati scritti da un
-   * adapter esterno (Electron IPC, File System Access API). Opzionalmente
-   * aggiorna il percorso (Salva con nome).
+   * Hash SHA-256 atteso del file su disco: il salvataggio lo confronta per rilevare
+   * modifiche esterne prima di riscrivere il file aperto.
    */
   public expectedFileHash(): string {
     return this.ensureWorkbook().originalHash;
   }
 
+  /**
+   * Segna il workbook come salvato dopo che i byte sono stati scritti da un
+   * adapter esterno (Electron IPC, File System Access API). Opzionalmente
+   * aggiorna il percorso (Salva con nome).
+   */
   public markSaved(path?: string, contentHash?: string, revision?: number): WorkbookDto {
     const wb = this.ensureWorkbook();
     wb.markSaved(path, contentHash, revision);
@@ -1414,19 +1266,91 @@ export class AppController {
   }
 
   public async saveAs(newPath: string, force: boolean = false): Promise<SaveResultDto> {
-    this.ensureWorkbook();
     return await this.save(force, newPath);
   }
+}
 
-  private requirePlatform(): Platform {
-    if (!this.platform) {
-      throw new XmapError(
-        CODE_IO,
-        'Accesso al disco non disponibile in questo ambiente: usa prepareArchiveBytes() e l’adapter di filesystem.'
-      );
+/** Dimensione in px della formula: 1,25 volte la dimensione del testo del blocco, o il valore di riferimento. */
+function emPxForFontSize(fontPx: number | undefined): number {
+  return fontPx ? fontPx * FORMULA_TO_FONT_RATIO : DEFAULT_EM_PX;
+}
+
+function isRootTopic(content: Sheet[], topicId: string): boolean {
+  return content.some((sheet) => sheet.rootTopic?.id === topicId);
+}
+
+/** Legge un payload degli appunti (testo JSON o oggetto già letto) e ne verifica la forma. */
+function parseClipboardPayload(payload: string | XmapClipboardPayload): XmapClipboardPayload {
+  let data: XmapClipboardPayload;
+  if (typeof payload === 'string') {
+    try {
+      data = JSON.parse(payload) as XmapClipboardPayload;
+    } catch {
+      throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: formato JSON non valido.');
     }
-    return this.platform;
+  } else {
+    data = payload;
   }
+
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    typeof data.xmapStudioClipboard !== 'number' ||
+    !data.topic ||
+    typeof data.topic !== 'object'
+  ) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Dati negli appunti non validi: blocco XMap Studio non riconosciuto.');
+  }
+  return data;
+}
+
+/** Aggiunge `child` ai figli `attached` di `parent`, creando i contenitori mancanti. */
+function appendAttachedChild(parent: Topic, child: Topic): void {
+  if (!parent.children) parent.children = {};
+  if (!parent.children.attached) parent.children.attached = [];
+  parent.children.attached.push(child);
+}
+
+/** Codifica in base64 i file di `store` elencati in `names`; quelli assenti vengono omessi. */
+function encodeAssets(store: Map<string, Uint8Array>, names: Iterable<string>): Record<string, string> {
+  return Object.fromEntries(
+    Array.from(names).flatMap((name) => {
+      const bytes = store.get(name);
+      return bytes ? [[name, bytesToBase64(bytes)] as const] : [];
+    })
+  );
+}
+
+/** Ultimo segmento di un percorso, con "/" e "\" come separatori. */
+function fileNameFromPath(filePath: string): string | undefined {
+  return filePath.split(/[\\/]/).pop();
+}
+
+function encodeJson(value: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(value));
+}
+
+/** Aggiorna `manifest` con le risorse e gli allegati di `archive`. Il manifest viene mutato: va passato un oggetto proprio. */
+function refreshArchiveManifest(manifest: Record<string, unknown>, archive: RawArchive): Manifest {
+  const updated = refreshManifest(manifest, archive.resources.keys(), true);
+  registerEntries(
+    updated,
+    Array.from(archive.entries.keys()).filter((name) => name.startsWith('attachments/'))
+  );
+  return updated;
+}
+
+/** Intervallo di figli `[start, end]` (indici inclusi) di `topic`; senza estremi copre tutti i figli. */
+function resolveChildRange(
+  topic: Topic,
+  start: number | undefined,
+  end: number | undefined
+): { start: number; end: number } {
+  const childCount = topic.children?.attached?.length ?? 0;
+  const rangeStart = start ?? 0;
+  const rangeEnd = end ?? Math.max(0, childCount - 1);
+  validateChildRange(rangeStart, rangeEnd, childCount);
+  return { start: rangeStart, end: rangeEnd };
 }
 
 function validateChildRange(start: number, end: number, childCount: number): void {
