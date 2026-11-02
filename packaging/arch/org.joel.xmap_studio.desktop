@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=XMap Studio
-Comment=Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato
+Comment=Mappe mentali libere e open source, con formule LaTeX
 Exec=xmap-studio %F
 Icon=org.joel.xmap_studio
 Terminal=false

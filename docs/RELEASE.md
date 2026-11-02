@@ -19,7 +19,7 @@ adattamenti, e `26.1.0` è più recente di `0.0.x`.
 
 La versione è scritta nel campo `version` di tutti i `package.json` del
 workspace (root, `packages/core`, `packages/ui-kit`, `apps/web`,
-`apps/desktop`) e in `pkgver` di `packaging/arch/release/PKGBUILD`; li allinea
+`apps/desktop`) e in `pkgver` di `packaging/arch/aur/PKGBUILD`; li allinea
 `node scripts/release-version.mjs set <versione>`.
 Nessun altro punto la ripete a mano: la pagina "Informazioni" dell'app la legge
 da `apps/web/package.json` al build (`__APP_VERSION__` in
@@ -130,7 +130,9 @@ Job:
 | `verify` | verify | `scripts/check-release-version.mjs`: il tag deve coincidere con la `version` di tutti i `package.json` e con `pkgver` del PKGBUILD di release; poi `pnpm build` e `pnpm test` |
 | `build (windows)` | build | `pnpm dist:win` → `XMap-Studio-<versione>-portable-x64.exe` (+ `SHA256SUMS-windows.txt`) |
 | `build (linux)` | build | `pnpm dist:linux` → `XMap-Studio-<versione>-x86_64.AppImage`, poi `appimage-zsync.mjs` (update information + `.AppImage.zsync`, `zsync` installato nel job) (+ `SHA256SUMS-linux.txt`, calcolato dopo) |
-| `release` | release | solo sui tag: crea la GitHub Release del tag (note generate dai commit) e allega i due artefatti e i checksum |
+| `build (arch)` | build | `pnpm dist:arch` → `xmap-studio-<versione>-linux-x86_64.tar.gz`, app precompilata senza Electron per Arch (+ `SHA256SUMS-arch.txt`) |
+| `release` | release | solo sui tag: crea la GitHub Release del tag (note generate dai commit) e allega gli artefatti e i checksum |
+| `aur` | aur | solo sui tag: pubblica `xmap-studio-bin` su AUR (`packaging/arch/aur-publish.sh`, container `archlinux:base-devel`); senza il secret `AUR_SSH_PRIVATE_KEY` emette un warning e non pubblica |
 
 In un lancio manuale su un branch non c'è un tag: il controllo tag/versione si
 salta, build e test girano comunque (su un tag viene eseguito normalmente). I
@@ -241,20 +243,17 @@ delle impostazioni e un toast quando c'è una versione nuova.
 | Processo Electron compilato | `apps/desktop/dist/` | no |
 | AppImage Linux (+ `.zsync`) | `apps/desktop/release/` | sì (GitHub Release del tag) |
 | Exe portable Windows | `apps/desktop/release/` | sì (GitHub Release del tag) |
-| Pacchetto Arch | `packaging/arch/` | no (si compila in locale) |
+| Tarball Arch (`xmap-studio-bin`) | `apps/desktop/release/` | sì (GitHub Release del tag, e AUR) |
 
 ## Pacchetto Arch Linux
 
-Due PKGBUILD, con regole di manutenzione in
-[`packaging/arch/README.md`](../packaging/arch/README.md):
-
-- `packaging/arch/PKGBUILD` → `xmap-studio-git`: ultimo commit del branch
-  corrente, per sviluppo (`cd packaging/arch && makepkg -si`);
-- `packaging/arch/release/PKGBUILD` → `xmap-studio`: compila il tag `vYY.MAJOR.MINOR`
-  (`cd packaging/arch/release && makepkg -si`).
-
-Usano l'Electron di sistema (`electron43`) e installano l'app in
-`/usr/lib/xmap-studio`, il comando `xmap-studio`, la voce di menu, le icone
-`hicolor` e il tipo MIME `application/xmind`. Il PKGBUILD di release non è
-compilato dal workflow: l'allineamento di `pkgver` è però verificato da
-`verify`. `dist/` e `release/` degli artefatti sono in `.gitignore`.
+Su AUR c'è **`xmap-studio-bin`**: scarica il tarball precompilato della GitHub
+Release e lo installa, senza compilare nulla sulla macchina dell'utente. Lo
+pubblica il job `aur` a ogni release; a mano si usa
+`packaging/arch/aur-publish.sh`. Per sviluppo resta `packaging/arch/PKGBUILD`
+(`xmap-studio-git`, compila il clone locale). Entrambi usano l'Electron di
+sistema (`electron43`) e installano l'app in `/usr/lib/xmap-studio`, il comando
+`xmap-studio`, la voce di menu, le icone `hicolor` e il tipo MIME
+`application/xmind`. Dettagli, chiave SSH del CI e regole di `pkgrel` in
+[`packaging/arch/README.md`](../packaging/arch/README.md). `dist/` e `release/`
+degli artefatti sono in `.gitignore`.

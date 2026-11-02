@@ -33,7 +33,8 @@ packaging/arch/src/
 packaging/arch/pkg/
 packaging/arch/xmap-studio/
 packaging/arch/*.pkg.tar.*
-packaging/arch/release/src/
-packaging/arch/release/pkg/
-packaging/arch/release/xmap-studio/
-packaging/arch/release/*.pkg.tar.*
+packaging/arch/aur/src/
+packaging/arch/aur/pkg/
+packaging/arch/aur/*.tar.gz
+packaging/arch/aur/*.pkg.tar.*
+packaging/arch/aur/.SRCINFO
