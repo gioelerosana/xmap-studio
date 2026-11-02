@@ -15,7 +15,7 @@
 #     lib/xmap-studio/apps/web/dist/  UI (main.js la cerca in ../../web/dist)
 #     share/{applications,mime,icons}/
 #     LICENSE
-# Electron non c'è: il pacchetto usa quello di sistema (electron43), e il
+# Electron non c'è: il pacchetto usa quello di sistema (electron44), e il
 # launcher /usr/bin/xmap-studio lo scrive il PKGBUILD. I moduli nativi
 # (@resvg/resvg-js) sono quelli linux-x64 installati da pnpm sulla macchina di
 # build: va eseguito su Linux x86_64 (glibc).

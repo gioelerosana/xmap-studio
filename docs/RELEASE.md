@@ -168,7 +168,7 @@ né metadati; per l'artefatto di release usa l'immagine Docker del CI:
 
 ```bash
 docker run --rm -v "$PWD":/project -w /project electronuserland/builder:wine \
-  bash -c 'npm i -g pnpm@12.9.1 && pnpm install --frozen-lockfile && pnpm dist:win'
+  bash -c 'npm i -g pnpm@12.16.1 && pnpm install --frozen-lockfile && pnpm dist:win'
 ```
 
 Le icone dei pacchetti in `apps/desktop/build/` (`icon.svg`, `icon.png`,
@@ -252,7 +252,7 @@ Release e lo installa, senza compilare nulla sulla macchina dell'utente. Lo
 pubblica il job `aur` a ogni release; a mano si usa
 `packaging/arch/aur-publish.sh`. Per sviluppo resta `packaging/arch/PKGBUILD`
 (`xmap-studio-git`, compila il clone locale). Entrambi usano l'Electron di
-sistema (`electron43`) e installano l'app in `/usr/lib/xmap-studio`, il comando
+sistema (`electron44`) e installano l'app in `/usr/lib/xmap-studio`, il comando
 `xmap-studio`, la voce di menu, le icone `hicolor` e il tipo MIME
 `application/xmind`. Dettagli, chiave SSH del CI e regole di `pkgrel` in
 [`packaging/arch/README.md`](../packaging/arch/README.md). `dist/` e `release/`

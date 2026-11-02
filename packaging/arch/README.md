@@ -89,12 +89,12 @@ versione deve essere già sulla Release) e non fa nulla se AUR è già allineato
 
 ## Electron di sistema
 
-I pacchetti dipendono da `electron43` dei repository Arch e non includono
+I pacchetti dipendono da `electron44` dei repository Arch e non includono
 Electron: il tarball pesa ~15 MB invece dei ~100 MB dell'AppImage, e Electron
 riceve gli aggiornamenti di sicurezza di Arch. Il launcher `/usr/bin/xmap-studio`
-esegue `electron43 /usr/lib/xmap-studio/apps/desktop`.
+esegue `electron44 /usr/lib/xmap-studio/apps/desktop`.
 
-Quando Arch passa a una nuova major (es. `electron44`):
+Quando Arch passa a una nuova major (es. `electron45`):
 
 1. aggiorna `_electron` in `aur/PKGBUILD` e in `PKGBUILD`;
 2. verifica `apps/desktop/src/main.ts` con la nuova major (`makepkg -si` del `-git`);

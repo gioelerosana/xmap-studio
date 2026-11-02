@@ -16,7 +16,7 @@ arch=('x86_64')
 license=('MIT')
 provides=("$_pkgname")
 conflicts=("$_pkgname")
-_electron=electron43
+_electron=electron44
 depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
