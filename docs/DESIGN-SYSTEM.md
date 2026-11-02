@@ -4,8 +4,8 @@ L'interfaccia TypeScript (`packages/ui-kit`, `apps/web`, `apps/desktop`) segue i
 design system **T3 Code**: canvas quasi bianco o quasi nero, bordi hairline, un
 solo colore d'azione blu, font di sistema, densità da strumento per sviluppatori.
 I token vivono in [`packages/ui-kit/src/theme.css`](../packages/ui-kit/src/theme.css);
-Tailwind ([`apps/web/tailwind.config.js`](../apps/web/tailwind.config.js)) li
-espone come classi. Questa pagina è il contratto: chi tocca la UI la segue.
+Tailwind 4 li espone come classi con il blocco `@theme` in testa a
+[`apps/web/src/index.css`](../apps/web/src/index.css). Questa pagina è il contratto: chi tocca la UI la segue.
 
 ## Principi
 

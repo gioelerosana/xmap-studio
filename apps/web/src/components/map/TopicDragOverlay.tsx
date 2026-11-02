@@ -90,7 +90,7 @@ export function TopicDragOverlay({
             className="flex h-full w-full items-center overflow-hidden text-xs leading-snug"
             style={{ color: look.text }}
           >
-            <span className="line-clamp-3 break-words" style={textStyleCss(src.textStyle)}>
+            <span className="line-clamp-3 wrap-break-word" style={textStyleCss(src.textStyle)}>
               {src.latex ? src.latex : src.displayTitle || src.title || '(senza titolo)'}
             </span>
           </div>

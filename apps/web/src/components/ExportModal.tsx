@@ -235,7 +235,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 aria-current={active ? 'true' : undefined}
                 onClick={() => setFormat(f.id)}
                 className={cn(
-                  'flex h-9 shrink-0 items-center gap-2 rounded-md px-2.5 text-left text-sm outline-none transition-colors',
+                  'flex h-9 shrink-0 items-center gap-2 rounded-md px-2.5 text-left text-sm outline-hidden transition-colors',
                   'focus-visible:ring-2 focus-visible:ring-ring',
                   active ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                 )}

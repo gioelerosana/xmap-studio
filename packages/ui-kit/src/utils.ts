@@ -7,7 +7,7 @@
  * `text-2xs` verrebbe scambiata per un colore del testo e cancellata da un
  * `text-primary` successivo (o viceversa), e le ombre custom verrebbero
  * trattate come colori d'ombra. Il nome in `theme` è la chiave dell'estensione
- * Tailwind corrispondente (apps/web/tailwind.config.js).
+ * Tailwind corrispondente (`@theme` in apps/web/src/index.css).
  */
 import { clsx, type ClassValue } from 'clsx';
 import { extendTailwindMerge } from 'tailwind-merge';

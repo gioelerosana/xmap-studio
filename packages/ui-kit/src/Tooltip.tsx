@@ -119,7 +119,7 @@ export function Tooltip({
         <span
           role="tooltip"
           id={id}
-          className={cn('pointer-events-none absolute z-[60] flex', SIDE[side], ALIGN[align])}
+          className={cn('pointer-events-none absolute z-60 flex', SIDE[side], ALIGN[align])}
         >
           <span className="surface-glass flex animate-pop-in items-center gap-2 whitespace-nowrap rounded-md border px-2 py-1 text-xs text-popover-foreground shadow-composer">
             {content}

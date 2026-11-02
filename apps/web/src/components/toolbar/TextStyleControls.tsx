@@ -262,7 +262,7 @@ const FontSizeInput: React.FC<FontSizeInputProps> = ({ value, disabled, onCommit
             commit();
           }
         }}
-        className="w-full min-w-0 bg-transparent tabular-nums outline-none disabled:opacity-disabled [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className="w-full min-w-0 bg-transparent tabular-nums outline-hidden disabled:opacity-disabled [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
       />
       <span className="text-muted-foreground">px</span>
     </label>

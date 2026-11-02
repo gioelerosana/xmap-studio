@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -10,13 +11,19 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 // installa la versione nuova.
 function precacheManifest(): Plugin {
   let outDir = '';
+  let written = false;
   return {
     name: 'xmap-precache-manifest',
     apply: 'build',
     configResolved(config) {
       outDir = path.resolve(config.root, config.build.outDir);
     },
+    writeBundle() {
+      written = true;
+    },
     closeBundle() {
+      // Se la build è fallita non c'è nulla da elencare: l'errore vero lo riporta Vite.
+      if (!written) return;
       const swPath = path.join(outDir, 'sw.js');
       const files = readdirSync(outDir, { recursive: true, withFileTypes: true })
         .filter((entry) => entry.isFile())
@@ -68,7 +75,7 @@ function devServiceWorkerReset(): Plugin {
 
 // Versione dell'app (vYY.MAJOR.MINOR, docs/RELEASE.md): la scrive il workflow di
 // release nei package.json, qui si legge per mostrarla nella UI.
-const appVersion: string = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version;
+const appVersion: string = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8')).version;
 
 export default defineConfig({
   // Percorsi relativi: in Electron la UI compilata si carica da file://.
@@ -76,25 +83,25 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
-  plugins: [react(), precacheManifest(), devServiceWorkerReset()],
+  plugins: [react(), tailwindcss(), precacheManifest(), devServiceWorkerReset()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@xmap/core': path.resolve(__dirname, '../../packages/core/src/index.ts'),
-      '@xmap/ui-kit/theme.css': path.resolve(__dirname, '../../packages/ui-kit/src/theme.css'),
-      '@xmap/ui-kit': path.resolve(__dirname, '../../packages/ui-kit/src/index.ts'),
-      '@resvg/resvg-js': path.resolve(__dirname, './src/shims/resvg.ts'),
+      '@': path.resolve(import.meta.dirname, './src'),
+      '@xmap/core': path.resolve(import.meta.dirname, '../../packages/core/src/index.ts'),
+      '@xmap/ui-kit/theme.css': path.resolve(import.meta.dirname, '../../packages/ui-kit/src/theme.css'),
+      '@xmap/ui-kit': path.resolve(import.meta.dirname, '../../packages/ui-kit/src/index.ts'),
+      '@resvg/resvg-js': path.resolve(import.meta.dirname, './src/shims/resvg.ts'),
     },
   },
   build: {
     // L'unico chunk oltre i 500 kB è `mathjax-engine`, caricato su richiesta (latex/mathjax.ts):
     // non pesa sull'avvio, l'avviso sarebbe solo rumore.
     chunkSizeWarningLimit: 2000,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        // React cambia di rado: in un chunk suo resta nella cache HTTP tra una release e l'altra.
-        manualChunks(id) {
-          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(react|react-dom|scheduler)\//.test(id)) return 'react';
+        codeSplitting: {
+          // React cambia di rado: in un chunk suo resta nella cache HTTP tra una release e l'altra.
+          groups: [{ name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ }],
         },
       },
     },

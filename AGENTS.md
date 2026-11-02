@@ -239,11 +239,13 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
   i suoi popover devono restare visibili in tutte le posizioni; sotto `sm` vista e zoom non
   flottano sulla mappa ma stanno nel pannello "Vista e zoom" della barra (MapView li rende
   lì con un portale, nello spazio `mapControlsSlot`);
-- la variante Tailwind `coarse:` (touch) è un plugin `addVariant` in
-  `apps/web/tailwind.config.js`, **non** uno `screen` raw: uno screen raw
-  disattiva in silenzio tutte le varianti `max-sm:`/`max-lg:` (barra
-  agganciata, editor LaTeX a foglio, toast). Dopo modifiche al config verifica che la CSS generata
-  le contenga.
+- Tailwind 4 si configura in CSS, in testa a `apps/web/src/index.css` (`@theme`,
+  `@custom-variant`; niente `tailwind.config.js`). La variante `coarse:` (touch) è
+  un `@custom-variant` su `@media (pointer: coarse)`. `@import 'tailwindcss'`
+  deve restare prima di `theme.css`: fissa l'ordine dei layer, e le variabili
+  del design system (layer `base`) battono i default di Tailwind (layer `theme`).
+  Dopo modifiche alla configurazione verifica che la CSS generata contenga le
+  varianti `max-sm:`/`coarse:` (barra agganciata, editor LaTeX a foglio, toast).
 
 Per provarla su un dispositivo si serve **sempre via Tailscale**, da qualunque
 PC si lavori, con `scripts/serve-tailnet.mjs` sulla porta dedicata 60417,

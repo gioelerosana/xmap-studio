@@ -170,7 +170,7 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
       role="region"
       aria-label="Impostazioni"
       tabIndex={-1}
-      className="absolute inset-0 z-30 flex flex-col bg-background text-foreground outline-none max-md:overflow-y-auto md:flex-row"
+      className="absolute inset-0 z-30 flex flex-col bg-background text-foreground outline-hidden max-md:overflow-y-auto md:flex-row"
     >
       <aside className="flex shrink-0 flex-col gap-3 border-b bg-background p-3 md:w-60 md:border-b-0 md:border-r md:p-4">
         <div className="flex items-center gap-2">
@@ -187,7 +187,7 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
               aria-current={active === section.id ? 'page' : undefined}
               onClick={() => setActive(section.id)}
               className={cn(
-                'flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring',
+                'flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring',
                 active === section.id
                   ? 'bg-accent font-medium text-accent-foreground'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground',

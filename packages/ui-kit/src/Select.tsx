@@ -264,7 +264,7 @@ function SelectListbox<T extends string | number>({
       aria-activedescendant={activeIndex >= 0 ? optionDomId(listboxId, activeIndex) : undefined}
       onKeyDown={onKeyDown}
       style={placement ?? { left: 0, top: 0 }}
-      className="fixed z-[70] flex animate-pop-in flex-col overflow-y-auto rounded-lg border bg-popover p-1 text-sm text-popover-foreground shadow-dialog outline-none"
+      className="fixed z-70 flex animate-pop-in flex-col overflow-y-auto rounded-lg border bg-popover p-1 text-sm text-popover-foreground shadow-dialog outline-hidden"
     >
       {options.map((option, index) => {
         const selected = option.value === selectedValue;

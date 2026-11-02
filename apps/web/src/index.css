@@ -1,8 +1,112 @@
+/*
+ * Tailwind 4, configurato qui in CSS (niente tailwind.config.js).
+ *
+ * Ordine degli import: `tailwindcss` per primo, così l'ordine dei layer è
+ * theme → base → components → utilities e le variabili di theme.css (layer
+ * base) vincono sui valori di default che Tailwind scrive nel layer theme.
+ */
+@import 'tailwindcss';
 @import '@xmap/ui-kit/theme.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Le classi dei componenti del design system stanno nel pacchetto ui-kit. */
+@source '../../../packages/ui-kit/src';
+
+@custom-variant dark (&:where(.dark, .dark *));
+/* Dispositivi touch (iPad, telefono): puntatore grossolano. */
+@custom-variant coarse (@media (pointer: coarse));
+
+/*
+ * Alias Tailwind verso le variabili di packages/ui-kit/src/theme.css (design
+ * system T3 Code): i valori cambiano col tema (`.dark`), qui ci sono solo i
+ * nomi delle utility. `inline` scrive nella utility il `var(--…)` di
+ * theme.css; i modificatori di opacità (`bg-primary/10`) passano da
+ * color-mix anche con variabili oklch/rgba.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-control-surface: var(--sidebar-control-surface);
+  --color-sidebar-row-active: var(--sidebar-row-active);
+  --color-destructive: var(--error);
+
+  --radius-control: var(--control-radius);
+  --radius-lg: var(--radius);
+
+  /* Le ombre Tailwind le scrive dentro la utility (`--tw-shadow`): per seguire il
+     tema devono restare `var(--…)`, anche quando il nome coincide. */
+  --shadow-control: var(--shadow-control);
+  --shadow-composer: var(--shadow-composer);
+  --shadow-dialog: var(--shadow-dialog);
+  --shadow-control-highlight: var(--inset-shadow-control-highlight);
+  --shadow-control-pressed: var(--inset-shadow-control-pressed);
+
+  --spacing-topbar: var(--topbar-height);
+  --spacing-sidebar: var(--sidebar-width);
+  --spacing-inspector: var(--inspector-width);
+
+  --ease-sheet: var(--ease-out-sheet);
+}
+
+/*
+ * Chiavi con lo stesso nome di una variabile di theme.css (`--radius`,
+ * `--radius-sm`, `--font-sans`, `--opacity-disabled`…):
+ * qui servono solo a far esistere la utility (`rounded`, `opacity-disabled`); il valore effettivo è quello di theme.css, che sta in
+ * un layer successivo. Quelle già nel tema di default di Tailwind
+ * (`--radius-sm`, `--radius-md`, `--radius-xl`, `--radius-2xl`, `--font-sans`,
+ * `--font-mono`) non vanno ridichiarate.
+ */
+@theme {
+  --radius: 0.5rem;
+  --opacity-disabled: 0.64;
+
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+  --text-3xs: 10px;
+  --text-3xs--line-height: 14px;
+
+  --z-index-sheet: 46;
+}
+
+/*
+ * Default di Tailwind 3 che Tailwind 4 ha tolto dal preflight: li si tiene
+ * per non cambiare l'aspetto dei controlli. (Il colore dei bordi lo fissa già
+ * theme.css.)
+ */
+@layer base {
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 /* Mobile/iPad: niente rimbalzo della pagina né zoom da doppio tap; i gesti
    (pan, pinch) li gestisce la mappa. */

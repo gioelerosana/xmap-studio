@@ -93,7 +93,7 @@ export const CONTROL_PADDING_X: Record<ControlSize, string> = {
 
 /** Aspetto del testo nativo dentro il guscio. */
 export const CONTROL_FIELD =
-  'min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed';
+  'min-w-0 flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed';
 
 /** Slot per icone a sinistra/destra del campo. */
 export const CONTROL_SLOT =

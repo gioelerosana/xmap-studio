@@ -11,7 +11,7 @@ interface SymbolPaletteProps {
   onInsertText: (latex: string) => void;
 }
 
-const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
+const FOCUS_RING = 'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
 
 const TAB_STEPS: Record<string, number | undefined> = { ArrowRight: 1, ArrowLeft: -1 };
 
@@ -68,7 +68,7 @@ export const SymbolPalette: React.FC<SymbolPaletteProps> = ({ onInsertSnippet, o
         id="latex-palette-panel"
         aria-labelledby={`latex-tab-${tab}`}
         // Il pannello si ferma a due righe e scorre; su schermi stretti scorre in orizzontale.
-        className="-mx-1 flex max-h-[4.5rem] gap-0.5 overflow-y-auto px-1 max-sm:overflow-x-auto sm:flex-wrap"
+        className="-mx-1 flex max-h-18 gap-0.5 overflow-y-auto px-1 max-sm:overflow-x-auto sm:flex-wrap"
       >
         {commandsOfGroup(tab).map((command) => (
           <button

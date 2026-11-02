@@ -110,7 +110,7 @@ export function Modal({
         tabIndex={-1}
         onKeyDown={trapFocus}
         className={cn(
-          'flex max-h-[calc(100dvh-2rem)] w-full animate-pop-in flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-dialog outline-none',
+          'flex max-h-[calc(100dvh-2rem)] w-full animate-pop-in flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-dialog outline-hidden',
           size ? SIZES[size] : maxWidth,
           className,
         )}

@@ -94,7 +94,7 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(item.id)}
             className={cn(
               'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium transition-[background-color,color,box-shadow]',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
               'disabled:pointer-events-none disabled:opacity-disabled',
               '[&_svg]:shrink-0 [&_svg:not([class*=size-]):not([class*=w-])]:size-3.5',
               SEGMENT[size],

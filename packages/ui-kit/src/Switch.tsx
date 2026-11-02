@@ -53,7 +53,7 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(function Switch
       }}
       className={cn(
         'inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+        'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
         'disabled:pointer-events-none disabled:opacity-disabled',
         value ? 'bg-primary' : 'bg-input',
         !label && className,

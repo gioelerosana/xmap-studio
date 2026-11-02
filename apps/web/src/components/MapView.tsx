@@ -281,9 +281,9 @@ export const MapView: React.FC<MapViewProps> = ({
     <div
       ref={containerRef}
       className={cn(
-        'relative flex-1 h-full w-full overflow-clip bg-[var(--map-canvas)] select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150',
-        dragOverlay && '!cursor-grabbing',
-        isConnectingRelationship && '!cursor-crosshair'
+        'relative flex-1 h-full w-full overflow-clip bg-(--map-canvas) select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150',
+        dragOverlay && 'cursor-grabbing!',
+        isConnectingRelationship && 'cursor-crosshair!'
       )}
       onClick={(e) => {
         // Click o tap sullo sfondo: deseleziona relazione e blocchi (con Maiusc/Ctrl la selezione resta).
