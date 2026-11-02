@@ -54,11 +54,11 @@ e segnala la nuova versione. L'AppImage si aggiorna da sé scaricando solo le
 parti cambiate (zsync); su Windows la nuova versione si scarica accanto all'exe e
 si avvia al riavvio.
 
-Su Arch Linux:
+Su Arch Linux, da [AUR](https://aur.archlinux.org/packages/xmap-studio-bin)
+(precompilato, non si compila nulla):
 
 ```bash
-git clone https://github.com/gioelerosana/xmap-studio.git
-cd xmap-studio/packaging/arch/release && makepkg -si
+yay -S xmap-studio-bin
 ```
 
 ## Sviluppo

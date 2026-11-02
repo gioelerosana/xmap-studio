@@ -35,7 +35,7 @@ for (const file of manifests) {
 try {
   execFileSync('bash', [resolve(root, 'packaging/arch/bump-pkgver.sh'), '--check'], { stdio: 'pipe' });
 } catch (err) {
-  errors.push(`packaging/arch/release/PKGBUILD disallineato: ${String(err.stderr ?? err.message).trim()}`);
+  errors.push(`packaging/arch/aur/PKGBUILD disallineato: ${String(err.stderr ?? err.message).trim()}`);
 }
 // bump-pkgver.sh confronta con apps/desktop: se questa coincide col tag, vale per il tag.
 

@@ -2,23 +2,24 @@
 #
 # packaging/arch/bump-pkgver.sh
 #
-# Gestisce e verifica la versione (pkgver) di packaging/arch/release/PKGBUILD.
+# Gestisce e verifica la versione (pkgver) di packaging/arch/aur/PKGBUILD.
 #
 # Uso:
 #   ./bump-pkgver.sh          # Allinea pkgver alla versione in apps/desktop/package.json e imposta pkgrel=1
-#   ./bump-pkgver.sh X.Y.Z    # Imposta pkgver=X.Y.Z e azzera pkgrel=1 (rigenera anche .SRCINFO)
+#   ./bump-pkgver.sh X.Y.Z    # Imposta pkgver=X.Y.Z e azzera pkgrel=1
 #   ./bump-pkgver.sh --check  # Verifica che pkgver corrisponda alla versione di apps/desktop/package.json (esce con 0 o 1)
 #
 # Manutenzione pkgrel:
 #   Se si apportano modifiche esclusivamente ai file di packaging (es. launcher, dipendenze,
 #   desktop entry) per la medesima versione di rilascio, incrementare a mano pkgrel in
-#   packaging/arch/release/PKGBUILD (es. pkgrel=2) senza modificare pkgver.
+#   packaging/arch/aur/PKGBUILD (es. pkgrel=2) senza modificare pkgver, poi
+#   ripubblicare con packaging/arch/aur-publish.sh.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." &>/dev/null && pwd)"
-RELEASE_PKGBUILD="${SCRIPT_DIR}/release/PKGBUILD"
+RELEASE_PKGBUILD="${SCRIPT_DIR}/aur/PKGBUILD"
 DESKTOP_PKG_JSON="${REPO_ROOT}/apps/desktop/package.json"
 
 SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
@@ -55,13 +56,13 @@ if [[ "${1:-}" == "--check" ]]; then
 
   if [[ "${CURRENT_PKGVER}" != "${DESKTOP_VER}" ]]; then
     echo "ERRORE: disallineamento versione!" >&2
-    echo "  packaging/arch/release/PKGBUILD (pkgver): ${CURRENT_PKGVER}" >&2
+    echo "  packaging/arch/aur/PKGBUILD (pkgver): ${CURRENT_PKGVER}" >&2
     echo "  apps/desktop/package.json (version):      ${DESKTOP_VER}" >&2
-    echo "Eseguire 'packaging/arch/bump-pkgver.sh' per allineare il release PKGBUILD." >&2
+    echo "Eseguire 'packaging/arch/bump-pkgver.sh' per allineare il PKGBUILD AUR." >&2
     exit 1
   fi
 
-  echo "OK: packaging/arch/release/PKGBUILD (pkgver=${CURRENT_PKGVER}) è allineato con apps/desktop/package.json (${DESKTOP_VER})."
+  echo "OK: packaging/arch/aur/PKGBUILD (pkgver=${CURRENT_PKGVER}) è allineato con apps/desktop/package.json (${DESKTOP_VER})."
   exit 0
 fi
 
@@ -82,7 +83,7 @@ fi
 OLD_PKGVER="$(get_pkgbuild_pkgver)"
 OLD_PKGREL="$(get_pkgbuild_pkgrel)"
 
-# Sostituzione in packaging/arch/release/PKGBUILD
+# Sostituzione in packaging/arch/aur/PKGBUILD
 sed -i -E "s/^pkgver=.*/pkgver=${TARGET_VER}/" "${RELEASE_PKGBUILD}"
 sed -i -E "s/^pkgrel=.*/pkgrel=1/" "${RELEASE_PKGBUILD}"
 
@@ -90,18 +91,3 @@ echo "Aggiornato ${RELEASE_PKGBUILD}:"
 echo "  pkgver: ${OLD_PKGVER} -> ${TARGET_VER}"
 echo "  pkgrel: 1 (precedente: ${OLD_PKGREL})"
 
-# .SRCINFO è versionato accanto al PKGBUILD: va rigenerato a ogni modifica.
-if command -v makepkg >/dev/null 2>&1; then
-  (cd "${SCRIPT_DIR}/release" && makepkg --printsrcinfo > .SRCINFO)
-  echo "Rigenerato ${SCRIPT_DIR}/release/.SRCINFO"
-else
-  # Senza makepkg (es. runner CI Ubuntu) si aggiornano a testo i soli campi che
-  # dipendono dalla versione: pkgver, pkgrel e il tag nella source git.
-  SRCINFO="${SCRIPT_DIR}/release/.SRCINFO"
-  sed -i -E \
-    -e "s/^(\tpkgver = ).*/\1${TARGET_VER}/" \
-    -e "s/^(\tpkgrel = ).*/\11/" \
-    -e "s/(#tag=v)[0-9]+\.[0-9]+\.[0-9]+/\1${TARGET_VER}/" \
-    "${SRCINFO}"
-  echo "Aggiornato ${SRCINFO} (makepkg non trovato: solo pkgver, pkgrel e tag)"
-fi

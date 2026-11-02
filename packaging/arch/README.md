@@ -1,93 +1,104 @@
 # Packaging Arch Linux per XMap Studio
 
-Questa cartella contiene i file di packaging per costruire e installare **XMap Studio** su Arch Linux.
+Due pacchetti:
 
-La configurazione adotta la convenzione Arch con due package build distinti:
-- **`packaging/arch/PKGBUILD`**: pacchetto `xmap-studio-git` (sviluppo locale). Compila dall'ultimo commit del branch corrente del repository locale.
-- **`packaging/arch/release/PKGBUILD`**: pacchetto `xmap-studio` (release). Compila da un tag di versione git (`vYY.MAJOR.MINOR`, vedi `docs/RELEASE.md`).
+- **`xmap-studio-bin`** su [AUR](https://aur.archlinux.org/packages/xmap-studio-bin):
+  quello per gli utenti. **Non compila nulla**: scarica dalla GitHub Release il
+  tarball precompilato dal CI e lo installa. Sorgente in `aur/`.
+- **`xmap-studio-git`** (`PKGBUILD` in questa cartella): sviluppo locale,
+  compila l'ultimo commit del branch corrente del clone.
 
----
+| File | Ruolo |
+|---|---|
+| `aur/PKGBUILD`, `aur/xmap-studio.sh` | sorgente del repository AUR `xmap-studio-bin` |
+| `build-tarball.sh` | produce `xmap-studio-<v>-linux-x86_64.tar.gz` (`pnpm dist:arch`) |
+| `aur-publish.sh` | pubblica `aur/` su AUR con i checksum del tarball rilasciato |
+| `bump-pkgver.sh` | allinea/verifica `pkgver` di `aur/PKGBUILD` |
+| `PKGBUILD`, `xmap-studio.sh`, `org.joel.xmap_studio.desktop` | pacchetto `-git` (il `.desktop` finisce anche nel tarball) |
 
-## 1. Come installare
+## Installare
 
-### Build di sviluppo (`xmap-studio-git`)
-Compila l'ultimo commit del branch corrente dal clone locale. Utile per testare rapidamente modifiche committate in locale:
 ```bash
-cd packaging/arch
-makepkg -si
-```
-*(Nota: le modifiche nel working tree non committate non vengono incluse nella build).*
-
-### Build di release (`xmap-studio`)
-Compila il tag di versione ufficiale (es. `v26.1.0`) dal repository pubblico su GitHub (HTTPS, senza credenziali):
-```bash
-cd packaging/arch/release
-makepkg -si
-```
-*(Nota: per testare localmente prima del push o senza connessione internet, è possibile decommentare nel PKGBUILD la sorgente `git+file://` verso il repository locale).*
-
----
-
-## 2. Regole di manutenzione: `pkgver` e `pkgrel`
-
-- **`pkgver`**:
-  - In `packaging/arch/PKGBUILD` (`-git`): calcolato dinamicamente tramite la funzione `pkgver()` nel formato `<version>.r<commit_count>.g<hash>`. Non va modificato a mano.
-  - In `packaging/arch/release/PKGBUILD`: stringa statica `YY.MAJOR.MINOR` (es. `26.1.0`), priva del prefisso `v`; la aggiorna `release-manual.yml` a ogni release.
-- **`pkgrel`**:
-  - Viene azzerato a `1` a ogni cambio di `pkgver`.
-  - Va incrementato manualmente (`2`, `3`, ...) quando si modificano solo file di packaging o metadati (launcher shell, dipendenze, file `.desktop`, icone) mantenendo inalterata la versione applicativa upstream.
-
-### Script `bump-pkgver.sh`
-Per automatizzare l'aggiornamento e la verifica della versione del pacchetto di release:
-```bash
-# Allinea automaticamente pkgver alla versione in apps/desktop/package.json e imposta pkgrel=1
-./packaging/arch/bump-pkgver.sh
-
-# Oppure imposta una versione esplicita (rifiuta formati non SemVer)
-./packaging/arch/bump-pkgver.sh 26.1.0
-
-# Verifica allineamento (esce con 0 se allineato, 1 se disallineato; utile in CI)
-./packaging/arch/bump-pkgver.sh --check
+yay -S xmap-studio-bin          # o paru, o a mano:
+git clone https://aur.archlinux.org/xmap-studio-bin.git && cd xmap-studio-bin && makepkg -si
 ```
 
----
+Build di sviluppo dal clone locale (le modifiche non committate non entrano):
 
-## 3. Dipendenze e runtime
-
-### Electron di sistema (`_electron=electron43`)
-Il pacchetto dipende dalla versione di Electron fornita da Arch Linux (`depends=("$_electron")`, attualmente `electron43`):
-- Durante la compilazione viene impostato `export ELECTRON_SKIP_BINARY_DOWNLOAD=1`: questo impedisce a pnpm di scaricare i binari Electron precompilati per npm (risparmiando centinaia di megabyte di download e spazio).
-- L'app viene avviata dal wrapper `/usr/bin/xmap-studio` tramite `exec electron43 /usr/lib/xmap-studio/apps/desktop "$@"`, beneficiando delle librerie di sistema condivise e dei cicli di patch di sicurezza di Arch.
-
-#### Quando Arch aggiorna Electron a una nuova major
-Quando nei repository ufficiali di Arch viene rilasciata una nuova major di Electron (es. `electron44`):
-1. Aggiornare la variabile `_electron=electron44` in entrambi i `PKGBUILD`.
-2. Verificare che `apps/desktop/src/main.ts` e le API Electron impiegate siano pienamente compatibili con la nuova major.
-3. Eseguire `makepkg -si` e testare l'avvio e le funzionalità desktop prima del rilascio.
-
-### `makedepends` e `pnpm`
-Nei `PKGBUILD` i `makedepends` dichiarati via pacman sono `git` e `nodejs`.
-- **Perché `pnpm` non è in `makedepends`**: molti sviluppatori installano e gestiscono `pnpm` tramite `corepack`, `standalone-script` o `npm -g` fuori dal gestore di pacchetti pacman. Il build richiede semplicemente che il comando `pnpm` sia raggiungibile nel `PATH`. Chi preferisce gestirlo con pacman può installare il pacchetto ufficiale Arch `pnpm`.
-
----
-
-## 4. Generazione `.SRCINFO`
-
-Nei repository AUR o per strumenti pacman esterni, i metadati vengono letti da `.SRCINFO`:
 ```bash
-cd packaging/arch/release
-makepkg --printsrcinfo > .SRCINFO
+cd packaging/arch && makepkg -si
 ```
-`release/.SRCINFO` è versionato e `bump-pkgver.sh` lo rigenera da solo; rigeneralo a mano se modifichi il PKGBUILD (anche solo `pkgrel`).
 
----
+## Come arriva una release su AUR
 
-## 5. Checklist per eventuale pubblicazione futura su AUR
+1. `release-manual.yml` porta `pkgver` di `aur/PKGBUILD` alla nuova versione
+   (`scripts/release-version.mjs set` → `bump-pkgver.sh`, `pkgrel=1`); `verify`
+   controlla che coincida col tag.
+2. `release.yml`, job `build (arch)`: `pnpm dist:arch` compila l'app, prepara
+   le dipendenze di produzione (`pnpm deploy --prod`, solo il binario resvg
+   linux-x64) e crea il tarball, allegato alla GitHub Release con
+   `SHA256SUMS-arch.txt`.
+3. Job `aur` (container `archlinux:base-devel`): `aur-publish.sh` riscarica il
+   tarball dall'URL pubblico della Release, scrive i `sha256sums` veri, prova
+   `makepkg` (senza installare), rigenera `.SRCINFO`, committa e fa push su
+   `ssh://aur@aur.archlinux.org/xmap-studio-bin.git`.
 
-Qualora si decida in futuro di rendere pubblico il pacchetto su AUR (`xmap-studio` o `xmap-studio-git`):
-- [x] **Accessibilità sorgenti**: AUR richiede sorgenti pubblicamente accessibili senza credenziali. Il PKGBUILD di release scarica già il tag dal repo pubblico `git+https://github.com/gioelerosana/xmap-studio.git`.
-- [ ] **Checksum reali**: Nel pacchetto release con tarball sorgente, sostituire `'SKIP'` con gli hash SHA256 effettivi (`sha256sums=('...')` o tramite `updpkgsums`).
-- [ ] **Autosufficienza directory**: AUR non ammette riferimenti esterni o symlink a directory genitore. Copiare fisicamente `xmap-studio.sh` e `org.joel.xmap_studio.desktop` nel repository del pacchetto AUR.
-- [ ] **Verifica con namcap**: Eseguire `namcap PKGBUILD` e `namcap xmap-studio-*.pkg.tar.zst` per accertarsi dell'assenza di warning su permessi, dipendenze mancanti o file non standard.
-- [ ] **Rigenerare `.SRCINFO`**: Eseguire `makepkg --printsrcinfo > .SRCINFO` e committarlo nel repo AUR.
-- [ ] **Nessun dato privato**: Assicurarsi che nel PKGBUILD e nei metadati non siano presenti token privati o chiavi SSH.
+Nel repository `aur/PKGBUILD` ha `sha256sums=('SKIP' 'SKIP')`: i checksum veri
+esistono solo dopo la build, e li scrive lo script nella copia pubblicata.
+`.SRCINFO` non è versionato qui: lo genera lo script.
+
+### Chiave SSH del CI
+
+Il job `aur` usa il secret di repository **`AUR_SSH_PRIVATE_KEY`**: una chiave
+ed25519 dedicata al CI, la cui parte pubblica è registrata nell'account AUR del
+maintainer (*My Account › SSH Public Key*, una chiave per riga). Senza il
+secret il job emette un warning e non pubblica; la Release resta valida.
+
+Per sostituirla:
+
+```bash
+ssh-keygen -t ed25519 -N '' -C 'xmap-studio CI → AUR' -f /tmp/aur-ci
+gh secret set AUR_SSH_PRIVATE_KEY < /tmp/aur-ci
+cat /tmp/aur-ci.pub     # da aggiungere su https://aur.archlinux.org/account/
+rm /tmp/aur-ci /tmp/aur-ci.pub
+```
+
+### Pubblicare a mano
+
+Se il job `aur` fallisce, o per cambi di solo packaging, da una macchina Arch
+con la propria chiave registrata su AUR:
+
+```bash
+packaging/arch/aur-publish.sh --dry-run   # prepara e mostra, senza push
+packaging/arch/aur-publish.sh
+```
+
+Lo script pubblica la versione scritta in `aur/PKGBUILD` (il tarball di quella
+versione deve essere già sulla Release) e non fa nulla se AUR è già allineato.
+
+## `pkgver` e `pkgrel`
+
+- `pkgver` di `aur/PKGBUILD` lo scrive solo il workflow di release: non toccarlo
+  nei branch di lavoro. `bump-pkgver.sh --check` verifica l'allineamento con
+  `apps/desktop/package.json`.
+- `pkgrel` torna a `1` a ogni nuova versione. Per un cambio di solo packaging
+  (dipendenze, launcher, `package()`) sulla stessa versione: incrementalo in
+  `aur/PKGBUILD` con una PR e, dopo il merge, lancia `aur-publish.sh` a mano.
+  Se il cambio riguarda il contenuto del tarball serve invece una nuova release.
+- Nel `-git` `pkgver()` lo calcola da sé (`<versione>.r<commit>.g<hash>`).
+
+## Electron di sistema
+
+I pacchetti dipendono da `electron43` dei repository Arch e non includono
+Electron: il tarball pesa ~15 MB invece dei ~100 MB dell'AppImage, e Electron
+riceve gli aggiornamenti di sicurezza di Arch. Il launcher `/usr/bin/xmap-studio`
+esegue `electron43 /usr/lib/xmap-studio/apps/desktop`.
+
+Quando Arch passa a una nuova major (es. `electron44`):
+
+1. aggiorna `_electron` in `aur/PKGBUILD` e in `PKGBUILD`;
+2. verifica `apps/desktop/src/main.ts` con la nuova major (`makepkg -si` del `-git`);
+3. pubblica: con la prossima release, o subito con `pkgrel` + `aur-publish.sh`.
+
+Il `-git` ha `git` e `nodejs` come `makedepends` e vuole `pnpm` nel `PATH`
+(anche installato fuori da pacman, es. con corepack).

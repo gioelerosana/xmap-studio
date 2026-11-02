@@ -307,7 +307,7 @@ xmap-studio/
 ├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata
 ├── docs/                         # documentazione tecnica
-├── packaging/arch/               # PKGBUILD (sviluppo `-git` e `release/`), bump-pkgver.sh
+├── packaging/arch/               # PKGBUILD `-git`, `aur/` (xmap-studio-bin su AUR), build-tarball.sh, aur-publish.sh
 ├── scripts/                      # strumenti di repo (release-version.mjs, check-release-version.mjs)
 ├── packages/
 │   ├── core/                     # motore: src/{model,archive,safety,latex,…}, tests/
