@@ -16,7 +16,6 @@ import {
   topicNotesText,
   topicPosition,
   topicTitle,
-  suggestedLatex,
 } from '../model/utils.js';
 import {
   BoundaryView,
@@ -195,7 +194,7 @@ export class OpenWorkbook {
 function buildSheetDto(sheet: Sheet, index: number): SheetDto {
   const topics: TopicView[] = [];
   if (sheet.rootTopic) {
-    collectTopicViews(sheet.rootTopic, index, undefined, 0, 'root', [], topics);
+    collectTopicViews(sheet.rootTopic, index, undefined, 0, 'root', topics);
   }
 
   const relationships: RelationshipView[] = (sheet.relationships || []).map((rel) => ({
@@ -250,7 +249,6 @@ function collectTopicViews(
   parentId: string | undefined,
   depth: number,
   group: string,
-  parentPath: string[],
   out: TopicView[]
 ): void {
   const id = topic.id || '';
@@ -268,8 +266,6 @@ function collectTopicViews(
     kind = 'image';
     displayTitle = title.length > 0 ? title : '[Immagine]';
   }
-
-  const currentPath = [...parentPath, displayTitle || '(senza titolo)'];
 
   let childCount = 0;
   if (topic.children) {
@@ -312,7 +308,6 @@ function collectTopicViews(
     displayTitle,
     kind,
     latex,
-    latexSuggestion: suggestedLatex(topic),
     imageSrc: topic.image?.src,
     imageW: topic.image?.width,
     imageH: topic.image?.height,
@@ -321,7 +316,6 @@ function collectTopicViews(
     labels: topicLabels(topic),
     markers: topicMarkerIds(topic),
     href: topicHref(topic),
-    path: currentPath,
     childCount,
     folded: isTopicFolded(topic),
     boundaries,
@@ -342,7 +336,7 @@ function collectTopicViews(
       const list = topic.children[g];
       if (Array.isArray(list)) {
         for (const child of list) {
-          collectTopicViews(child, sheetIndex, id, depth + 1, g, currentPath, out);
+          collectTopicViews(child, sheetIndex, id, depth + 1, g, out);
         }
       }
     }

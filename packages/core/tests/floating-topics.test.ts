@@ -30,7 +30,6 @@ function topic(id: string, parentId: string | undefined, over: Partial<TopicView
     notes: '',
     labels: [],
     markers: [],
-    path: [],
     childCount: 0,
     boundaries: [],
     summaries: [],
