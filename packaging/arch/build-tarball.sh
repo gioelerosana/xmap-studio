@@ -62,6 +62,8 @@ TREE="$STAGE/$NAME"
 APP="$TREE/lib/xmap-studio"
 install -d "$APP/apps/desktop" "$APP/apps/web"
 cp -a "$STAGE/deploy/." "$APP/apps/desktop/"
+# .modules.yaml di pnpm contiene percorsi della macchina di build: non serve a runtime
+rm -f "$APP/apps/desktop/node_modules/.modules.yaml"
 cp -a apps/web/dist "$APP/apps/web/dist"
 
 # Il workspace installa anche il binario resvg di Windows (serve a dist:win):

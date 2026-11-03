@@ -53,6 +53,8 @@ package() {
   # main.js cerca la UI in ../../web/dist rispetto a apps/desktop/dist.
   install -d "$app/apps/desktop" "$app/apps/web"
   cp -a "$srcdir/deploy/." "$app/apps/desktop/"
+  # .modules.yaml di pnpm contiene percorsi di $srcdir: non serve a runtime
+  rm -f "$app/apps/desktop/node_modules/.modules.yaml"
   cp -a apps/web/dist "$app/apps/web/dist"
 
   sed "s/@ELECTRON@/$_electron/" "$srcdir/xmap-studio.sh" > xmap-studio.launcher
