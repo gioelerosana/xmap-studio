@@ -6,6 +6,8 @@ import { TeX } from '@mathjax/src/js/input/tex.js';
 import { SVG } from '@mathjax/src/js/output/svg.js';
 import { liteAdaptor } from '@mathjax/src/js/adaptors/liteAdaptor.js';
 import { RegisterHTMLHandler } from '@mathjax/src/js/handlers/html.js';
+// Frecce estensibili di mhchem (`\ce{A -> B}`): in MathJax 4 stanno in un'estensione del font.
+import { MathJaxMhchemFontExtension } from '@mathjax/mathjax-mhchem-font-extension/js/svg.js';
 // MathJax 4 non ha più `AllPackages`: si importano le configurazioni una per una.
 // L'elenco è quello di `AllPackages` di MathJax 3, così le formule esistenti si
 // leggono come prima.
@@ -109,10 +111,11 @@ const FONT_FILES: Record<string, () => Promise<unknown>> = {
 
 /**
  * Formula che usa gli alfabeti più frequenti nelle mappe (`\mathbb`, `\mathcal`,
- * `\mathfrak`, `\mathscr`): convertita al caricamento, porta in memoria i loro
- * file di glifi (pochi kB), così quasi ogni formula si rende al primo colpo.
+ * `\mathfrak`, `\mathscr`, `\mathsf`, `\mathtt`): convertita al caricamento, porta
+ * in memoria i loro file di glifi (≈200 kB compressi in tutto), così quasi ogni
+ * formula si rende al primo colpo.
  */
-const WARMUP_LATEX = '\\mathbb{R}\\mathcal{L}\\mathfrak{g}\\mathscr{F}';
+const WARMUP_LATEX = '\\mathbb{R}\\mathcal{L}\\mathfrak{g}\\mathscr{F}\\mathsf{A}\\mathtt{A}';
 
 /** Tentativi massimi di una conversione in attesa di glifi (uno per file mancante). */
 const MAX_RETRIES = 10;
@@ -168,6 +171,7 @@ export async function createMathJaxConverter(): Promise<MathJaxConvert> {
   const tex = new TeX({ packages: TEX_PACKAGES });
   // `fontCache: 'local'`: i glifi stanno dentro ogni SVG (`<defs>`), che resta autosufficiente.
   const svg = new SVG({ fontCache: 'local' });
+  svg.addExtension(MathJaxMhchemFontExtension);
   const doc = mathjax.document('', { InputJax: tex, OutputJax: svg });
 
   const convert: MathJaxConvert = (latex, display) => {
