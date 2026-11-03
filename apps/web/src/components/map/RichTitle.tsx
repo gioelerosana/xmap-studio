@@ -1,21 +1,50 @@
 import React, { useMemo } from 'react';
-import { useMathJaxReady } from '../../mathReady.js';
+import { useMathJaxReady, useMathJaxVersion } from '../../mathReady.js';
 import {
   inlineMathFontSize,
   splitInlineMath,
   renderLatexToSvg,
+  type RenderResult,
   type TextStyle,
   type TitleRun,
 } from '@xmap/core';
 
-/** Cache per le formule matematiche renderizzate per non ricalcolare MathJax */
-const inlineSvgCache = new Map<string, { svg: string; error: string | null }>();
+interface InlineSvg {
+  svg: string;
+  error: string | null;
+}
+
+/** Cache per le formule matematiche renderizzate per non ricalcolare MathJax (solo esiti definitivi). */
+const inlineSvgCache = new Map<string, InlineSvg>();
 /** Limite della cache: una sessione lunga di editing di formule non deve farla crescere senza fine. */
 const INLINE_SVG_CACHE_MAX = 2000;
 
-function rememberInlineSvg(key: string, entry: { svg: string; error: string | null }): void {
+function rememberInlineSvg(key: string, entry: InlineSvg): void {
   if (inlineSvgCache.size >= INLINE_SVG_CACHE_MAX) inlineSvgCache.clear();
   inlineSvgCache.set(key, entry);
+}
+
+/**
+ * Renderizza una formula e la memorizza solo se l'esito è definitivo (SVG o errore LaTeX).
+ * Un'eccezione di `renderLatexToSvg` significa motore o glifi ancora in caricamento:
+ * non si memorizza, così la formula si ridisegna quando arrivano i glifi.
+ * Restituisce `null` se la formula non si può ancora disegnare.
+ */
+function renderInlineSvg(
+  cacheKey: string,
+  math: string,
+  fontSizePx: number,
+  display: boolean
+): InlineSvg | null {
+  let res: RenderResult;
+  try {
+    res = renderLatexToSvg(math, fontSizePx, display);
+  } catch {
+    return null;
+  }
+  const entry: InlineSvg = { svg: res.svg, error: res.error };
+  rememberInlineSvg(cacheKey, entry);
+  return entry;
 }
 
 /** Luminanza relativa di un colore `#rgb`/`#rrggbb[aa]`; `null` se non è esadecimale. */
@@ -83,20 +112,12 @@ const InlineMath: React.FC<InlineMathProps> = ({ math, display, fontSizePx = 13 
   const cacheKey = mathCacheKey({ math, display, fontSizePx });
   // Prima che MathJax sia caricato si mostra il sorgente; al caricamento il hook ridisegna.
   const mathReady = useMathJaxReady();
+  // Cambia all'arrivo di ogni glifo: la formula rimasta in sorgente va ridisegnata.
+  const mathVersion = useMathJaxVersion();
   const rendered = useMemo(() => {
     if (!mathReady) return null;
-    const cached = inlineSvgCache.get(cacheKey);
-    if (cached) return cached;
-    let entry: { svg: string; error: string | null };
-    try {
-      const res = renderLatexToSvg(math, fontSizePx, display ?? false);
-      entry = { svg: res.svg, error: res.error };
-    } catch (err: unknown) {
-      entry = { svg: '', error: err instanceof Error ? err.message : 'Errore LaTeX' };
-    }
-    rememberInlineSvg(cacheKey, entry);
-    return entry;
-  }, [mathReady, cacheKey, math, display, fontSizePx]);
+    return inlineSvgCache.get(cacheKey) ?? renderInlineSvg(cacheKey, math, fontSizePx, display ?? false);
+  }, [mathReady, mathVersion, cacheKey, math, display, fontSizePx]);
 
   const rawSource = display ? `$$${math}$$` : `$${math}$`;
 

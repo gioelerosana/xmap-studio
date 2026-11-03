@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useMathJaxVersion } from '../../mathReady.js';
 import {
   findInlineMathSegments,
   formatInlineMath,
@@ -62,7 +63,8 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
   // l'anteprima usa il colore del testo solo per la visualizzazione.
   const previewInk = inkColor === '#000000' && darkMode ? '#ffffff' : inkColor;
 
-  // Anteprima LaTeX con debounce.
+  // Anteprima LaTeX con debounce; si rifà quando arrivano glifi MathJax caricati su richiesta.
+  const mathVersion = useMathJaxVersion();
   const previewTimer = useRef<number | null>(null);
   useEffect(() => {
     if (previewTimer.current) window.clearTimeout(previewTimer.current);
@@ -86,7 +88,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
     return () => {
       if (previewTimer.current) window.clearTimeout(previewTimer.current);
     };
-  }, [latex, inkColor, darkMode, controller, scalePercent, inlineFormula]);
+  }, [latex, inkColor, darkMode, controller, scalePercent, inlineFormula, mathVersion]);
 
   // Riscrive solo la formula inline del titolo: delimitatori e frammenti di stile restano.
   // La validazione di `replaceInlineMathSegment` avviene prima di toccare il modello.

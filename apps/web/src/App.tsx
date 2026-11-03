@@ -9,7 +9,7 @@ import { AppMark } from './components/AppMark.js';
 import { hasPendingUpdate, useUpdateStatus } from './app/useUpdateStatus.js';
 import { SheetTabs } from './components/SheetTabs.js';
 import { useSettings } from './settings.js';
-import { useMathJaxReady } from './mathReady.js';
+import { useMathJaxVersion } from './mathReady.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
 import { sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
@@ -138,12 +138,12 @@ export const App: React.FC = () => {
   const setMapStructure = useCallback((structure: MapStructure) => updateSettings({ mapStructure: structure }), [updateSettings]);
 
   // Layout dal DTO già in stato: niente seconda ricostruzione del foglio nel controller.
-  // `mathReady`: all'arrivo di MathJax le formule, misurate fin lì come sorgente, si rimisurano.
-  const mathReady = useMathJaxReady();
+  // `mathVersion`: a ogni arrivo di glifi MathJax le formule, misurate fin lì come sorgente, si rimisurano.
+  const mathVersion = useMathJaxVersion();
   const currentLayout = useMemo<Layout | null>(() => {
     if (!currentSheet) return null;
     return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: mapStructure });
-  }, [currentSheet, collapsedIds, mapStructure, mathReady]);
+  }, [currentSheet, collapsedIds, mapStructure, mathVersion]);
 
   // Cornici del foglio: stesso layout della mappa, così seguono le posizioni dei blocchi (rami chiusi compresi).
   const boundaryFrames = useMemo<BoundaryFrame[]>(
@@ -156,7 +156,7 @@ export const App: React.FC = () => {
     if (!(printModalOpen || exportModalOpen) || !currentSheet) return null;
     if (mapStructure === 'tree') return currentLayout;
     return layoutSheets([currentSheet], collapsedIds, undefined, { ...DEFAULT_LAYOUT_OPTS, structure: 'tree' });
-  }, [printModalOpen, exportModalOpen, currentSheet, collapsedIds, mapStructure, currentLayout, mathReady]);
+  }, [printModalOpen, exportModalOpen, currentSheet, collapsedIds, mapStructure, currentLayout, mathVersion]);
 
   const siblingRangeInfo = useMemo(() => {
     const ids = selectedTopicIds.length > 0 ? selectedTopicIds : (selectedTopicId ? [selectedTopicId] : []);

@@ -70,7 +70,9 @@ export function buildFormulaSvgCache(layout: Layout | null, darkMode: boolean): 
           const coloredSvg = res.svg.replaceAll('currentColor', color);
           cache.set(node.id, coloredSvg);
         }
-      } catch {}
+      } catch {
+        // Glifi ancora in caricamento: la formula resta sorgente finché il chiamante non ricalcola con la nuova versione di MathJax.
+      }
     }
   }
   return cache;

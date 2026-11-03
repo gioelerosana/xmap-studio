@@ -210,10 +210,12 @@ con il nome file senza estensione (`priority-1`, `task-half`, `flag-red`,
 
 ## Rendering MathJax
 
-`renderLatexToSvg` (`packages/core/src/latex/mathjax.ts`) usa `mathjax-full` con la
-stessa configurazione di XMind (input TeX con `AllPackages`, output SVG,
-`display: true`). Produce un SVG standalone con dimensioni in px esplicite e
-restituisce:
+`renderLatexToSvg` (`packages/core/src/latex/mathjax.ts`) usa MathJax 4
+(`@mathjax/src`, font `@mathjax/mathjax-newcm-font`): input TeX con i pacchetti di
+MathJax 3 (`AllPackages`) elencati uno per uno, output SVG, `display: true` di
+default. XMind usa ancora MathJax 3: il PNG può differire di poco da quello di
+XMind, ma l'equazione resta LaTeX + PNG secondo lo schema qui sopra. Produce un
+SVG standalone con dimensioni in px esplicite e restituisce:
 
 ```json
 { "width": 112.54, "height": 19.92, "error": null }

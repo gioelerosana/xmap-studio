@@ -55,11 +55,15 @@ File System Access API quando disponibile; il fallback scarica i byte.
 
 ## Renderer e rasterizzazione
 
-`mathjax-full` è dipendenza di `@xmap/core`, caricata con `import()` da
-`loadMathJax()` (va attesa prima di `renderLatexToSvg`, vedi
-[`ARCHITECTURE.md`](ARCHITECTURE.md) §"Avvio e caricamento su richiesta"). La
-preview usa MathJax per produrre SVG; quando disponibile `@resvg/resvg-js` produce PNG. Nel browser si usa il
-percorso Canvas predisposto dal core.
+MathJax 4 (`@mathjax/src`, il font `@mathjax/mathjax-newcm-font` e
+`@mathjax/mathjax-mhchem-font-extension` per le frecce di `\ce`, tutti alla stessa
+versione) è dipendenza di `@xmap/core`, caricata con `import()` da `loadMathJax()`. `renderLatexToSvg`
+va usata dopo il caricamento; i percorsi che producono dati (equazioni salvate,
+export) usano `renderLatexToSvgAsync`, che attende anche i glifi. Dettagli sui
+glifi caricati su richiesta in [`ARCHITECTURE.md`](ARCHITECTURE.md) §"Avvio e
+caricamento su richiesta". La preview usa MathJax per produrre SVG; quando
+disponibile `@resvg/resvg-js` produce PNG. Nel browser si usa il percorso Canvas
+predisposto dal core.
 
 ## Convenzioni
 

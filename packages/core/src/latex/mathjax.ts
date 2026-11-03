@@ -1,5 +1,5 @@
 import { CODE_RENDERER, XmapError } from '../errors.js';
-import type { MathJaxConvert } from './mathjax-engine.js';
+import type { MathJaxConvert, MathJaxOutcome } from './mathjax-engine.js';
 
 export interface RenderResult {
   svg: string;
@@ -11,6 +11,13 @@ export interface RenderResult {
 let convert: MathJaxConvert | null = null;
 let loading: Promise<void> | null = null;
 const readyListeners = new Set<() => void>();
+/** Cresce quando il motore diventa pronto e a ogni file di glifi caricato (`getMathJaxVersion`). */
+let version = 0;
+/** true se una notifica per glifi arrivati è già in coda (più file → un solo ridisegno). */
+let notifyScheduled = false;
+
+/** Tentativi massimi di `renderLatexToSvgAsync` (uno per file di glifi mancante). */
+const MAX_GLYPH_RETRIES = 10;
 
 const renderCache = new Map<string, RenderResult>();
 const MAX_CACHE_SIZE = 1000;
@@ -22,9 +29,9 @@ const MAX_CACHE_SIZE = 1000;
  */
 export function loadMathJax(): Promise<void> {
   loading ??= import('./mathjax-engine.js').then(
-    (engine) => {
-      convert = engine.createMathJaxConverter();
-      for (const listener of [...readyListeners]) listener();
+    async (engine) => {
+      convert = await engine.createMathJaxConverter();
+      notifyReady();
     },
     (err: unknown) => {
       // Un fallimento (es. chunk non raggiungibile offline) non resta in cache: si potrà riprovare.
@@ -41,8 +48,22 @@ export function isMathJaxReady(): boolean {
 }
 
 /**
- * Registra `listener`, chiamato quando MathJax diventa disponibile (chi ha misurato
- * o disegnato le formule come sorgente deve rifarlo). Restituisce la funzione di rimozione.
+ * Numero che cambia ogni volta che `renderLatexToSvg` può rendere più formule di
+ * prima (motore pronto, glifi caricati). Snapshot per `useSyncExternalStore`.
+ */
+export function getMathJaxVersion(): number {
+  return version;
+}
+
+function notifyReady(): void {
+  version++;
+  for (const listener of [...readyListeners]) listener();
+}
+
+/**
+ * Registra `listener`, chiamato quando MathJax diventa disponibile e ogni volta che
+ * arrivano glifi caricati su richiesta (chi ha misurato o disegnato le formule come
+ * sorgente deve rifarlo). Restituisce la funzione di rimozione.
  */
 export function onMathJaxReady(listener: () => void): () => void {
   readyListeners.add(listener);
@@ -84,7 +105,76 @@ export function renderLatexToSvg(
     throw new XmapError(CODE_RENDERER, 'Il motore delle formule non è ancora caricato.');
   }
 
-  let svgStr = convert(latex, display);
+  const outcome = convert(latex, display);
+  if ('pending' in outcome) {
+    void watchGlyphs(outcome.pending);
+    throw new XmapError(CODE_RENDERER, 'I simboli della formula sono ancora in caricamento.');
+  }
+  return remember(cacheKey, buildResult(outcome.svg, emPx, display));
+}
+
+function remember(cacheKey: string, result: RenderResult): RenderResult {
+  if (renderCache.size >= MAX_CACHE_SIZE) {
+    renderCache.clear();
+  }
+  renderCache.set(cacheKey, result);
+  return result;
+}
+
+/**
+ * Come `renderLatexToSvg`, ma aspetta il motore e gli eventuali glifi da caricare.
+ * È la via per i percorsi che producono dati (equazioni salvate, export): non
+ * fallisce solo perché un alfabeto non è ancora in memoria.
+ */
+export async function renderLatexToSvgAsync(
+  latex: string,
+  emPx: number = 23.33,
+  display: boolean = true
+): Promise<RenderResult> {
+  await loadMathJax();
+  return renderWhenGlyphsReady(latex, emPx, display, MAX_GLYPH_RETRIES);
+}
+
+async function renderWhenGlyphsReady(
+  latex: string,
+  emPx: number,
+  display: boolean,
+  attemptsLeft: number
+): Promise<RenderResult> {
+  const cacheKey = `${latex}::${emPx.toFixed(2)}::${display}`;
+  const cached = renderCache.get(cacheKey);
+  if (cached) return cached;
+  if (!convert) throw new XmapError(CODE_RENDERER, 'Il motore delle formule non è ancora caricato.');
+  const outcome: MathJaxOutcome = convert(latex, display);
+  if (!('pending' in outcome)) return remember(cacheKey, buildResult(outcome.svg, emPx, display));
+  if (attemptsLeft <= 0) throw new XmapError(CODE_RENDERER, 'Impossibile caricare i simboli della formula.');
+  try {
+    await outcome.pending;
+  } catch {
+    throw new XmapError(CODE_RENDERER, 'Impossibile caricare i simboli della formula.');
+  }
+  return renderWhenGlyphsReady(latex, emPx, display, attemptsLeft - 1);
+}
+
+/** Notifica gli ascoltatori quando arrivano i glifi attesi; un fallimento resta silenzioso. */
+async function watchGlyphs(pending: Promise<void>): Promise<void> {
+  try {
+    await pending;
+  } catch {
+    // File di glifi non caricabile (es. offline senza cache): la formula resta come sorgente.
+    return;
+  }
+  if (notifyScheduled) return;
+  notifyScheduled = true;
+  setTimeout(() => {
+    notifyScheduled = false;
+    notifyReady();
+  }, 0);
+}
+
+/** Normalizza l'SVG grezzo di MathJax: xmlns, dimensioni in px, colore ereditato. */
+function buildResult(raw: string, emPx: number, display: boolean): RenderResult {
+  let svgStr = raw;
 
   const errMatch = svgStr.match(/data-mjx-error="([^"]*)"/);
   const error = errMatch ? decodeHtml(errMatch[1]) : null;
@@ -115,17 +205,10 @@ export function renderLatexToSvg(
     svgStr = svgStr.replace('<svg ', '<svg fill="currentColor" ');
   }
 
-  const result: RenderResult = {
+  return {
     svg: svgStr,
     width: widthPx,
     height: heightPx,
     error,
   };
-
-  if (renderCache.size >= MAX_CACHE_SIZE) {
-    renderCache.clear();
-  }
-  renderCache.set(cacheKey, result);
-
-  return result;
 }

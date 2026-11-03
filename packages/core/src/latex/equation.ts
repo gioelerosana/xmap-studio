@@ -1,7 +1,7 @@
 import { CODE_LATEX, XmapError } from '../errors.js';
 import { Image, MATHJAX_PROVIDER, Topic } from '../model/types.js';
 import { sha256Hex } from '../archive/archive.js';
-import { loadMathJax, renderLatexToSvg } from './mathjax.js';
+import { renderLatexToSvgAsync } from './mathjax.js';
 import { svgToPng } from './raster.js';
 
 export type TitleMode =
@@ -56,8 +56,7 @@ export async function applyEquation(
   const titleMode = options.titleMode ?? { kind: 'formula_only' };
   const color = options.color ?? '#000000';
 
-  await loadMathJax();
-  const render = renderLatexToSvg(trimmed, emPx);
+  const render = await renderLatexToSvgAsync(trimmed, emPx);
   if (render.error) {
     throw new XmapError(CODE_LATEX, `LaTeX non valido: ${render.error}`);
   }

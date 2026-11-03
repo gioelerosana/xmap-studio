@@ -77,7 +77,7 @@ import {
   topicTitle,
 } from './model/utils.js';
 import { applyEquation, removeEquation, TitleMode } from './latex/equation.js';
-import { loadMathJax, renderLatexToSvg } from './latex/mathjax.js';
+import { renderLatexToSvg, renderLatexToSvgAsync } from './latex/mathjax.js';
 import { svgToPng } from './latex/raster.js';
 import { clearTask, writeTask, TaskData } from './task/task.js';
 import { isMarkerKnown } from './markers/catalog.js';
@@ -1007,8 +1007,7 @@ export class AppController {
     if (!latex) throw new XmapError(CODE_LATEX, 'Il blocco selezionato non contiene un\'equazione');
 
     const emPx = emPxForFontSize(fontSizePx(topic));
-    await loadMathJax();
-    const render = renderLatexToSvg(latex, emPx);
+    const render = await renderLatexToSvgAsync(latex, emPx);
     if (render.error) throw new XmapError(CODE_LATEX, `LaTeX non valido: ${render.error}`);
 
     if (format === 'svg') {
