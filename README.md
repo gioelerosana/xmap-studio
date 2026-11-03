@@ -39,6 +39,8 @@ aprono anche in XMind. Niente account, niente telemetria.
 
 ## Provala online
 
+Sito del progetto: **[xmap-studio.jshep.xyz](https://xmap-studio.jshep.xyz)**.
+
 La versione web è su **[xmap.jshep.xyz](https://xmap.jshep.xyz)**: gira tutta nel
 browser, i file restano sul tuo dispositivo, e si può installare come app (PWA) e
 usare offline.

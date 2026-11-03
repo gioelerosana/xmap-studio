@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://xmap-studio.jshep.xyz/sitemap.xml
