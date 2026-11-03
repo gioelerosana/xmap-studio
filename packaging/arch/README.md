@@ -85,7 +85,11 @@ versione deve essere già sulla Release) e non fa nulla se AUR è già allineato
   (dipendenze, launcher, `package()`) sulla stessa versione: incrementalo in
   `aur/PKGBUILD` con una PR e, dopo il merge, lancia `aur-publish.sh` a mano.
   Se il cambio riguarda il contenuto del tarball serve invece una nuova release.
-- Nel `-git` `pkgver()` lo calcola da sé (`<versione>.r<commit>.g<hash>`).
+- Il `-git` non ha versione propria: `pkgver()` la ricava solo dal commit
+  compilato (`r<numero di commit>.g<hash>`), senza leggere i `package.json`,
+  quindi non segue le release né `xmap-studio-bin`. makepkg riscrive `pkgver`
+  nel `PKGBUILD` a ogni build: quella riga non va committata (nel repository
+  resta il segnaposto `r0.g0000000`).
 
 ## Electron di sistema
 
