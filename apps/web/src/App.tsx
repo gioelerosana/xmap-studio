@@ -13,6 +13,8 @@ import { useMathJaxVersion } from './mathReady.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
 import { sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
+import { useInstallPrompt } from './app/useInstallPrompt.js';
+import { InstallInvite } from './components/InstallInvite.js';
 import { useToasts } from './app/useToasts.js';
 import { nextTheme } from './app/themeCycle.js';
 import { useSelection } from './app/useSelection.js';
@@ -316,6 +318,9 @@ export const App: React.FC = () => {
     addToast,
   });
 
+  // Invito all'installazione come PWA: solo su mobile, mai se già standalone.
+  const installPrompt = useInstallPrompt();
+
   // Scorciatoie della mappa attive solo con una mappa aperta e nessun modale o editing in corso.
   const mapKeysEnabled =
     Boolean(workbook) &&
@@ -327,7 +332,8 @@ export const App: React.FC = () => {
     !latexTopic &&
     !replacePrompt &&
     !closePrompt &&
-    !busy;
+    !busy &&
+    !installPrompt.open;
 
   useMapKeyboard({
     enabled: mapKeysEnabled,
@@ -664,6 +670,7 @@ export const App: React.FC = () => {
         <span />
       </Modal>
 
+      <InstallInvite prompt={installPrompt} />
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
