@@ -10,11 +10,11 @@
   },
   "routes": [{ "pattern": "xmap.jshep.xyz", "custom_domain": true }],
   "workers_dev": false,
-  // Spenti in produzione (workers.dev), accesi solo per le anteprime delle PR:
-  // URL del tipo <hash>-xmap-studio.<sottodominio>.workers.dev.
+  // Version URL (<hash>-xmap-studio.<sottodominio>.workers.dev) delle versioni
+  // caricate; le anteprime delle PR sono le Worker Previews qui sotto.
   "preview_urls": true,
   "observability": { "enabled": false },
   // Richiesto da `wrangler preview` (build dei branch/PR su Workers Builds):
-  // vuoto, le anteprime ereditano asset e compatibilità dal livello superiore.
+  // vuoto, asset e compatibilità restano quelli del livello superiore.
   "previews": {}
 }
