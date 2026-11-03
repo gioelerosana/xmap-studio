@@ -15,6 +15,7 @@ di compatibilità, non come modello da pareggiare) è in
 | [`TESTING.md`](TESTING.md) | Test del core TypeScript e verifica in XMind |
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
 | [`DEPLOY.md`](DEPLOY.md) | Pubblicazione della web app su Cloudflare (Workers Static Assets) |
+| [`SITE.md`](SITE.md) | Sito di presentazione su GitHub Pages (xmap-studio.jshep.xyz) e indicizzazione |
 | [`MAP-VIEW.md`](MAP-VIEW.md) | Piano della vista mappa ad albero (Fase 7) |
 | [`IOS.md`](IOS.md) | App nativa iOS/iPadOS (wrapper WKWebView) compilata da Linux con xtool |
 | [`DESIGN-SYSTEM.md`](DESIGN-SYSTEM.md) | Design system T3 Code: token, classi Tailwind e API di `@xmap/ui-kit` |

@@ -302,6 +302,7 @@ xmap-studio/
 │   ├── release-manual.yml        # release a richiesta (workflow_dispatch): versione, tag
 │   ├── pr-title.yml              # controllo del formato del titolo dei PR
 │   ├── release.yml               # build e GitHub Release di un tag vYY.MAJOR.MINOR
+│   ├── pages.yml                 # pubblica site/ su GitHub Pages
 │   └── mirror.yml                # copia di `main` su GitLab (mirror)
 ├── LICENSE                       # MIT
 ├── README.md                     # presentazione per l'utente (breve)
@@ -309,6 +310,7 @@ xmap-studio/
 ├── demo/                         # mappa di prova con equazione applicata
 ├── docs/                         # documentazione tecnica
 ├── packaging/arch/               # PKGBUILD `-git`, `aur/` (xmap-studio-bin su AUR), build-tarball.sh, aur-publish.sh
+├── site/                       # sito di presentazione (GitHub Pages, xmap-studio.jshep.xyz)
 ├── scripts/                      # strumenti di repo (release-version.mjs, check-release-version.mjs)
 ├── packages/
 │   ├── core/                     # motore: src/{model,archive,safety,latex,…}, tests/
