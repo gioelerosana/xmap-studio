@@ -112,6 +112,13 @@ parecchio: guardare https://www.cloudflarestatus.com (componente *Workers
 Builds*) prima di cercare cause nel codice. Se più commit dello stesso branch
 sono in coda, a volte si compila solo l'ultimo.
 
+Se poi la build muore con «failed to initialize … timed out» dopo alcuni minuti
+di «Initializing build environment», l'ambiente di build non è mai partito: il
+comando del repository non è stato eseguito (nemmeno il clone), quindi non è un
+problema del codice. È provisioning lato Cloudflare, tipico dei disservizi in
+corso: si riprova (push di un commit vuoto, o «Retry build» nella dashboard)
+quando lo status page torna verde.
+
 Per sapere cosa serve la produzione senza aspettare il bot:
 
 ```bash
