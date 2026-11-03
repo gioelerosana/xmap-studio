@@ -5,7 +5,7 @@
  * «Installa» che apre il prompt nativo del browser.
  */
 import React from 'react';
-import { Menu, Share, SquarePlus } from 'lucide-react';
+import { ChevronDown, Menu, Share, SquarePlus } from 'lucide-react';
 import { Button, Modal } from '@xmap/ui-kit';
 import { AppMark } from './AppMark.js';
 import type { InstallPrompt } from '../app/useInstallPrompt.js';
@@ -40,15 +40,18 @@ export const InstallInvite: React.FC<{ prompt: InstallPrompt }> = ({ prompt }) =
   );
 };
 
-/** Passi per iOS Safari: Condividi → Aggiungi alla schermata Home. */
+/** Passi per iOS/iPadOS Safari: Condividi → Visualizza altro → Aggiungi alla schermata Home. */
 function IosSteps(): React.ReactElement {
   return (
     <ol className="flex flex-col gap-3">
       <Step icon={<Share className="size-4" />}>
-        Nella barra in basso di Safari, tocca il pulsante <Term>Condividi</Term>.
+        In Safari, tocca il pulsante <Term>Condividi</Term>.
+      </Step>
+      <Step icon={<ChevronDown className="size-4" />}>
+        Tocca <Term>Visualizza altro</Term> per mostrare tutte le azioni.
       </Step>
       <Step icon={<SquarePlus className="size-4" />}>
-        Scorri e scegli <Term>Aggiungi alla schermata Home</Term>, poi conferma con <Term>Aggiungi</Term>.
+        Scegli <Term>Aggiungi alla schermata Home</Term> e conferma con <Term>Aggiungi</Term>.
       </Step>
     </ol>
   );
