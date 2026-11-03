@@ -14,6 +14,7 @@ import { ZoomControls } from './map/MapControls.js';
 import { COMPACT_QUERY } from '../app/constants.js';
 import { NodeCard } from './map/NodeCard.js';
 import { TopicDragOverlay } from './map/TopicDragOverlay.js';
+import { useMathJaxVersion } from '../mathReady.js';
 import { buildFormulaSvgCache, buildResourceUrls } from './map/assets.js';
 import { nodeLook } from './map/nodeLook.js';
 import { useAutoFit } from './map/useAutoFit.js';
@@ -155,7 +156,9 @@ export const MapView: React.FC<MapViewProps> = ({
   const buildBackgroundMenuItems = () => backgroundMenuItems(menuContext, fitToView);
 
   const resourceUrls = useMemo(() => buildResourceUrls(layout, resourceResolver), [layout, resourceResolver]);
-  const formulaSvgCache = useMemo(() => buildFormulaSvgCache(layout, darkMode), [layout, darkMode]);
+  // Le formule in caricamento (glifi non ancora arrivati) si disegnano alla nuova versione di MathJax.
+  const mathVersion = useMathJaxVersion();
+  const formulaSvgCache = useMemo(() => buildFormulaSvgCache(layout, darkMode), [layout, darkMode, mathVersion]);
 
   // Callback stabili (solo ref e setter): i NodeCard memoizzati non si ri-renderizzano a ogni cambio di selezione.
   const selectNode = useCallback((node: LayoutNode, e: React.MouseEvent<SVGGElement>) => {
