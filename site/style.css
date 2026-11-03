@@ -1,0 +1,329 @@
+/*
+ * Sito di presentazione di XMap Studio (xmap-studio.jshep.xyz).
+ * Stessi token dell'app (packages/ui-kit/src/theme.css), ridotti a quelli usati:
+ * canvas neutro, bordi hairline, un solo colore d'azione.
+ */
+:root {
+  color-scheme: light dark;
+  --background: oklch(0.992 0 0);
+  --foreground: oklch(0.274 0.006 286.033);
+  --card: #ffffff;
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --border: oklch(0.92 0.004 286.32);
+  --primary: oklch(0.488 0.217 264);
+  --primary-foreground: #ffffff;
+  --shadow: 0 24px 64px -32px rgba(0, 0, 0, 0.35);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Cantarell, Ubuntu,
+    sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.97 0 0);
+    --card: #111111;
+    --muted: rgba(255, 255, 255, 0.05);
+    --muted-foreground: #8a8a8a;
+    --border: rgba(255, 255, 255, 0.08);
+    --primary: oklch(0.571 0.21 264);
+    --shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.8);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--primary);
+  text-underline-offset: 3px;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+kbd {
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.wrap {
+  width: min(72rem, 100% - 2.5rem);
+  margin-inline: auto;
+}
+
+.skip {
+  position: absolute;
+  left: -999px;
+}
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 10;
+  padding: 0.5rem 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* Testata */
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--background) 82%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.top .wrap {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  height: 3.5rem;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.brand img {
+  width: 28px;
+  height: 28px;
+}
+.top nav {
+  display: flex;
+  gap: 1.25rem;
+  margin-left: auto;
+  font-size: 0.875rem;
+}
+.top nav a {
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+.top nav a:hover {
+  color: var(--foreground);
+}
+@media (max-width: 40rem) {
+  .top nav .opt {
+    display: none;
+  }
+}
+
+/* Bottoni */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.75rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+.btn:hover {
+  background: var(--muted);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn.primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.btn.primary:hover {
+  background: color-mix(in oklab, var(--primary) 88%, black);
+}
+.btn:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Apertura */
+.hero {
+  padding: 5rem 0 3rem;
+  text-align: center;
+}
+.hero img.logo {
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 1.5rem;
+}
+h1 {
+  margin: 0 auto;
+  max-width: 18ch;
+  font-size: clamp(2.25rem, 6vw, 3.75rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.lead {
+  margin: 1.25rem auto 2rem;
+  max-width: 40rem;
+  color: var(--muted-foreground);
+  font-size: 1.125rem;
+  text-wrap: pretty;
+}
+.note {
+  margin-top: 1rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.shot {
+  margin: 1rem auto 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.shot img {
+  width: 100%;
+}
+
+/* Sezioni */
+section {
+  padding: 4.5rem 0;
+}
+section + section {
+  border-top: 1px solid var(--border);
+}
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.5rem, 3.5vw, 2.125rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.section-lead {
+  max-width: 42rem;
+  margin: 0 0 2.5rem;
+  color: var(--muted-foreground);
+}
+h3 {
+  margin: 0 0 0.375rem;
+  font-size: 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+}
+.card {
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.card p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.9375rem;
+}
+
+.downloads .card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.downloads .card .btn {
+  margin-top: auto;
+  align-self: flex-start;
+}
+pre {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+}
+
+/* Domande frequenti */
+details {
+  border-bottom: 1px solid var(--border);
+}
+summary {
+  cursor: pointer;
+  padding: 1rem 0;
+  font-weight: 500;
+}
+details p {
+  margin: 0 0 1rem;
+  color: var(--muted-foreground);
+}
+
+footer {
+  padding: 2.5rem 0 3rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+}
+footer a {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .btn {
+    transition: none;
+  }
+}
