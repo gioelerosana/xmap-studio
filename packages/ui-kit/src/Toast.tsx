@@ -1,5 +1,6 @@
 /*
- * Notifiche temporanee in basso a destra.
+ * Notifiche temporanee in alto a destra, sotto l'header: in basso a destra
+ * coprirebbero i controlli di zoom della mappa.
  *
  * Perché il timer legge `onDismiss` da una ref: i chiamanti passano spesso una
  * funzione nuova a ogni render; con `onDismiss` tra le dipendenze dell'effetto
@@ -63,7 +64,7 @@ export function ToastContainer({
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed bottom-4 right-4 z-60 flex flex-col items-end gap-2 max-sm:inset-x-3 max-sm:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] max-sm:items-stretch"
+      className="pointer-events-none fixed right-[max(1rem,env(safe-area-inset-right))] top-[calc(var(--topbar-height)+env(safe-area-inset-top)+0.75rem)] z-60 flex flex-col items-end gap-2 max-sm:left-3 max-sm:right-3 max-sm:items-stretch"
     >
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onDismiss={onDismiss} />
