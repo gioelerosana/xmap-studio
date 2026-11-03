@@ -5,12 +5,17 @@
 #
 # Compila l'ultimo commit del branch corrente (le modifiche non committate non
 # entrano nel pacchetto) e usa l'Electron di sistema invece di quello di npm.
+#
+# Il pacchetto è svincolato dalle release e da xmap-studio-bin su AUR: non
+# legge la versione dai package.json. pkgver() la ricava solo dal commit
+# compilato (r<numero di commit>.g<hash>) e makepkg la riscrive qui sotto a
+# ogni build: il valore committato è un segnaposto.
 
 _pkgname=xmap-studio
 pkgname=$_pkgname-git
-pkgver=26.2.0.r251.g773b086
+pkgver=r0.g0000000
 pkgrel=1
-pkgdesc='Companion desktop per mappe XMind: equazioni LaTeX ed editing avanzato (development build)'
+pkgdesc='Free and open-source mind map editor for .xmind files, with native LaTeX formulas (development build)'
 url='https://github.com/gioelerosana/xmap-studio'
 arch=('x86_64')
 license=('MIT')
@@ -28,9 +33,7 @@ sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 pkgver() {
   cd "$_pkgname"
-  local base
-  base=$(node -p "require('./package.json').version")
-  printf '%s.r%s.g%s' "$base" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  printf 'r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
 }
 
 build() {
