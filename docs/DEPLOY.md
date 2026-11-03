@@ -81,6 +81,55 @@ della PR e li aggiorna a ogni push; si trovano anche in *Workers & Pages* →
 `xmap-studio` → **Previews**. Se il commento dice «No Preview URL», il Preview
 command dei branch non è `npx wrangler preview` (§"Deploy automatico da GitHub").
 
+### Se il commento del bot non ha l'URL della Preview
+
+Il commento distingue tre casi:
+
+| Nel commento | Significato | Cosa fare |
+|---|---|---|
+| `Preview URL: https://<branch>-xmap-studio…` | build e deploy della Preview riusciti | niente |
+| «No Preview URL. Enable ↗», build ✅ | la build ha girato con `wrangler versions upload`, non con `wrangler preview` | correggere il comando dei branch non di produzione nella dashboard (§"Deploy automatico da GitHub") |
+| riga senza URL, «Build: Failed ❌» | la build è fallita prima della Preview | aprire «View logs ↗» nel commento e leggere il passo fallito |
+
+`wrangler preview` non esegue il controllo di `WRANGLER_CI_MATCH_TAG` (lo fanno
+solo `deploy` e `versions upload`, cloudflare/workers-sdk#15682): non serve
+nessuno shim nel `build:web` che tolga la variabile. Verificato con wrangler
+4.157 e un `WRANGLER_CI_MATCH_TAG` volutamente sbagliato:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=<account> WORKERS_CI=1 WRANGLER_CI_MATCH_TAG=000… \
+  npx wrangler preview --name prova-ci     # deve stampare «Preview URL: …»
+npx wrangler preview delete --name prova-ci -y
+```
+
+### Se la build resta in «Initializing build environment»
+
+È coda, non un errore del repository. Sul piano Free, Workers Builds esegue
+**una build alla volta per tutto l'account**: dopo più merge di fila, o push su
+più PR, le build aspettano il proprio turno, e il bot aggiorna il commento solo a
+build finita. Nei momenti di disservizio di Cloudflare la coda si allunga
+parecchio: guardare https://www.cloudflarestatus.com (componente *Workers
+Builds*) prima di cercare cause nel codice. Se più commit dello stesso branch
+sono in coda, a volte si compila solo l'ultimo.
+
+Se poi la build muore con «failed to initialize … timed out» dopo alcuni minuti
+di «Initializing build environment», l'ambiente di build non è mai partito: il
+comando del repository non è stato eseguito (nemmeno il clone), quindi non è un
+problema del codice. È provisioning lato Cloudflare, tipico dei disservizi in
+corso: si riprova (push di un commit vuoto, o «Retry build» nella dashboard)
+quando lo status page torna verde.
+
+Per sapere cosa serve la produzione senza aspettare il bot:
+
+```bash
+curl -s https://xmap.jshep.xyz/ | sha256sum   # confronta con apps/web/dist/index.html
+sha256sum apps/web/dist/index.html            # dopo `pnpm build:web` su main
+```
+
+I log delle build si leggono dalla dashboard («View logs ↗» nel commento o nel
+check run «Workers Builds: xmap-studio» della PR). Il token OAuth di `wrangler
+login` non dà accesso all'API `/builds` (manca lo scope: risponde 403).
+
 ### Se l'anteprima chiede il login di Cloudflare Access
 
 L'anteprima risponde con un redirect a `<team>.cloudflareaccess.com` e nel
