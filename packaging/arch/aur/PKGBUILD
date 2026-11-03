@@ -7,7 +7,7 @@
 
 pkgname=xmap-studio-bin
 _pkgname=xmap-studio
-pkgver=26.4.0
+pkgver=26.4.1
 pkgrel=1
 pkgdesc='Free and open-source mind map editor for .xmind files, with native LaTeX formulas'
 arch=('x86_64')
