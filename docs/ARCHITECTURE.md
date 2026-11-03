@@ -131,8 +131,19 @@ chunk separati:
   avvia il caricamento. Il layout misura allora la formula come sorgente e,
   all'arrivo del motore (`onMathJaxReady`), svuota la cache delle dimensioni;
   `useMathJaxReady` fa ricalcolare layout e titoli. I percorsi che producono
-  dati (`applyEquation`, `exportEquation`) attendono `loadMathJax()`: mai una
-  misura stimata finisce nel file. I test lo caricano in `tests/setup.ts`.
+  dati (`applyEquation`, `exportEquation`) usano `renderLatexToSvgAsync`, che
+  attende motore e glifi: mai una misura stimata finisce nel file. I test lo
+  caricano in `tests/setup.ts`.
+- **Glifi di MathJax 4.** Il font `mathjax-newcm` tiene gli alfabeti meno comuni
+  in file separati. `\mathbb`, `\mathcal`, `\mathfrak`, `\mathscr`, `\mathsf` e
+  `\mathtt` sono precaricati da `loadMathJax()`; gli altri (es. `\text{Жизнь}`)
+  arrivano alla prima formula che li usa. In quel caso `renderLatexToSvg` lancia
+  "I simboli della formula sono ancora in caricamento.", avvia il caricamento e,
+  a file arrivato, notifica `onMathJaxReady` e incrementa `getMathJaxVersion()`:
+  chi disegna in modo sincrono si ridisegna su quella notifica. Se il file non
+  si carica (offline senza cache), la formula resta come sorgente. Ogni file di
+  glifi è un chunk separato, che il service worker mette in cache con il resto
+  della build (uso offline).
 - **JSZip** (`archive/zip.ts`) si carica alla prima apertura, salvataggio o
   validazione.
 - **Finestre secondarie** (export, stampa, tema, import, impostazioni, editor

@@ -16,7 +16,7 @@ non si insegue la feature parity (vedi [`AGENTS.md`](../AGENTS.md) §"Visione").
 | UI | **React 19 + Vite + Tailwind** (`@xmap/web`) | componente riusabile web/desktop, design system in `@xmap/ui-kit` |
 | Desktop | **Electron** (`@xmap/desktop`) | ornate system, CSD GNOME, dialogo file nativi, IPC atomico |
 | Rasterizzazione | **@resvg/resvg-js** (Node) / Canvas (browser) | SVG → PNG, nessun binario esterno |
-| Rendering LaTeX | **mathjax-full** dentro `@xmap/core` | *lo stesso motore di XMind* (fedeltà garantita) |
+| Rendering LaTeX | **MathJax 4** (`@mathjax/src`, font New Computer Modern) dentro `@xmap/core` | l'equazione è salvata come LaTeX + PNG secondo lo schema XMind: XMind la apre e la modifica, ma il PNG può differire un po' da quello di XMind (che usa MathJax 3) |
 
 Prerequisiti: **Node ≥ 20** e **pnpm**. Il pacchetto core non dipende dalla UI
 (regola storica mantenuta: backend testabile senza display).
@@ -40,7 +40,7 @@ packages/core/src/
   model/         # struct Topic/Sheet con campi extra preservati (round-trip)
   archive/       # lettura/scrittura ZIP + atomic write + backup nascosti
   safety/        # validazione, manifest, rilevamento XMind aperto
-  latex/         # mathjax-full (SVG) + rasterizzazione PNG
+  latex/         # MathJax 4 (SVG) + rasterizzazione PNG
   layout/        # tidy tree puro per la vista mappa
   markers/       # catalogo marker di XMind
   task/          # extension org.xmind.ui.task (solo chiavi scalari)
@@ -66,7 +66,7 @@ open(bytes)
   → OpenWorkbook              (cronologia undo/redo, manifest)
 
 apply(topicId, latex)
-  → renderLatexToSvg          (mathjax-full → SVG + dimensioni + errori)
+  → renderLatexToSvgAsync     (MathJax 4 → SVG + dimensioni + errori)
   → svgToPng                  (@resvg/resvg-js / Canvas, 3×)
   → sha256(png) → resources/<sha>.png
   → aggiorna extensions[] + image{} annidato, titolo
@@ -251,7 +251,7 @@ nativo con il LaTeX corretto.
 
 ## 7. Note di implementazione (motivate)
 
-1. **`mathjax-full` dentro `@xmap/core`**: lo stesso SVG alimenta sia il PNG
+1. **MathJax 4 dentro `@xmap/core`**: lo stesso SVG alimenta sia il PNG
    scritto nel file sia l'anteprima a schermo, quindi coincidono per costruzione.
 2. **Ordine delle chiavi JSON non rilevante** per XMind; i tipi numerici di
    `width`/`height` sono preservati.
