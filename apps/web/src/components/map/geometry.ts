@@ -1,8 +1,15 @@
 import { SUMMARY_BRACE_W, trunkX, type Layout, type LayoutNode } from '@xmap/core';
 
 export const TREE_CORNER_R = 8;
-/** Raggio dei raccordi della linea a gomito arrotondato del tema. */
-const ELBOW_CORNER_R = 8;
+/** Raggio dei raccordi della linea a gomito arrotondato (anche quella predefinita). */
+const ELBOW_CORNER_R = 6;
+/**
+ * Distanza del tronco verticale del gomito dal bordo del genitore: oltre il pulsante
+ * comprimi/espandi anche su touch (centro a 20 px, raggio 7), così il tronco non gli passa sotto.
+ */
+const ELBOW_SPINE_OFFSET = 35;
+/** Quota massima della distanza fra i blocchi occupata dal primo tratto orizzontale del gomito. */
+const ELBOW_SPINE_MAX_RATIO = 0.7;
 
 export interface Trunk {
   parent: number;
@@ -35,7 +42,7 @@ export function computeTrunks(l: Layout): Trunk[] {
 
 /**
  * Percorso del connettore padre→figlio: gomito con raccordo per la Tree Chart,
- * altrimenti la linea del tema del genitore (curva se il tema non la dice).
+ * altrimenti la linea del tema del genitore (gomito arrotondato se il tema non la dice).
  */
 export function edgePathD(edge: Layout['edges'][number], p: LayoutNode, c: LayoutNode): string {
   const endY = c.y + c.h / 2;
@@ -54,26 +61,25 @@ export function edgePathD(edge: Layout['edges'][number], p: LayoutNode, c: Layou
   switch (p.branchLine) {
     case 'straight':
       return `M ${startX} ${startY} L ${endX} ${endY}`;
-    case 'elbow':
-    case 'roundedElbow': {
-      // Gomito a metà strada fra i due blocchi; quello arrotondato raccorda i due angoli.
-      const midX = startX + span / 2;
-      const dy = endY - startY;
-      const r =
-        p.branchLine === 'roundedElbow'
-          ? Math.max(Math.min(ELBOW_CORNER_R, Math.abs(dy) / 2, Math.abs(span) / 2), 0)
-          : 0;
-      if (r === 0) return `M ${startX} ${startY} H ${midX} V ${endY} H ${endX}`;
-      const sy = Math.sign(dy);
-      const sx = Math.sign(span);
-      return (
-        `M ${startX} ${startY} H ${midX - sx * r} Q ${midX} ${startY} ${midX} ${startY + sy * r} ` +
-        `V ${endY - sy * r} Q ${midX} ${endY} ${midX + sx * r} ${endY} H ${endX}`
-      );
-    }
-    default: {
+    case 'curve': {
       const bend = (toLeft ? -1 : 1) * Math.abs(span) * 0.55;
       return `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`;
+    }
+    default: {
+      // Gomito: orizzontale → tronco verticale comune ai fratelli (dopo il pulsante ⊖) → orizzontale.
+      const sx = Math.sign(span);
+      const spineX = startX + sx * Math.min(ELBOW_SPINE_OFFSET, Math.abs(span) * ELBOW_SPINE_MAX_RATIO);
+      const dy = endY - startY;
+      const r =
+        p.branchLine === 'elbow'
+          ? 0
+          : Math.max(Math.min(ELBOW_CORNER_R, Math.abs(dy) / 2, Math.abs(spineX - startX), Math.abs(endX - spineX)), 0);
+      if (r === 0) return `M ${startX} ${startY} H ${spineX} V ${endY} H ${endX}`;
+      const sy = Math.sign(dy);
+      return (
+        `M ${startX} ${startY} H ${spineX - sx * r} Q ${spineX} ${startY} ${spineX} ${startY + sy * r} ` +
+        `V ${endY - sy * r} Q ${spineX} ${endY} ${spineX + sx * r} ${endY} H ${endX}`
+      );
     }
   }
 }

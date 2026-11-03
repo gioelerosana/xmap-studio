@@ -201,7 +201,11 @@ Token dedicati `--map-*`:
   bordo del colore del ramo al 45%, testo `text-foreground`;
 - un `fill` esplicito del topic vince sempre ed è trattato come riempimento pieno;
 - connettori del colore del ramo (3px verso i rami principali, 2px oltre),
-  `--map-link` solo senza accento;
+  `--map-link` solo senza accento; senza linea nel tema sono a gomito
+  arrotondato (raccordi di 6px), con il tronco verticale comune ai fratelli a
+  35px dal genitore, oltre il pulsante comprimi/espandi (`edgePathD` in
+  `apps/web/src/components/map/geometry.ts`); la curva resta una scelta
+  esplicita del tema (`line-class` `…branchConnection.curve`);
 - disposizione: vista ad albero (radice in alto, tronco verticale) predefinita,
   vista a logica dall'interruttore nella barra dello zoom; la scelta è solo di
   visualizzazione (`LayoutOpts.structure`) e non modifica il file;
