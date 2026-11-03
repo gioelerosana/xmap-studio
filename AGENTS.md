@@ -301,7 +301,6 @@ xmap-studio/
 ├── .github/workflows/
 │   ├── release-manual.yml        # release a richiesta (workflow_dispatch): versione, tag
 │   ├── pr-title.yml              # controllo del formato del titolo dei PR
-│   ├── preview.yml               # commento col link all'anteprima Cloudflare del PR
 │   ├── release.yml               # build e GitHub Release di un tag vYY.MAJOR.MINOR
 │   └── mirror.yml                # copia di `main` su GitLab (mirror)
 ├── LICENSE                       # MIT
@@ -416,11 +415,10 @@ Modello: una PR = un problema = un commit logico su `main`, unita in fretta.
   e due PR.
 - **Draft finché si itera.** Apri la PR come bozza (`gh pr create --draft`) se
   l'utente deve ancora guardare l'anteprima e chiedere ritocchi. Cloudflare
-  Workers Builds compila ogni branch e ogni PR; `preview.yml` aspetta la build
-  del commit e tiene nella PR un commento con l'URL del branch (sempre l'ultimo
-  commit) e quello della singola versione, dicendo se rispondono o sono dietro
-  Cloudflare Access (`scripts/preview-url.mjs`, [`docs/DEPLOY.md`](docs/DEPLOY.md)
-  §"Anteprime delle PR"). Per provare dal telefono resta `pnpm dev:tailnet`.
+  Workers Builds compila ogni branch e ogni PR come Worker Preview e il suo bot
+  tiene nella PR un commento con l'URL del branch (sempre l'ultimo commit) e
+  quello del singolo deploy ([`docs/DEPLOY.md`](docs/DEPLOY.md) §"Anteprime
+  delle PR"). Per provare dal telefono resta `pnpm dev:tailnet`.
 - **Pronta e unita lo stesso giorno.** Quando l'utente è soddisfatto la PR esce
   dalla bozza (`gh pr ready`) e la unisce lui. Una PR ancora aperta dopo 2–3
   giorni è troppo grossa: va spezzata.

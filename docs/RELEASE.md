@@ -120,8 +120,8 @@ git push origin HEAD v26.2.1                           # il push del tag avvia r
 lo richiama `release-manual.yml` dopo che l'utente l'ha lanciato, sul push
 manuale di un tag `vYY.MAJOR.MINOR` e **a mano** da GitHub (Actions › Release ›
 Run workflow, scegliendo branch o tag, per provare la build senza pubblicare).
-Sulle pull request girano solo il controllo del titolo (`pr-title.yml`) e il
-commento con l'anteprima (`preview.yml`). I passi comuni (pnpm, cache dello store, `pnpm install`) sono
+Sulle pull request gira solo il controllo del titolo (`pr-title.yml`);
+l'anteprima la compila e la commenta Cloudflare Workers Builds. I passi comuni (pnpm, cache dello store, `pnpm install`) sono
 nell'azione locale [`.github/actions/setup`](../.github/actions/setup/action.yml).
 Job:
 
