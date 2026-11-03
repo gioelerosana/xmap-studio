@@ -11,6 +11,9 @@ import { AppMark } from './AppMark.js';
 import type { InstallPrompt } from '../app/useInstallPrompt.js';
 
 export const InstallInvite: React.FC<{ prompt: InstallPrompt }> = ({ prompt }) => {
+  // Il modal si monta solo quando l'invito è attivo: ogni chiusura (bottone, Esc,
+  // backdrop) passa da `dismiss`, che aggiorna lo stato e smonta tutto da qui.
+  if (!prompt.open) return null;
   const isIOS = prompt.platform === 'ios';
   return (
     <Modal

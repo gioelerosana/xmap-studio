@@ -51,9 +51,13 @@ if (typeof window !== 'undefined') {
 function detectPlatform(): InstallPlatform {
   const ua = navigator.userAgent;
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
-  if (isIOS) return 'ios';
-  if (/Android/.test(ua)) return 'android';
-  return 'desktop';
+  const isAndroid = /\bAndroid\b/.test(ua);
+  if (!isIOS && !isAndroid) return 'desktop';
+  // Difesa in profondità: il desktop, anche con un monitor touch, ha quasi sempre
+  // mouse o touchpad come puntatore primario; un telefono o tablet no.
+  const coarse = window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(any-pointer: coarse)').matches;
+  if (!coarse) return 'desktop';
+  return isIOS ? 'ios' : 'android';
 }
 
 /** L'app gira già installata (aperta dalla schermata Home): l'invito non serve mai. */
