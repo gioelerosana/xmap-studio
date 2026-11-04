@@ -80,7 +80,9 @@ export async function atomicWrite(
       }
 
       fs.copyFileSync(resolved, candidate);
-      const bfd = fs.openSync(candidate, 'r');
+      // 'r+' e non 'r': su Windows fsync (FlushFileBuffers) richiede un handle
+      // aperto in scrittura, altrimenti fallisce con EPERM.
+      const bfd = fs.openSync(candidate, 'r+');
       try {
         fs.fsyncSync(bfd);
       } finally {
