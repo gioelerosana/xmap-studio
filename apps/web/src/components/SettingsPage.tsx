@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, FileLock2, Info, Keyboard, Network, Palette, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Cloud, FileLock2, Info, Keyboard, Network, Palette, RefreshCw } from 'lucide-react';
 import {
   Button,
   IconButton,
@@ -25,6 +25,7 @@ import { hasPendingUpdate } from '../app/useUpdateStatus.js';
 import { AppMark } from './AppMark.js';
 import { SettingRow, SettingsSection } from './SettingsLayout.js';
 import { UpdatesSection } from './UpdatesSection.js';
+import { NextcloudSection } from './NextcloudSection.js';
 
 interface SettingsPageProps {
   onClose: () => void;
@@ -72,15 +73,19 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 
-type SectionId = 'appearance' | 'map' | 'files' | 'shortcuts' | 'updates' | 'about';
+type SectionId = 'appearance' | 'map' | 'files' | 'cloud' | 'shortcuts' | 'updates' | 'about';
 
 export type SettingsSectionId = SectionId;
 
-/** La sezione Aggiornamenti esiste solo nell'app desktop: nel browser non ha nulla da mostrare. */
-const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; desktopOnly?: boolean }[] = [
+/**
+ * La sezione Aggiornamenti esiste solo nell'app desktop: nel browser non ha nulla da mostrare.
+ * Nextcloud solo nel browser: il desktop ha già il file system.
+ */
+const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; desktopOnly?: boolean; webOnly?: boolean }[] = [
   { id: 'appearance', label: 'Aspetto', icon: <Palette className="size-4" /> },
   { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
   { id: 'files', label: 'File e sicurezza', icon: <FileLock2 className="size-4" /> },
+  { id: 'cloud', label: 'Nextcloud', icon: <Cloud className="size-4" />, webOnly: true },
   { id: 'shortcuts', label: 'Scorciatoie', icon: <Keyboard className="size-4" /> },
   { id: 'updates', label: 'Aggiornamenti', icon: <RefreshCw className="size-4" />, desktopOnly: true },
   { id: 'about', label: 'Informazioni', icon: <Info className="size-4" /> },
@@ -145,7 +150,9 @@ function UiScaleControl({ value, onChange }: { value: number; onChange: (uiScale
 export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSection, updateStatus }: SettingsPageProps) {
   const isElectron = Boolean(window.electronAPI);
   const [active, setActive] = useState<SectionId>(initialSection ?? 'appearance');
-  const visibleSections = SECTIONS.filter((section) => !section.desktopOnly || isElectron);
+  const visibleSections = SECTIONS.filter(
+    (section) => (!section.desktopOnly || isElectron) && (!section.webOnly || !isElectron)
+  );
   const updateDot = hasPendingUpdate(updateStatus);
   const pageRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -267,6 +274,8 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
               </p>
             </SettingsSection>
           )}
+
+          {active === 'cloud' && !isElectron && <NextcloudSection />}
 
           {active === 'shortcuts' && (
             <SettingsSection title="Scorciatoie">

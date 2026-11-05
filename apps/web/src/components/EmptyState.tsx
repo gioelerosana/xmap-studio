@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Button, Shortcut } from '@xmap/ui-kit';
-import { FileCheck, FileSpreadsheet, FileUp, FolderOpen, Plus, ShieldCheck, Sigma } from 'lucide-react';
+import { CloudDownload, FileCheck, FileSpreadsheet, FileUp, FolderOpen, Plus, ShieldCheck, Sigma } from 'lucide-react';
 import { AppMark } from './AppMark.js';
 
 export interface EmptyStateProps {
   onOpenFile: () => void;
+  /** Presente solo con un account Nextcloud collegato. */
+  onOpenNextcloud?: () => void;
   onNewFile: () => void;
   onLoadDemo: () => void;
   onDropFiles: (file: File) => void;
@@ -20,6 +22,7 @@ const dotGridStyle: React.CSSProperties = {
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
   onOpenFile,
+  onOpenNextcloud,
   onNewFile,
   onLoadDemo,
   onDropFiles,
@@ -68,6 +71,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           <Button variant="outline" icon={<Plus className="size-4" />} onClick={onNewFile}>
             Nuova mappa
           </Button>
+          {onOpenNextcloud && (
+            <Button variant="outline" icon={<CloudDownload className="size-4" />} onClick={onOpenNextcloud}>
+              Da Nextcloud
+            </Button>
+          )}
           <Button variant="ghost" icon={<FileSpreadsheet className="size-4" />} onClick={onLoadDemo}>
             Demo
           </Button>

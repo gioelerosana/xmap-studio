@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Readable } from 'node:stream';
+import { NEXTCLOUD_PROXY_PREFIX, handleNextcloudProxy } from '../../packages/core/src/cloud/proxy.js';
 
 // Inietta in dist/sw.js l'elenco completo dei file della build e un'impronta
 // del loro contenuto: il service worker li mette tutti in cache
@@ -73,6 +76,50 @@ function devServiceWorkerReset(): Plugin {
   };
 }
 
+// Proxy verso Nextcloud anche in sviluppo e in `vite preview` (serve:tailnet):
+// stesso codice del Worker di produzione (worker/index.ts).
+async function proxyToNextcloud(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const host = req.headers.host ?? 'localhost';
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (typeof value === 'string') headers.set(name, value);
+    else if (Array.isArray(value)) headers.set(name, value.join(', '));
+  }
+  const method = req.method ?? 'GET';
+  const hasBody = method !== 'GET' && method !== 'HEAD';
+  const request = new Request(`http://${host}${req.url ?? '/'}`, {
+    method,
+    headers,
+    body: hasBody ? (Readable.toWeb(req) as ReadableStream<Uint8Array>) : undefined,
+    // Richiesto da Node per i corpi in streaming.
+    ...(hasBody ? { duplex: 'half' } : {}),
+  } as RequestInit);
+  const response = await handleNextcloudProxy(request);
+  res.statusCode = response.status;
+  response.headers.forEach((value, name) => res.setHeader(name, value));
+  if (!response.body) {
+    res.end();
+    return;
+  }
+  Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>).pipe(res);
+}
+
+function nextcloudProxy(): Plugin {
+  const middleware = (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
+    if (!req.url?.startsWith(NEXTCLOUD_PROXY_PREFIX)) return next();
+    proxyToNextcloud(req, res).catch(next);
+  };
+  return {
+    name: 'xmap-nextcloud-proxy',
+    configureServer(server) {
+      server.middlewares.use(middleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware);
+    },
+  };
+}
+
 // Versione dell'app (vYY.MAJOR.MINOR, docs/RELEASE.md): la scrive il workflow di
 // release nei package.json, qui si legge per mostrarla nella UI.
 const appVersion: string = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8')).version;
@@ -83,7 +130,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
-  plugins: [react(), tailwindcss(), precacheManifest(), devServiceWorkerReset()],
+  plugins: [react(), tailwindcss(), precacheManifest(), devServiceWorkerReset(), nextcloudProxy()],
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),

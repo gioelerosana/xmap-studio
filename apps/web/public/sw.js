@@ -1,5 +1,6 @@
 // Service worker per l'uso offline della PWA. Nessun dato dell'utente passa da
-// qui: i file .xmind restano locali.
+// qui: i file .xmind restano locali e le richieste a Nextcloud (`/nc/`) vanno
+// sempre in rete.
 //
 // All'installazione mette in cache l'intera build (elenco iniettato da
 // `vite build`, vedi `precacheManifest` in vite.config.ts): così l'app parte
@@ -85,6 +86,9 @@ async function handleAsset(event) {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+  // Proxy Nextcloud: file dell'utente, mai in cache.
+  if (url.pathname.startsWith('/nc/')) return;
   event.respondWith(request.mode === 'navigate' ? handleNavigation(event) : handleAsset(event));
 });

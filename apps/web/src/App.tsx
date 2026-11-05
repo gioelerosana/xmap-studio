@@ -11,7 +11,7 @@ import { SheetTabs } from './components/SheetTabs.js';
 import { useSettings } from './settings.js';
 import { useMathJaxVersion } from './mathReady.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
-import { sanitizeName } from './app/fileNames.js';
+import { UNTITLED_FILE_NAME, sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
 import { useInstallPrompt } from './app/useInstallPrompt.js';
 import { InstallInvite } from './components/InstallInvite.js';
@@ -33,6 +33,8 @@ import { useMapKeyboard } from './app/useMapKeyboard.js';
 import { useGlobalShortcuts } from './app/useGlobalShortcuts.js';
 import { buildMenuItems } from './app/buildMenuItems.js';
 import { AppHeader } from './app/AppHeader.js';
+import { NextcloudBrowserModal } from './components/NextcloudBrowserModal.js';
+import { nextcloudAvailable, useNextcloudAccount, type NextcloudFileRef } from './adapters/nextcloud.js';
 import {
   LazyExportModal,
   LazyImportModal,
@@ -79,6 +81,11 @@ export const App: React.FC = () => {
   }, [updateStatus, addToast]);
 
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | undefined>();
+  // Mappa aperta (o salvata) su Nextcloud: percorso ed ETag per riscriverla lì.
+  const [cloudFile, setCloudFile] = useState<NextcloudFileRef | undefined>();
+  const { account: nextcloudAccount } = useNextcloudAccount();
+  const nextcloudEnabled = nextcloudAvailable() && nextcloudAccount !== null;
+  const [nextcloudBrowser, setNextcloudBrowser] = useState<'open' | 'save' | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -101,9 +108,10 @@ export const App: React.FC = () => {
 
   // Mostra una mappa appena caricata: nuovo documento, primo foglio, nessuna selezione.
   const adoptWorkbook = useCallback(
-    (dto: WorkbookDto, handle?: FileSystemFileHandle) => {
+    (dto: WorkbookDto, handle?: FileSystemFileHandle, cloud?: NextcloudFileRef) => {
       setWorkbook(dto);
       setFileHandle(handle);
+      setCloudFile(cloud);
       setActiveSheetIndex(0);
       setDocumentKey((k) => k + 1);
       selectSingle(undefined);
@@ -198,11 +206,14 @@ export const App: React.FC = () => {
   const importMounted = useMountedOnce(importModalOpen);
   useEffect(preloadPanels, []);
 
-  const { writeWorkbook, handleSave, handleSaveAs } = useWorkbookSave({
+  const { writeWorkbook, handleSave, handleSaveAs, saveToNextcloud } = useWorkbookSave({
     controller,
     workbook,
     fileHandle,
     setFileHandle,
+    cloudFile,
+    setCloudFile,
+    nextcloudAccount,
     setBusy,
     isElectron,
     refreshState,
@@ -212,6 +223,7 @@ export const App: React.FC = () => {
   const {
     openFromPath,
     handleOpenLocalFile,
+    openFromNextcloud,
     handleLoadDemo,
     handleNewMap,
     openDroppedFile,
@@ -220,7 +232,7 @@ export const App: React.FC = () => {
     closePrompt,
     setClosePrompt,
     handleConfirmClose,
-  } = useWorkbookFiles({ controller, isElectron, adoptWorkbook, addToast, writeWorkbook });
+  } = useWorkbookFiles({ controller, isElectron, adoptWorkbook, nextcloudAccount, addToast, writeWorkbook });
 
   const isWindowMaximized = useElectronWindow({
     isElectron,
@@ -371,10 +383,12 @@ export const App: React.FC = () => {
   const resolveResource = useCallback((src: string) => controller.resourceBytes(src), [controller]);
 
   const menuItems = buildMenuItems(
-    { workbook, selectedTopic, selectedTopicId, theme: settings.theme, layout: headerLayout },
+    { workbook, selectedTopic, selectedTopicId, theme: settings.theme, layout: headerLayout, nextcloud: nextcloudEnabled },
     {
       onNewMap: handleNewMap,
       onOpen: handleOpenLocalFile,
+      onOpenNextcloud: () => setNextcloudBrowser('open'),
+      onSaveNextcloud: () => setNextcloudBrowser('save'),
       onUndo: () => doUndoRedo('undo'),
       onRedo: () => doUndoRedo('redo'),
       onToggleTheme: cycleTheme,
@@ -432,6 +446,7 @@ export const App: React.FC = () => {
         {!workbook ? (
           <EmptyState
             onOpenFile={handleOpenLocalFile}
+            onOpenNextcloud={nextcloudEnabled ? () => setNextcloudBrowser('open') : undefined}
             onNewFile={handleNewMap}
             onLoadDemo={handleLoadDemo}
             onDropFiles={openDroppedFile}
@@ -627,6 +642,28 @@ export const App: React.FC = () => {
         )}
 
       </Suspense>
+
+      {nextcloudEnabled && nextcloudAccount && nextcloudBrowser && (
+        <NextcloudBrowserModal
+          isOpen
+          onClose={() => setNextcloudBrowser(null)}
+          mode={nextcloudBrowser}
+          account={nextcloudAccount}
+          suggestedName={
+            workbook && workbook.fileName !== UNTITLED_FILE_NAME
+              ? workbook.fileName
+              : `${sanitizeName((workbook && controller.mapTitle()) || 'mappa')}.xmind`
+          }
+          onOpenFile={(entry) => {
+            setNextcloudBrowser(null);
+            void openFromNextcloud(entry);
+          }}
+          onSaveHere={(path, existing) => {
+            setNextcloudBrowser(null);
+            void saveToNextcloud(path, existing);
+          }}
+        />
+      )}
 
       <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title={APP_NAME} size="sm">
         <div className="flex flex-col gap-3">
