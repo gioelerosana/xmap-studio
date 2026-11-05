@@ -6,7 +6,7 @@ Due pacchetti:
   quello per gli utenti. **Non compila nulla**: scarica dalla GitHub Release il
   tarball precompilato dal CI e lo installa. Sorgente in `aur/`.
 - **`xmap-studio-git`** (`PKGBUILD` in questa cartella): sviluppo locale,
-  compila l'ultimo commit del branch corrente del clone.
+  compila l'ultimo commit di `main` su GitHub.
 
 | File | Ruolo |
 |---|---|
@@ -23,11 +23,19 @@ yay -S xmap-studio-bin          # o paru, o a mano:
 git clone https://aur.archlinux.org/xmap-studio-bin.git && cd xmap-studio-bin && makepkg -si
 ```
 
-Build di sviluppo dal clone locale (le modifiche non committate non entrano):
+Build di sviluppo dell'ultimo `main` su GitHub:
 
 ```bash
 cd packaging/arch && makepkg -si
 ```
+
+A ogni build il `PKGBUILD` aggiorna da GitHub il clone di cache
+`packaging/arch/xmap-studio/` e compila l'ultimo commit di `main`: branch,
+modifiche non committate e commit non pushati del clone locale non entrano nel
+pacchetto. La versione installata dice il commit: `pacman -Q xmap-studio-git` →
+`r<numero di commit>.g<hash>`, dove l'hash è quello di `main`
+(`git log -1 origin/main`). Il `PKGBUILD` non viene modificato dalla build,
+quindi i `git pull` restano puliti.
 
 ## Come arriva una release su AUR
 
@@ -85,11 +93,13 @@ versione deve essere già sulla Release) e non fa nulla se AUR è già allineato
   (dipendenze, launcher, `package()`) sulla stessa versione: incrementalo in
   `aur/PKGBUILD` con una PR e, dopo il merge, lancia `aur-publish.sh` a mano.
   Se il cambio riguarda il contenuto del tarball serve invece una nuova release.
-- Il `-git` non ha versione propria: `pkgver()` la ricava solo dal commit
-  compilato (`r<numero di commit>.g<hash>`), senza leggere i `package.json`,
-  quindi non segue le release né `xmap-studio-bin`. makepkg riscrive `pkgver`
-  nel `PKGBUILD` a ogni build: quella riga non va committata (nel repository
-  resta il segnaposto `r0.g0000000`).
+- Il `-git` non ha versione propria: la ricava solo dal commit di `main` che
+  compila (`r<numero di commit>.g<hash>`), senza leggere i `package.json`,
+  quindi non segue le release né `xmap-studio-bin`. Non usa una funzione
+  `pkgver()`, che farebbe riscrivere a makepkg la riga `pkgver` nel file: il
+  commit si calcola quando makepkg legge il `PKGBUILD` (fetch nella cache,
+  `refs/heads/main`) e la sorgente è fissata a quel commit (`#commit=`).
+  Una cache che non punta a GitHub viene ricreata da sola.
 
 ## Electron di sistema
 

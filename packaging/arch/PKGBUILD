@@ -1,22 +1,52 @@
 # Pacchetto Arch Linux di sviluppo per XMap Studio (VCS: git).
-# Costruito dall'ultimo commit del branch corrente del repository locale.
+# Costruito dall'ultimo commit di `main` su GitHub.
 #
 #   cd packaging/arch && makepkg -si
 #
-# Compila l'ultimo commit del branch corrente (le modifiche non committate non
-# entrano nel pacchetto) e usa l'Electron di sistema invece di quello di npm.
+# A ogni build aggiorna da GitHub il clone di cache packaging/arch/xmap-studio/
+# e compila l'ultimo commit di `main`: lo stato del clone locale (branch,
+# modifiche non committate o non pushate) non conta. Usa l'Electron di sistema
+# invece di quello di npm.
 #
-# Il pacchetto è svincolato dalle release e da xmap-studio-bin su AUR: non
-# legge la versione dai package.json. pkgver() la ricava solo dal commit
-# compilato (r<numero di commit>.g<hash>) e makepkg la riscrive qui sotto a
-# ogni build: il valore committato è un segnaposto.
+# Versione: r<numero di commit>.g<hash> del commit di `main` compilato
+# (pacman -Q xmap-studio-git dice quale commit è installato). È svincolata
+# dalle release e da xmap-studio-bin su AUR. Si calcola qui sotto quando
+# makepkg legge il file, non con una funzione pkgver(): così makepkg non
+# riscrive il PKGBUILD e il clone resta pulito per i git pull.
 
 _pkgname=xmap-studio
 pkgname=$_pkgname-git
-pkgver=r0.g0000000
+url='https://github.com/gioelerosana/xmap-studio'
+
+# makepkg rilegge il PKGBUILD più volte (anche dentro fakeroot): il commit si
+# fissa alla prima lettura e passa alle successive via ambiente, così un push
+# su main durante la build non cambia versione a metà.
+if [[ -z ${_XMAP_GIT_COMMIT:-} ]]; then
+  _cache="${SRCDEST:-$startdir}/$_pkgname"
+  # Una cache che non è il clone di GitHub (es. del vecchio PKGBUILD, che
+  # clonava il repository locale) farebbe fermare makepkg: si ricrea.
+  if [[ -d $_cache && $(git -C "$_cache" config --get remote.origin.url) != "$url.git" ]]; then
+    rm -rf -- "$_cache"
+  fi
+  if [[ -d $_cache ]]; then
+    git -C "$_cache" fetch --quiet --prune origin \
+      || echo "==> ATTENZIONE: fetch da GitHub fallito, uso la cache esistente" >&2
+  else
+    # Stesso clone --mirror che farebbe makepkg: lo riusa senza riscaricarlo.
+    git clone --quiet --mirror "$url.git" "$_cache"
+  fi
+  _XMAP_GIT_COMMIT=$(git -C "$_cache" rev-parse --verify --quiet 'refs/heads/main^{commit}') || {
+    echo "==> ERRORE: branch main non trovato in $_cache" >&2
+    exit 1
+  }
+  _XMAP_GIT_PKGVER="r$(git -C "$_cache" rev-list --count "$_XMAP_GIT_COMMIT").g${_XMAP_GIT_COMMIT:0:7}"
+  export _XMAP_GIT_COMMIT _XMAP_GIT_PKGVER
+  unset _cache
+fi
+
+pkgver=$_XMAP_GIT_PKGVER
 pkgrel=1
 pkgdesc='Free and open-source mind map editor for .xmind files, with native LaTeX formulas (development build)'
-url='https://github.com/gioelerosana/xmap-studio'
 arch=('x86_64')
 license=('MIT')
 provides=("$_pkgname")
@@ -26,15 +56,10 @@ depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
-source=("$_pkgname::git+file://$(realpath "$startdir/../..")#branch=$(git -C "$startdir" branch --show-current)"
+source=("$_pkgname::git+$url.git#commit=$_XMAP_GIT_COMMIT"
         'xmap-studio.sh'
         'org.joel.xmap_studio.desktop')
 sha256sums=('SKIP' 'SKIP' 'SKIP')
-
-pkgver() {
-  cd "$_pkgname"
-  printf 'r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
-}
 
 build() {
   cd "$_pkgname"
