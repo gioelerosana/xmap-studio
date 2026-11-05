@@ -230,8 +230,7 @@ segnaposto `__XMAP_PRECACHE__`/`__XMAP_BUILD__`; per provare l'offline, apri
 tutti da `apps/web/src/app/incomingFiles.ts`: «Condividi» su Android
 (`share_target` del manifest → POST a `/share-target` intercettato da `sw.js`,
 che mette i file nella cache `xmap-share-inbox` e riapre `/?shared=1`), «Apri con»
-su Chromium (`file_handlers` → `launchQueue`) e l'app iOS
-(`window.xmapReceiveFile`). La condivisione richiede il service worker, quindi si
+su Chromium (`file_handlers` → `launchQueue`). La condivisione richiede il service worker, quindi si
 prova solo con `serve:tailnet`, non con `dev:tailnet`. Per una modifica alla UI controlla anche:
 
 - larghezze strette (≈360–430 px) e testo di sistema ingrandito: l'header non

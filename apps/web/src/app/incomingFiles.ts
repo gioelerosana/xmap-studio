@@ -6,10 +6,8 @@
  *   riapre l'app con `?shared=1` (vedi `sw.js`).
  * - **Apri con…** su Chromium desktop (PWA installata): `file_handlers` del
  *   manifest, che consegna i file a `window.launchQueue`.
- * - **Condividi / Apri in** nell'app iOS: il wrapper nativo chiama
- *   `window.xmapReceiveFile(nome, base64)` (`apps/ios/.../WebCoordinator.swift`).
  *
- * Le tre strade finiscono in un'unica coda: i file arrivati prima che la UI sia
+ * Le due strade finiscono in un'unica coda: i file arrivati prima che la UI sia
  * pronta aspettano il primo `subscribeIncomingFiles`.
  */
 
@@ -36,8 +34,6 @@ interface LaunchQueue {
 declare global {
   interface Window {
     launchQueue?: LaunchQueue;
-    /** Chiamata dal wrapper iOS per consegnare un file aperto o condiviso. */
-    xmapReceiveFile?: (name: string, base64: string) => void;
   }
 }
 
@@ -49,13 +45,6 @@ function deliver(files: IncomingFile[]) {
   if (files.length === 0) return;
   if (handler) handler(files);
   else pending.push(files);
-}
-
-function decodeBase64(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 async function readShareInbox(): Promise<IncomingFile[]> {
@@ -85,14 +74,10 @@ async function readLaunchedFiles(params: LaunchParams): Promise<IncomingFile[]> 
   return files;
 }
 
-/** Da chiamare una volta all'avvio, prima del render: aggancia le tre sorgenti. */
+/** Da chiamare una volta all'avvio, prima del render: aggancia le due sorgenti. */
 export function installIncomingFiles() {
   if (installed) return;
   installed = true;
-
-  window.xmapReceiveFile = (name, base64) => {
-    deliver([{ name, bytes: decodeBase64(base64) }]);
-  };
 
   window.launchQueue?.setConsumer((params) => {
     readLaunchedFiles(params).then(deliver, (err: unknown) => {

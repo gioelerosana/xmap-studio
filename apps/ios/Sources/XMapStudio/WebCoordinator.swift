@@ -7,10 +7,6 @@ final class WebCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
 
     // MARK: Navigazione
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        FileInbox.shared.webViewDidLoad(webView)
-    }
-
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,

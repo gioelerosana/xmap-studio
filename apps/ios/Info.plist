@@ -15,47 +15,5 @@
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
-    <!-- XMap compare in «Condividi» / «Apri in» per i file .xmind (FileInbox.swift). -->
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Mappa XMind</string>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>net.xmind.workbook</string>
-            </array>
-        </dict>
-    </array>
-    <!-- Tipo importato: vale finché nessuna app installata (XMind) ne esporta uno suo. -->
-    <key>UTImportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key>
-            <string>net.xmind.workbook</string>
-            <key>UTTypeDescription</key>
-            <string>Mappa XMind</string>
-            <key>UTTypeConformsTo</key>
-            <array>
-                <string>public.data</string>
-                <string>public.content</string>
-            </array>
-            <key>UTTypeTagSpecification</key>
-            <dict>
-                <key>public.filename-extension</key>
-                <array>
-                    <string>xmind</string>
-                </array>
-                <key>public.mime-type</key>
-                <array>
-                    <string>application/vnd.xmind.workbook</string>
-                </array>
-            </dict>
-        </dict>
-    </array>
 </dict>
 </plist>
