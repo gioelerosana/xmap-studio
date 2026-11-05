@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   buildArchiveBytes,
   type AppController,
@@ -8,6 +8,7 @@ import {
 import { openLocalXmindFile } from '../adapters/fileSystem.js';
 import { nextcloudClient, type NextcloudFileRef } from '../adapters/nextcloud.js';
 import type { NextcloudAccount, NextcloudEntry } from '@xmap/core';
+import { subscribeIncomingFiles, type IncomingFile } from './incomingFiles.js';
 import type { AddToast } from './useToasts.js';
 import { UNTITLED_FILE_NAME } from './fileNames.js';
 
@@ -205,6 +206,23 @@ export function useWorkbookFiles({
     }
     window.electronAPI?.forceClose();
   };
+
+  // File condivisi da un'altra app o aperti dal sistema (incomingFiles.ts): si apre il
+  // primo .xmind, chiedendo di salvare la mappa corrente se modificata.
+  const openIncomingRef = useRef<(files: IncomingFile[]) => void>(() => {});
+  openIncomingRef.current = (files: IncomingFile[]) => {
+    const file = files.find((f) => f.name.toLowerCase().endsWith('.xmind')) ?? files[0];
+    if (!file) return;
+    requestWorkbookReplacement(async () => {
+      const dto = await controller.open(file.bytes, undefined, file.name);
+      adoptWorkbook(dto, file.handle);
+      addToast('success', `Aperto: ${file.name}`);
+      if (files.length > 1) addToast('info', 'Più file ricevuti: aperto solo il primo');
+    }).catch((err: unknown) => {
+      addToast('error', `Impossibile aprire ${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  };
+  useEffect(() => subscribeIncomingFiles((files) => openIncomingRef.current(files)), []);
 
   // Chiusura del tab/finestra del browser con modifiche non salvate.
   useEffect(() => {

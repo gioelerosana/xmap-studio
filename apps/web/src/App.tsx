@@ -480,6 +480,7 @@ export const App: React.FC = () => {
                 selectedTopicId={selectedTopicId}
                 selectedTopicIds={selectedTopicIds}
                 onSelectTopic={selection.onSelectTopic}
+                selectionMode={selection.selectionMode}
                 onClearSelection={() => selectSingle(undefined)}
                 onAddSummary={handleCreateSummary}
                 canAddSummary={canAddSummary}
@@ -529,6 +530,8 @@ export const App: React.FC = () => {
                   onStartConnectRelationship={(id) => setConnectingTopicId(id)}
                   onInsertImage={(file) => void insertImage(file, 'picker')}
                   mapControlsSlotRef={setMapControlsSlot}
+                  selectionMode={selection.selectionMode}
+                  onToggleSelectionMode={() => selection.setSelectionMode((v) => !v)}
                 />
               )}
 

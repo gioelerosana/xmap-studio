@@ -16,6 +16,10 @@ const NAVIGATION_TIMEOUT_MS = 3000;
 
 const scoped = (path) => new URL(path, self.registration.scope).href;
 const SHELL = scoped('./');
+// «Condividi» verso la PWA (`share_target` nel manifest): i file finiscono in
+// questa cache e l'app li legge e la svuota (`src/app/incomingFiles.ts`).
+const SHARE_TARGET = scoped('./share-target');
+const SHARE_INBOX = 'xmap-share-inbox';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -84,8 +88,39 @@ async function handleAsset(event) {
   return response;
 }
 
+// I file condivisi restano nel dispositivo: dal POST alla cache, poi all'app.
+async function handleShareTarget(event) {
+  try {
+    const form = await event.request.formData();
+    const files = form.getAll('file').filter((entry) => typeof entry !== 'string');
+    const cache = await caches.open(SHARE_INBOX);
+    // Una condivisione sostituisce gli eventuali file non ancora letti.
+    await Promise.all((await cache.keys()).map((key) => cache.delete(key)));
+    await Promise.all(
+      files.map((file, i) =>
+        cache.put(
+          scoped(`./__share-inbox/${Date.now()}-${i}`),
+          new Response(file, {
+            headers: {
+              'Content-Type': file.type || 'application/octet-stream',
+              'X-File-Name': encodeURIComponent(file.name || 'Mappa condivisa.xmind'),
+            },
+          })
+        )
+      )
+    );
+  } catch (err) {
+    console.warn('Condivisione non ricevuta:', err);
+  }
+  return Response.redirect(scoped('./?shared=1'), 303);
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  if (request.method === 'POST' && request.url === SHARE_TARGET) {
+    event.respondWith(handleShareTarget(event));
+    return;
+  }
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   // Proxy Nextcloud: file dell'utente, mai in cache.

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Braces, ImagePlus, PaintBucket, Sigma, ZoomIn } from 'lucide-react';
+import { Braces, ImagePlus, PaintBucket, Sigma, SquareDashedMousePointer, ZoomIn } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
 
 import { COMPACT_QUERY, TEXT_FIELD } from '../../app/constants.js';
@@ -49,8 +49,13 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onStartConnectRelationship,
   onInsertImage,
   mapControlsSlotRef,
+  selectionMode,
+  onToggleSelectionMode,
 }) => {
   const compact = useMediaQuery(COMPACT_QUERY);
+  // Senza Maiusc/Ctrl (touch, mobile) la selezione multipla passa da un pulsante dedicato.
+  const coarse = useMediaQuery('(pointer: coarse)');
+  const showSelectionMode = compact || coarse || selectionMode;
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { barRef, dock, dragging, dragOffset, dragPreview, dragProps } = useToolbarPosition(!compact);
   useTextStyleShortcuts({ topic, isEditingText, actions });
@@ -93,6 +98,19 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
         )}
       >
         <ToolbarOrientationContext.Provider value={vertical ? 'vertical' : 'horizontal'}>
+          {showSelectionMode && (
+            <>
+              <ToolbarButton
+                label={selectionMode ? 'Esci dalla selezione multipla' : 'Seleziona più blocchi'}
+                active={selectionMode}
+                onClick={onToggleSelectionMode}
+                className={selectionMode ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : undefined}
+              >
+                <SquareDashedMousePointer className="size-4" />
+              </ToolbarButton>
+              <ToolbarSeparator />
+            </>
+          )}
           <TextStyleControls topic={topic} isEditingText={isEditingText} actions={actions} />
 
           <ToolbarSeparator />

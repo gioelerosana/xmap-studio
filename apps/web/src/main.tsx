@@ -4,9 +4,11 @@ import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { installTextMeasurer } from './textMeasure';
 import { preloadMathJax } from './mathReady';
+import { installIncomingFiles } from './app/incomingFiles';
 import './index.css';
 
 installTextMeasurer();
+installIncomingFiles();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

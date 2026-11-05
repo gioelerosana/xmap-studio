@@ -44,6 +44,8 @@ Sito del progetto: **[xmap-studio.jshep.xyz](https://xmap-studio.jshep.xyz)**.
 La versione web è su **[xmap.jshep.xyz](https://xmap.jshep.xyz)**: gira tutta nel
 browser, i file restano sul tuo dispositivo, e si può installare come app (PWA) e
 usare offline.
+Installata su Android, compare in **Condividi**: un file `.xmind` condiviso da
+un'altra app (file manager, mail, chat) si apre direttamente in XMap Studio.
 
 Se vuoi, in **Impostazioni › Nextcloud** puoi collegare il tuo account Nextcloud
 (facoltativo): le mappe si aprono e si salvano direttamente lì, anche da iPhone e

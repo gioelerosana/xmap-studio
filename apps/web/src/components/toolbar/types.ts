@@ -29,4 +29,7 @@ export interface FloatingToolbarProps {
    * di vista e zoom; `null` quando il pannello è chiuso.
    */
   mapControlsSlotRef?: (slot: HTMLDivElement | null) => void;
+  /** Modalità selezione multipla col tap (pulsante mostrato su touch e schermi stretti). */
+  selectionMode: boolean;
+  onToggleSelectionMode: () => void;
 }
