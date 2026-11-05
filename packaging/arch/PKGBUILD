@@ -1,12 +1,13 @@
 # Pacchetto Arch Linux di sviluppo per XMap Studio (VCS: git).
-# Costruito dall'ultimo commit di `main` su GitHub.
+# Costruito dall'ultimo commit di `main`, dal repository che contiene questo file.
 #
 #   cd packaging/arch && makepkg -si
 #
-# A ogni build aggiorna da GitHub il clone di cache packaging/arch/xmap-studio/
-# e compila l'ultimo commit di `main`: lo stato del clone locale (branch,
-# modifiche non committate o non pushate) non conta. Usa l'Electron di sistema
-# invece di quello di npm.
+# Niente clone né download del repository: a ogni build si aggiorna `main` del
+# clone locale da origin (fetch + fast-forward, senza cambiare il branch in
+# cui sei) e si esporta quel commit in src/ con `git archive`. Modifiche non
+# committate e altri branch non entrano nel pacchetto. Usa l'Electron di
+# sistema invece di quello di npm.
 #
 # Versione: r<numero di commit>.g<hash> del commit di `main` compilato
 # (pacman -Q xmap-studio-git dice quale commit è installato). È svincolata
@@ -18,30 +19,30 @@ _pkgname=xmap-studio
 pkgname=$_pkgname-git
 url='https://github.com/gioelerosana/xmap-studio'
 
-# makepkg rilegge il PKGBUILD più volte (anche dentro fakeroot): il commit si
-# fissa alla prima lettura e passa alle successive via ambiente, così un push
-# su main durante la build non cambia versione a metà.
+# makepkg rilegge il PKGBUILD più volte (anche dentro fakeroot): `main` si
+# aggiorna e il commit si fissa alla prima lettura, poi passa alle successive
+# via ambiente.
 if [[ -z ${_XMAP_GIT_COMMIT:-} ]]; then
-  _cache="${SRCDEST:-$startdir}/$_pkgname"
-  # Una cache che non è il clone di GitHub (es. del vecchio PKGBUILD, che
-  # clonava il repository locale) farebbe fermare makepkg: si ricrea.
-  if [[ -d $_cache && $(git -C "$_cache" config --get remote.origin.url) != "$url.git" ]]; then
-    rm -rf -- "$_cache"
-  fi
-  if [[ -d $_cache ]]; then
-    git -C "$_cache" fetch --quiet --prune origin \
-      || echo "==> ATTENZIONE: fetch da GitHub fallito, uso la cache esistente" >&2
+  _XMAP_GIT_REPO=$(git -C "$startdir" rev-parse --show-toplevel) || exit 1
+  if git -C "$_XMAP_GIT_REPO" fetch --quiet origin main; then
+    if [[ $(git -C "$_XMAP_GIT_REPO" branch --show-current) == main ]]; then
+      # Sei su main: pull in fast-forward (si ferma se ci sono conflitti).
+      git -C "$_XMAP_GIT_REPO" merge --ff-only --quiet FETCH_HEAD \
+        || echo "==> ATTENZIONE: main non aggiornato (non in fast-forward o modifiche locali in conflitto)" >&2
+    else
+      # Altro branch: si sposta solo il ref di main, il working tree non cambia.
+      git -C "$_XMAP_GIT_REPO" fetch --quiet origin main:main \
+        || echo "==> ATTENZIONE: main locale non aggiornato (non in fast-forward con origin/main)" >&2
+    fi
   else
-    # Stesso clone --mirror che farebbe makepkg: lo riusa senza riscaricarlo.
-    git clone --quiet --mirror "$url.git" "$_cache"
+    echo "==> ATTENZIONE: fetch di origin/main fallito, uso il main locale" >&2
   fi
-  _XMAP_GIT_COMMIT=$(git -C "$_cache" rev-parse --verify --quiet 'refs/heads/main^{commit}') || {
-    echo "==> ERRORE: branch main non trovato in $_cache" >&2
+  _XMAP_GIT_COMMIT=$(git -C "$_XMAP_GIT_REPO" rev-parse --verify --quiet 'refs/heads/main^{commit}') || {
+    echo "==> ERRORE: branch main non trovato in $_XMAP_GIT_REPO" >&2
     exit 1
   }
-  _XMAP_GIT_PKGVER="r$(git -C "$_cache" rev-list --count "$_XMAP_GIT_COMMIT").g${_XMAP_GIT_COMMIT:0:7}"
-  export _XMAP_GIT_COMMIT _XMAP_GIT_PKGVER
-  unset _cache
+  _XMAP_GIT_PKGVER="r$(git -C "$_XMAP_GIT_REPO" rev-list --count "$_XMAP_GIT_COMMIT").g${_XMAP_GIT_COMMIT:0:7}"
+  export _XMAP_GIT_REPO _XMAP_GIT_COMMIT _XMAP_GIT_PKGVER
 fi
 
 pkgver=$_XMAP_GIT_PKGVER
@@ -56,10 +57,17 @@ depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
-source=("$_pkgname::git+$url.git#commit=$_XMAP_GIT_COMMIT"
-        'xmap-studio.sh'
+source=('xmap-studio.sh'
         'org.joel.xmap_studio.desktop')
-sha256sums=('SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP')
+
+prepare() {
+  # Copia esatta del commit di main, senza la cartella .git.
+  rm -rf "$srcdir/$_pkgname"
+  mkdir -p "$srcdir/$_pkgname"
+  git -C "$_XMAP_GIT_REPO" archive --format=tar "$_XMAP_GIT_COMMIT" \
+    | bsdtar -xf - -C "$srcdir/$_pkgname"
+}
 
 build() {
   cd "$_pkgname"

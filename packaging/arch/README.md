@@ -6,7 +6,7 @@ Due pacchetti:
   quello per gli utenti. **Non compila nulla**: scarica dalla GitHub Release il
   tarball precompilato dal CI e lo installa. Sorgente in `aur/`.
 - **`xmap-studio-git`** (`PKGBUILD` in questa cartella): sviluppo locale,
-  compila l'ultimo commit di `main` su GitHub.
+  compila l'ultimo commit di `main` del clone in cui si trova.
 
 | File | Ruolo |
 |---|---|
@@ -23,19 +23,23 @@ yay -S xmap-studio-bin          # o paru, o a mano:
 git clone https://aur.archlinux.org/xmap-studio-bin.git && cd xmap-studio-bin && makepkg -si
 ```
 
-Build di sviluppo dell'ultimo `main` su GitHub:
+Build di sviluppo dell'ultimo `main`, dal clone locale:
 
 ```bash
 cd packaging/arch && makepkg -si
 ```
 
-A ogni build il `PKGBUILD` aggiorna da GitHub il clone di cache
-`packaging/arch/xmap-studio/` e compila l'ultimo commit di `main`: branch,
-modifiche non committate e commit non pushati del clone locale non entrano nel
-pacchetto. La versione installata dice il commit: `pacman -Q xmap-studio-git` →
-`r<numero di commit>.g<hash>`, dove l'hash è quello di `main`
-(`git log -1 origin/main`). Il `PKGBUILD` non viene modificato dalla build,
-quindi i `git pull` restano puliti.
+Non scarica né clona il repository: usa quello in cui si trova il `PKGBUILD`.
+A ogni build fa il fetch di `origin/main` e porta avanti `main` in
+fast-forward (con un pull se sei su `main`; altrimenti sposta solo il ref, senza
+cambiare branch né file), poi esporta quel commit in `src/` con `git archive`.
+Modifiche non committate e altri branch non entrano nel pacchetto. Se il fetch
+o il fast-forward non riescono compila il `main` locale, con un avviso.
+
+La versione installata dice il commit: `pacman -Q xmap-studio-git` →
+`r<numero di commit>.g<hash>` di `main`. Il `PKGBUILD` non viene modificato
+dalla build, quindi i `git pull` restano puliti. La vecchia cache
+`packaging/arch/xmap-studio/` non serve più e si può cancellare.
 
 ## Come arriva una release su AUR
 
@@ -97,9 +101,8 @@ versione deve essere già sulla Release) e non fa nulla se AUR è già allineato
   compila (`r<numero di commit>.g<hash>`), senza leggere i `package.json`,
   quindi non segue le release né `xmap-studio-bin`. Non usa una funzione
   `pkgver()`, che farebbe riscrivere a makepkg la riga `pkgver` nel file: il
-  commit si calcola quando makepkg legge il `PKGBUILD` (fetch nella cache,
-  `refs/heads/main`) e la sorgente è fissata a quel commit (`#commit=`).
-  Una cache che non punta a GitHub viene ricreata da sola.
+  commit si calcola quando makepkg legge il `PKGBUILD` (aggiornamento di
+  `main`, poi `refs/heads/main`) e `prepare()` esporta proprio quel commit.
 
 ## Electron di sistema
 
