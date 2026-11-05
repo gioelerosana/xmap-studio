@@ -12,3 +12,4 @@ export * from './state/index.js';
 export * from './controller.js';
 export * from './print/index.js';
 export * from './update/index.js';
+export * from './cloud/index.js';
