@@ -38,6 +38,7 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedTopicIds,
   onSelectTopic,
   onClearSelection,
+  selectionMode,
   onOpenLatex,
   onAddChild,
   onAddSibling,
@@ -93,6 +94,7 @@ export const MapView: React.FC<MapViewProps> = ({
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
   const handlersValue: MapHandlers = {
     onSelectTopic,
+    selectionMode,
     onOpenLatex,
     onAddChild,
     onAddSibling,
@@ -178,6 +180,8 @@ export const MapView: React.FC<MapViewProps> = ({
     e.stopPropagation();
     // I blocchi di testo si modificano in place (anche su touch), le formule nell'editor LaTeX.
     if (editingRef.current?.id === node.id) return;
+    // In modalità selezione il doppio tap alterna solo la selezione, non apre editor.
+    if (handlers.current.selectionMode) return;
     if (node.kind === 'text' && handlers.current.onStartEdit) {
       handlers.current.onStartEdit(node.id);
     } else if (node.kind === 'equation') {
@@ -289,11 +293,11 @@ export const MapView: React.FC<MapViewProps> = ({
         isConnectingRelationship && 'cursor-crosshair!'
       )}
       onClick={(e) => {
-        // Click o tap sullo sfondo: deseleziona relazione e blocchi (con Maiusc/Ctrl la selezione resta).
+        // Click o tap sullo sfondo: deseleziona relazione e blocchi (con Maiusc/Ctrl o in modalità selezione la selezione resta).
         const t = e.target as Element;
         if (t !== e.currentTarget && t.tagName !== 'svg' && t.id !== 'map-bg') return;
         setSelectedRelationshipId(undefined);
-        if (isConnectingRelationship || e.shiftKey || e.ctrlKey || e.metaKey) return;
+        if (isConnectingRelationship || selectionMode || e.shiftKey || e.ctrlKey || e.metaKey) return;
         onClearSelection?.();
       }}
     >

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
 export interface SelectionState {
   selectedTopicId: string | undefined;
@@ -8,11 +8,20 @@ export interface SelectionState {
   /** Selezione singola (o vuota) con primaria e lista allineate. */
   selectSingle: (id: string | undefined) => void;
   onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
+  /**
+   * Modalità selezione (pulsante della barra, pensato per il touch dove non ci sono Maiusc/Ctrl):
+   * ogni tap su un blocco lo aggiunge o lo toglie dalla selezione, come Ctrl+clic.
+   */
+  selectionMode: boolean;
+  setSelectionMode: Dispatch<SetStateAction<boolean>>;
 }
 
 export function useSelection(): SelectionState {
   const [selectedTopicId, setSelectedTopicId] = useState<string | undefined>();
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const selectionModeRef = useRef(selectionMode);
+  selectionModeRef.current = selectionMode;
   // La selezione multipla contiene sempre la primaria: ogni altro cambio di
   // `selectedTopicId` (nuovo blocco, undo, immagine incollata…) la riporta a singola.
   useEffect(() => {
@@ -28,7 +37,7 @@ export function useSelection(): SelectionState {
 
   const onSelectTopic = useCallback(
     (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => {
-      const isMulti = Boolean(modifiers?.shiftKey || modifiers?.ctrlKey);
+      const isMulti = Boolean(modifiers?.shiftKey || modifiers?.ctrlKey || selectionModeRef.current);
       if (!isMulti) {
         // Clic semplice: torna alla selezione singola
         setSelectedTopicId(topicId);
@@ -69,5 +78,7 @@ export function useSelection(): SelectionState {
     setSelectedTopicIds,
     selectSingle,
     onSelectTopic,
+    selectionMode,
+    setSelectionMode,
   };
 }
