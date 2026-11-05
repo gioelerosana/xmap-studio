@@ -38,6 +38,15 @@ xtool dev                         # build, firma, installa sull'iPad collegato
 Al primo avvio: Impostazioni → Generali → Gestione VPN e dispositivo → fidati del
 tuo Apple ID.
 
+## Aprire file da altre app
+
+`Info.plist` dichiara il tipo `.xmind` (`CFBundleDocumentTypes` e il tipo importato
+`net.xmind.workbook`): XMap compare in «Condividi» e «Apri in» di File, Mail e
+delle altre app. `XMapStudioApp` riceve l'URL con `onOpenURL`, `FileInbox.swift`
+legge il file (accesso *security-scoped*, `NSFileCoordinator`) e lo passa alla UI
+web con `window.xmapReceiveFile(nome, base64)` (`apps/web/src/app/incomingFiles.ts`);
+all'avvio a freddo il file aspetta in coda che la pagina sia caricata.
+
 ## Limiti attuali
 
 - Il salvataggio passa dal ripiego web: ogni «Salva» scarica un nuovo file e apre
