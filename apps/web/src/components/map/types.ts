@@ -43,6 +43,8 @@ export interface MapViewProps {
   onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
   /** Clic o tap sullo sfondo della mappa: svuota la selezione. */
   onClearSelection?: () => void;
+  /** Modalità selezione attiva: il tap su un blocco lo aggiunge o lo toglie, il doppio tap non avvia l'editing. */
+  selectionMode?: boolean;
   /** Apre l'editor LaTeX centrato sul blocco (formule; anche per trasformare un testo in formula). */
   onOpenLatex: (topicId: string) => void;
   onAddChild?: (topicId: string) => void;
@@ -100,6 +102,7 @@ export interface ContextMenuState {
 export type MapHandlers = Pick<
   MapViewProps,
   | 'onSelectTopic'
+  | 'selectionMode'
   | 'onOpenLatex'
   | 'onAddChild'
   | 'onAddSibling'

@@ -325,6 +325,8 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
         Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30;
       lastTap = isDouble ? { t: 0, x: 0, y: 0, nodeId: null } : { t: now, x: e.clientX, y: e.clientY, nodeId };
       if (!isDouble) return;
+      // In modalità selezione ogni tap alterna già la selezione (vedi `selectNode`): niente editing.
+      if (nodeId && handlers.current.selectionMode) return;
       if (nodeId) {
         setSelectedRelationshipId(undefined);
         handlers.current.onSelectTopic(nodeId);
