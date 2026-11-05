@@ -1,15 +1,18 @@
 # Pacchetto Arch Linux di sviluppo per XMap Studio (VCS: git).
-# Costruito dall'ultimo commit del branch corrente del repository locale.
+# Costruito dall'ultimo commit di `main` su GitHub.
 #
 #   cd packaging/arch && makepkg -si
 #
-# Compila l'ultimo commit del branch corrente (le modifiche non committate non
-# entrano nel pacchetto) e usa l'Electron di sistema invece di quello di npm.
+# A ogni build makepkg aggiorna il clone in packaging/arch/xmap-studio/ con un
+# fetch di `main` da GitHub e compila l'ultimo commit: lo stato del clone
+# locale (branch, modifiche non committate o non pushate) non conta. Usa
+# l'Electron di sistema invece di quello di npm.
 #
 # Il pacchetto è svincolato dalle release e da xmap-studio-bin su AUR: non
 # legge la versione dai package.json. pkgver() la ricava solo dal commit
-# compilato (r<numero di commit>.g<hash>) e makepkg la riscrive qui sotto a
-# ogni build: il valore committato è un segnaposto.
+# compilato (r<numero di commit>.g<hash>, l'hash è quello di `main` su GitHub)
+# e makepkg la riscrive qui sotto a ogni build: il valore committato è un
+# segnaposto. Per sapere quale commit è installato: pacman -Q xmap-studio-git.
 
 _pkgname=xmap-studio
 pkgname=$_pkgname-git
@@ -26,7 +29,7 @@ depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
-source=("$_pkgname::git+file://$(realpath "$startdir/../..")#branch=$(git -C "$startdir" branch --show-current)"
+source=("$_pkgname::git+$url.git#branch=main"
         'xmap-studio.sh'
         'org.joel.xmap_studio.desktop')
 sha256sums=('SKIP' 'SKIP' 'SKIP')

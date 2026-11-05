@@ -6,7 +6,7 @@ Due pacchetti:
   quello per gli utenti. **Non compila nulla**: scarica dalla GitHub Release il
   tarball precompilato dal CI e lo installa. Sorgente in `aur/`.
 - **`xmap-studio-git`** (`PKGBUILD` in questa cartella): sviluppo locale,
-  compila l'ultimo commit del branch corrente del clone.
+  compila l'ultimo commit di `main` su GitHub.
 
 | File | Ruolo |
 |---|---|
@@ -23,11 +23,22 @@ yay -S xmap-studio-bin          # o paru, o a mano:
 git clone https://aur.archlinux.org/xmap-studio-bin.git && cd xmap-studio-bin && makepkg -si
 ```
 
-Build di sviluppo dal clone locale (le modifiche non committate non entrano):
+Build di sviluppo dell'ultimo `main` su GitHub:
 
 ```bash
 cd packaging/arch && makepkg -si
 ```
+
+A ogni build makepkg fa il fetch di `main` da GitHub nel clone di cache
+`packaging/arch/xmap-studio/` e compila l'ultimo commit: branch, modifiche non
+committate e commit non pushati del clone locale non entrano nel pacchetto.
+La versione installata dice il commit: `pacman -Q xmap-studio-git` →
+`r<numero di commit>.g<hash>`, dove l'hash è quello di `main`
+(`git log -1 origin/main`).
+
+Se la cache è stata creata da una versione precedente del `PKGBUILD` (che
+clonava il repository locale), makepkg si ferma con «is not a clone of»:
+cancellala una volta con `rm -rf packaging/arch/xmap-studio`.
 
 ## Come arriva una release su AUR
 
@@ -86,7 +97,7 @@ versione deve essere già sulla Release) e non fa nulla se AUR è già allineato
   `aur/PKGBUILD` con una PR e, dopo il merge, lancia `aur-publish.sh` a mano.
   Se il cambio riguarda il contenuto del tarball serve invece una nuova release.
 - Il `-git` non ha versione propria: `pkgver()` la ricava solo dal commit
-  compilato (`r<numero di commit>.g<hash>`), senza leggere i `package.json`,
+  compilato di `main` (`r<numero di commit>.g<hash>`), senza leggere i `package.json`,
   quindi non segue le release né `xmap-studio-bin`. makepkg riscrive `pkgver`
   nel `PKGBUILD` a ogni build: quella riga non va committata (nel repository
   resta il segnaposto `r0.g0000000`).
