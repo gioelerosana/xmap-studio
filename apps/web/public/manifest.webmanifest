@@ -14,6 +14,19 @@
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
   ],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "file",
+          "accept": [".xmind", "application/vnd.xmind.workbook", "application/zip", "application/octet-stream"]
+        }
+      ]
+    }
+  },
   "file_handlers": [
     {
       "action": "/",
