@@ -15,6 +15,8 @@ import {
   Printer,
   Palette,
   Maximize2,
+  CloudDownload,
+  CloudUpload,
 } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 import type { ThemePreference } from '../settings.js';
@@ -26,11 +28,15 @@ export interface MenuContext {
   selectedTopicId: string | undefined;
   theme: ThemePreference;
   layout: HeaderLayout;
+  /** Account Nextcloud collegato: mostra "Apri da / Salva su Nextcloud". */
+  nextcloud: boolean;
 }
 
 export interface MenuActions {
   onNewMap: () => void;
   onOpen: () => void;
+  onOpenNextcloud: () => void;
+  onSaveNextcloud: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onToggleTheme: () => void;
@@ -48,7 +54,7 @@ export interface MenuActions {
 
 /** Voci del menu ⋮: le azioni che non entrano nell'header e tutte quelle del documento. */
 export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem[] {
-  const { workbook, selectedTopic, selectedTopicId, theme, layout } = ctx;
+  const { workbook, selectedTopic, selectedTopicId, theme, layout, nextcloud } = ctx;
 
   // Azioni dell'header che non ci stanno: in testa al menu ⋮.
   const overflowItems: MenuItem[] = [
@@ -56,6 +62,12 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
       ? [{ id: 'new-map', label: 'Nuova mappa', icon: <SquarePlus className="size-4" />, onSelect: actions.onNewMap }]
       : []),
     ...(!layout.inlineOpen ? [{ id: 'open', label: 'Apri…', icon: <FolderOpen className="size-4" />, onSelect: actions.onOpen }] : []),
+    ...(nextcloud
+      ? [{ id: 'open-nextcloud', label: 'Apri da Nextcloud…', icon: <CloudDownload className="size-4" />, onSelect: actions.onOpenNextcloud }]
+      : []),
+    ...(nextcloud && workbook
+      ? [{ id: 'save-nextcloud', label: 'Salva su Nextcloud…', icon: <CloudUpload className="size-4" />, onSelect: actions.onSaveNextcloud }]
+      : []),
     ...(workbook && !layout.inlineUndo
       ? [{ id: 'undo', label: 'Annulla', icon: <Undo2 className="size-4" />, disabled: !workbook.canUndo, onSelect: actions.onUndo }]
       : []),

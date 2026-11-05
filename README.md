@@ -47,6 +47,11 @@ usare offline.
 Installata su Android, compare in **Condividi**: un file `.xmind` condiviso da
 un'altra app (file manager, mail, chat) si apre direttamente in XMap Studio.
 
+Se vuoi, in **Impostazioni › Nextcloud** puoi collegare il tuo account Nextcloud
+(facoltativo): le mappe si aprono e si salvano direttamente lì, anche da iPhone e
+iPad, senza scaricare un file a ogni salvataggio. Dettagli in
+[`docs/NEXTCLOUD.md`](docs/NEXTCLOUD.md).
+
 ## Installa
 
 Per il desktop scarica l'**AppImage** (Linux) o l'**exe portable** (Windows) dalle

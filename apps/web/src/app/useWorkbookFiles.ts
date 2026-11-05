@@ -6,6 +6,8 @@ import {
   type WorkbookDto,
 } from '@xmap/core';
 import { openLocalXmindFile } from '../adapters/fileSystem.js';
+import { nextcloudClient, type NextcloudFileRef } from '../adapters/nextcloud.js';
+import type { NextcloudAccount, NextcloudEntry } from '@xmap/core';
 import { subscribeIncomingFiles, type IncomingFile } from './incomingFiles.js';
 import type { AddToast } from './useToasts.js';
 import { UNTITLED_FILE_NAME } from './fileNames.js';
@@ -17,7 +19,8 @@ interface WorkbookFilesOptions {
   controller: AppController;
   isElectron: boolean;
   /** Mostra una mappa appena aperta: azzera selezione, sheet e blocchi ripiegati. */
-  adoptWorkbook: (dto: WorkbookDto, handle?: FileSystemFileHandle) => void;
+  adoptWorkbook: (dto: WorkbookDto, handle?: FileSystemFileHandle, cloudFile?: NextcloudFileRef) => void;
+  nextcloudAccount: NextcloudAccount | null;
   addToast: AddToast;
   writeWorkbook: (force: boolean, saveAs: boolean) => Promise<boolean>;
 }
@@ -26,7 +29,14 @@ interface WorkbookFilesOptions {
  * Apertura, creazione e sostituzione delle mappe. Chiede di salvare prima di
  * sostituire una mappa modificata e prima di chiudere la finestra.
  */
-export function useWorkbookFiles({ controller, isElectron, adoptWorkbook, addToast, writeWorkbook }: WorkbookFilesOptions) {
+export function useWorkbookFiles({
+  controller,
+  isElectron,
+  adoptWorkbook,
+  nextcloudAccount,
+  addToast,
+  writeWorkbook,
+}: WorkbookFilesOptions) {
   const [pendingReplacement, setPendingReplacement] = useState<(() => Promise<void>) | null>(null);
   const [replacePrompt, setReplacePrompt] = useState(false);
   const [closePrompt, setClosePrompt] = useState<CloseAction>(null);
@@ -85,6 +95,23 @@ export function useWorkbookFiles({ controller, isElectron, adoptWorkbook, addToa
       addToast('error', `Errore apertura file: ${err.message || String(err)}`);
     }
   }, [controller, isElectron, addToast, requestWorkbookReplacement, adoptWorkbook]);
+
+  const openFromNextcloud = useCallback(
+    async (entry: NextcloudEntry) => {
+      if (!nextcloudAccount) return;
+      try {
+        const { bytes, etag } = await nextcloudClient(nextcloudAccount).download(entry.path);
+        await requestWorkbookReplacement(async () => {
+          const dto = await controller.open(bytes, undefined, entry.name);
+          adoptWorkbook(dto, undefined, { path: entry.path, etag });
+          addToast('success', `Mappa aperta da Nextcloud: ${entry.name}`);
+        });
+      } catch (err: unknown) {
+        addToast('error', `Errore apertura da Nextcloud: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [nextcloudAccount, controller, addToast, requestWorkbookReplacement, adoptWorkbook]
+  );
 
   const handleLoadDemo = async () => {
     try {
@@ -209,6 +236,7 @@ export function useWorkbookFiles({ controller, isElectron, adoptWorkbook, addToa
   return {
     openFromPath,
     handleOpenLocalFile,
+    openFromNextcloud,
     handleLoadDemo,
     handleNewMap,
     openDroppedFile,
