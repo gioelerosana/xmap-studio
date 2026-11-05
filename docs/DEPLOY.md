@@ -2,14 +2,18 @@
 
 La web app è una SPA tutta lato client (il core gira nel browser, i file
 `.xmind` restano sul dispositivo): non c'è backend. Su Cloudflare si pubblica
-quindi come **Workers con Static Assets**, senza codice Worker: i file della
-build stanno sulla rete Cloudflare e non esiste un origin che possa cadere.
+quindi come **Workers con Static Assets**: i file della build stanno sulla rete
+Cloudflare e non esiste un origin che possa cadere. Il codice del Worker
+(`worker/index.ts`) gira solo per `/nc/*`, il proxy dell'integrazione Nextcloud
+opt-in ([`NEXTCLOUD.md`](NEXTCLOUD.md)); tutto il resto lo servono direttamente
+gli asset.
 Il service worker della PWA aggiunge l'uso offline.
 
 File coinvolti:
 
-- [`wrangler.jsonc`](../wrangler.jsonc): nome del Worker (`xmap-studio`) e cartella
-  degli asset (`apps/web/dist`);
+- [`wrangler.jsonc`](../wrangler.jsonc): nome del Worker (`xmap-studio`), script
+  (`worker/index.ts`) e cartella degli asset (`apps/web/dist`, binding `ASSETS`,
+  `run_worker_first` solo per `/nc/*`);
 - [`apps/web/public/_headers`](../apps/web/public/_headers): cache immutabile per
   `/assets/*`, rivalidazione per `index.html`, `sw.js` e `manifest.webmanifest`
   (altrimenti i dispositivi con la PWA installata non vedono le versioni nuove),

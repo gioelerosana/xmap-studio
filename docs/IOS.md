@@ -43,4 +43,6 @@ tuo Apple ID.
 - Il salvataggio passa dal ripiego web: ogni «Salva» scarica un nuovo file e apre
   «Salva in File» (`WebCoordinator.swift`); non c'è scrittura in-place.
 - Nessun service worker (non serve: le risorse sono nel bundle).
+- Niente integrazione Nextcloud: il proxy `/nc/` esiste solo sul sito della web app
+  ([`NEXTCLOUD.md`](NEXTCLOUD.md)).
 - Non verificato su dispositivo finché l'SDK iOS non è installato con `xtool setup`.

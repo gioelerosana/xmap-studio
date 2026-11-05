@@ -71,7 +71,7 @@ prepareArchiveBytes()
   → validateArchiveBytes (risorse, allegati, manifest, JSON, ZIP)
   → adapter di destinazione
        Electron: check hash → temp/fsync → backup → rename/fsync directory
-       Browser: File System Access API oppure download
+       Browser: File System Access API, Nextcloud (PUT con If-Match) oppure download
   → markSaved(path, hash)
 ```
 
@@ -84,7 +84,9 @@ le modifiche non salvate.
 
 Il browser non può ispezionare i processi del sistema. Se è disponibile un
 `FileSystemFileHandle`, il salvataggio confronta l'hash del file prima di
-sovrascriverlo; in assenza di handle produce un download.
+sovrascriverlo; in assenza di handle produce un download. Con un account
+Nextcloud collegato la mappa si apre e si salva sul server, con l'ETag al posto
+dell'hash ([`NEXTCLOUD.md`](NEXTCLOUD.md)).
 
 ## Operazioni e UI
 
