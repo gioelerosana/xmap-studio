@@ -139,9 +139,18 @@ function chooseCuts(candidates: CutCandidate[], layout: Layout, bounds: WorldRec
 
     if (cut === undefined) {
       // Nessuno spazio tra blocchi: taglio duro, ma mai in mezzo a un blocco se si può evitare.
+      // Si ripete finché il taglio non si ferma: risalendo sopra un blocco si può finire
+      // dentro un altro già controllato.
       cut = limit;
-      for (const n of layout.nodes) {
-        if (n.y + EPSILON < cut && cut < n.y + n.h - EPSILON && n.y > y + EPSILON) cut = n.y;
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const n of layout.nodes) {
+          if (n.y + EPSILON < cut && cut < n.y + n.h - EPSILON && n.y > y + EPSILON) {
+            cut = n.y;
+            moved = true;
+          }
+        }
       }
     }
     starts.push(cut);

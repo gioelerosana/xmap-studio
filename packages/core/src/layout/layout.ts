@@ -427,9 +427,11 @@ function computeNodeSize(
   }
 
   // 2. Immagini con dimensioni note
-  const imgW = node.imageW;
-  const imgH = node.imageH;
-  if (imgW !== undefined && imgH !== undefined) {
+  // Le dimensioni vengono dal file senza controllo di tipo: un valore non numerico
+  // (es. `"auto"`) darebbe NaN e propagherebbe NaN a tutta la colonna del genitore.
+  const imgW = node.imageW === undefined ? undefined : Number(node.imageW);
+  const imgH = node.imageH === undefined ? undefined : Number(node.imageH);
+  if (imgW !== undefined && imgH !== undefined && Number.isFinite(imgW) && Number.isFinite(imgH)) {
     const maxW = node.kind === 'equation' || node.latex ? 650.0 : 800.0;
     const scale = imgW > maxW ? maxW / imgW : 1.0;
     const fw = imgW * scale + 24.0;
@@ -1052,12 +1054,39 @@ function maxWidth(nodes: MapNode[], sizes: Sizes): number {
 /** Larghezza occupata dalla colonna dei figli, sommari compresi, da un lato della radice. */
 function columnWidthOf(children: MapNode[], summaries: MapSummary[], sizes: Sizes): number {
   let width = maxWidth(children, sizes);
-  for (const s of summaries) {
-    const rangeW = maxWidth(children.slice(s.start, s.end + 1), sizes);
+  const insets = summaryInsets(children, summaries, sizes);
+  summaries.forEach((s, i) => {
+    const inset = insets[i];
+    if (inset === undefined) return;
     const summaryW = sizes.get(s.node.id)?.w ?? 0.0;
-    width = Math.max(width, rangeW + SUMMARY_OFFSET + summaryW);
-  }
+    width = Math.max(width, inset + SUMMARY_OFFSET + summaryW);
+  });
   return width;
+}
+
+/**
+ * Distanza dal bordo interno della colonna a cui inizia lo spazio prima della graffa di
+ * ciascun sommario (`undefined` se l'intervallo è fuori dalla colonna). Di norma è la
+ * larghezza dei figli raccolti; se gli intervalli di più sommari si sovrappongono
+ * (annidati o uguali), il più ampio va oltre il sotto-albero del più stretto, così i topic
+ * di sommario non finiscono uno sopra l'altro. A parità di ampiezza vince l'ordine del file.
+ */
+function summaryInsets(children: MapNode[], summaries: MapSummary[], sizes: Sizes): (number | undefined)[] {
+  const insets: (number | undefined)[] = new Array<number | undefined>(summaries.length).fill(undefined);
+  const order = summaries
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.end < children.length)
+    .sort((a, b) => a.s.end - a.s.start - (b.s.end - b.s.start) || a.i - b.i);
+  const placed: { s: MapSummary; reach: number }[] = [];
+  for (const { s, i } of order) {
+    let inset = maxWidth(children.slice(s.start, s.end + 1), sizes);
+    for (const p of placed) {
+      if (p.s.end >= s.start && p.s.start <= s.end) inset = Math.max(inset, p.reach);
+    }
+    insets[i] = inset;
+    placed.push({ s, reach: inset + SUMMARY_OFFSET + (sizes.get(s.node.id)?.w ?? 0.0) });
+  }
+  return insets;
 }
 
 function hasVisibleChildren(node: MapNode, collapsed: Set<string>): boolean {
@@ -1185,11 +1214,12 @@ function placeColumn(spec: ColumnSpec, ctx: PlaceCtx, out: Layout): void {
 
   const heightOf = (c: MapNode): number => ctx.sizes.get(c.id)?.h ?? 0.0;
   const toLeft = side === 'left';
-  for (const s of summaries) {
-    if (s.end >= children.length) continue;
+  const insets = summaryInsets(children, summaries, ctx.sizes);
+  summaries.forEach((s, i) => {
+    const rangeW = insets[i];
+    if (rangeW === undefined) return;
     const y1 = top + col.tops[s.start];
     const y2 = top + col.tops[s.end] + heightOf(children[s.end]);
-    const rangeW = maxWidth(children.slice(s.start, s.end + 1), ctx.sizes);
     const braceX = toLeft
       ? anchor - rangeW - SUMMARY_GAP_BEFORE - SUMMARY_BRACE_W
       : anchor + rangeW + SUMMARY_GAP_BEFORE;
@@ -1204,7 +1234,7 @@ function placeColumn(spec: ColumnSpec, ctx: PlaceCtx, out: Layout): void {
       accent: s.node.accent ?? out.nodes[parent]?.accent,
     };
     out.summaries.push(summary);
-  }
+  });
 }
 
 const SIDES: readonly BranchSide[] = ['right', 'left'];
