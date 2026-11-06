@@ -183,9 +183,10 @@ function parseBullet(line: string): { indent: number; content: string } | null {
   } else if (rest === '+') {
     content = '';
   } else {
-    const numMatch = rest.match(/^(\d+)\.\s*(.*)$/);
+    // Elenco numerato: "1. testo" o "1." da solo; "3.14" è testo, non un elemento.
+    const numMatch = rest.match(/^\d+\.(?:\s+(.*))?$/);
     if (numMatch) {
-      content = numMatch[2];
+      content = numMatch[1] ?? '';
     }
   }
 
@@ -273,13 +274,14 @@ function bareLabels(s: string): string[] | undefined {
 
 export function parseOPML(text: string): OutlineNode {
   const titleMatch = text.match(/<title>([^<]*)<\/title>/i);
-  const headTitle = titleMatch ? titleMatch[1].trim() : '';
+  const headTitle = titleMatch ? unescapeXml(titleMatch[1]).trim() : '';
 
   const arena: OutlineNode[] = [{ title: headTitle, labels: [], children: [] }];
   const childrenMap: number[][] = [[]];
   const stack: number[] = [];
 
-  const regex = /<(\/)?outline([^>]*?)(\/)?>/gi;
+  // Gli attributi tra virgolette possono contenere '>' letterali (XML lo ammette).
+  const regex = /<(\/)?outline\b((?:[^>"']|"[^"]*"|'[^']*')*?)(\/)?>/gi;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {

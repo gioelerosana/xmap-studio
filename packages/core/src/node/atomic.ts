@@ -34,7 +34,9 @@ export async function atomicWrite(
 ): Promise<WriteReport> {
   const { makeBackup = true, expectedHash } = options;
 
-  const resolved = path.resolve(targetPath);
+  // Un collegamento simbolico va seguito: rinominare sul link lo sostituirebbe con un
+  // file normale e il file vero (es. in una cartella sincronizzata) non verrebbe aggiornato.
+  const resolved = resolveSymlink(path.resolve(targetPath));
   const dir = path.dirname(resolved);
 
   if (!fs.existsSync(dir)) {
@@ -59,7 +61,12 @@ export async function atomicWrite(
   try {
     const fd = fs.openSync(tempPath, 'wx');
     try {
-      fs.writeSync(fd, bytes, 0, bytes.length);
+      // writeSync può scrivere meno byte di quelli chiesti: si ripete fino alla fine.
+      let written = 0;
+      while (written < bytes.length) {
+        written += fs.writeSync(fd, bytes, written, bytes.length - written);
+      }
+      preserveMode(fd, resolved);
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);
@@ -122,6 +129,34 @@ export async function atomicWrite(
     backup: backupPath,
     bytesWritten: bytes.length,
   };
+}
+
+/** Percorso reale di `target` se è un collegamento simbolico esistente; altrimenti `target`. */
+function resolveSymlink(target: string): string {
+  try {
+    if (fs.lstatSync(target).isSymbolicLink()) return fs.realpathSync(target);
+  } catch {
+    // Il file non esiste ancora (Salva con nome) o il link è interrotto: si scrive su `target`.
+  }
+  return target;
+}
+
+/**
+ * Riporta sul file temporaneo i permessi del file che sostituisce: senza, il rename
+ * lascerebbe i permessi di default (es. un file privato 0600 diventerebbe leggibile da tutti).
+ */
+function preserveMode(fd: number, target: string): void {
+  let mode: number;
+  try {
+    mode = fs.statSync(target).mode & 0o7777;
+  } catch {
+    return; // file nuovo: restano i permessi di default
+  }
+  try {
+    fs.fchmodSync(fd, mode);
+  } catch {
+    // Filesystem senza permessi POSIX (es. FAT, alcune condivisioni di rete)
+  }
 }
 
 function pruneBackups(dir: string, stem: string): void {

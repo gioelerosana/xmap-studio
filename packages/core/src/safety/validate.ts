@@ -14,7 +14,7 @@ const ZIP_RESOURCE_DIR = 'resources/';
 /**
  * Valida i byte dell'archivio PRIMA di toccare il disco:
  * 1. Lo ZIP si riapre ed ogni entry è leggibile.
- * 2. content.json è un array JSON; manifest.json e metadata.json (se presente) sono JSON validi.
+ * 2. content.json è un array JSON non vuoto di fogli con radice; manifest.json e metadata.json (se presente) sono JSON validi.
  * 3. Ogni riferimento xap:resources/X ha il corrispondente file resources/X nello ZIP.
  * 4. Ogni resources/X presente nello ZIP è registrato nel manifest.
  * 5. content.json e metadata.json sono registrati nel manifest.
@@ -61,6 +61,17 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
 
   if (!Array.isArray(contentObj)) {
     throw new XmapError(CODE_VALIDATION, 'content.json non è un array di sheet');
+  }
+  // Un file senza fogli o con un foglio senza radice non si apre (né qui né in XMind).
+  if (contentObj.length === 0) {
+    throw new XmapError(CODE_VALIDATION, 'content.json non contiene fogli');
+  }
+  for (const sheet of contentObj as unknown[]) {
+    const rootTopic =
+      sheet !== null && typeof sheet === 'object' ? (sheet as Record<string, unknown>).rootTopic : undefined;
+    if (rootTopic === null || typeof rootTopic !== 'object' || Array.isArray(rootTopic)) {
+      throw new XmapError(CODE_VALIDATION, 'content.json contiene un foglio senza argomento centrale');
+    }
   }
 
   const manifestStr = contents.get('manifest.json');
