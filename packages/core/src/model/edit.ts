@@ -303,16 +303,21 @@ function shiftRange(rangeStr: string | undefined, removed: number): string | und
   return formatRange(start, end - 1);
 }
 
-function adjustParentRanges(parent: Topic, group: ChildGroup, childIndex: number): void {
+/**
+ * Aggiorna i range del genitore per la rimozione del figlio `childIndex` di `group`.
+ * Restituisce i topic di sommario eliminati perché il loro range copriva solo quel figlio:
+ * chi chiama deve potare le relazioni che li toccano.
+ */
+function adjustParentRanges(parent: Topic, group: ChildGroup, childIndex: number): Topic[] {
   if (group === 'summary') {
     const removedTopicId = parent.children?.summary?.[childIndex]?.id;
     if (removedTopicId && parent.summaries) {
       parent.summaries = parent.summaries.filter((s) => s.topicId !== removedTopicId);
       if (parent.summaries.length === 0) delete parent.summaries;
     }
-    return;
+    return [];
   }
-  if (group !== 'attached') return;
+  if (group !== 'attached') return [];
 
   if (parent.boundaries) {
     const nextBoundaries: Boundary[] = [];
@@ -330,6 +335,7 @@ function adjustParentRanges(parent: Topic, group: ChildGroup, childIndex: number
     }
   }
 
+  const dropped: Topic[] = [];
   if (parent.summaries) {
     const nextSummaries: Summary[] = [];
     const droppedIds: string[] = [];
@@ -348,6 +354,7 @@ function adjustParentRanges(parent: Topic, group: ChildGroup, childIndex: number
       delete parent.summaries;
     }
     if (droppedIds.length > 0 && parent.children?.summary) {
+      dropped.push(...parent.children.summary.filter((t) => t.id !== undefined && droppedIds.includes(t.id)));
       parent.children.summary = parent.children.summary.filter(
         (t) => !t.id || !droppedIds.includes(t.id)
       );
@@ -356,6 +363,7 @@ function adjustParentRanges(parent: Topic, group: ChildGroup, childIndex: number
       }
     }
   }
+  return dropped;
 }
 
 function removeOrphanSummaryRefs(topic: Topic, removedIds: Set<string>): void {
@@ -382,6 +390,8 @@ interface DetachedTopic {
   topic: Topic;
   sheetIndex: number;
   group: ChildGroup;
+  /** Topic di sommario del genitore eliminati con il loro range (vedi `adjustParentRanges`). */
+  droppedSummaries: Topic[];
 }
 
 /**
@@ -401,26 +411,29 @@ function detachTopic(sheets: Sheet[], id: string): DetachedTopic | undefined {
     const last = path[path.length - 1];
     const parent = descend(sheet.rootTopic, path.slice(0, -1));
 
-    adjustParentRanges(parent, last.group, last.index);
     const list = parent.children?.[last.group];
     if (!list || last.index >= list.length) {
       return undefined;
     }
+    // Tocca solo `summaries`, `boundaries` e `children.summary` quando `last.group` è 'attached': `list` resta valida.
+    const droppedSummaries = adjustParentRanges(parent, last.group, last.index);
     const [topic] = list.splice(last.index, 1);
     if (list.length === 0) {
       delete parent.children?.[last.group];
     }
-    return { topic, sheetIndex, group: last.group };
+    return { topic, sheetIndex, group: last.group, droppedSummaries };
   }
   return undefined;
 }
 
-/** Id del blocco e di tutti i suoi discendenti. */
-function collectTopicIds(topic: Topic): Set<string> {
+/** Id dei blocchi dati e di tutti i loro discendenti. */
+function collectTopicIds(...topics: Topic[]): Set<string> {
   const ids = new Set<string>();
-  walkTopic(topic, (t) => {
-    if (t.id) ids.add(t.id);
-  });
+  for (const topic of topics) {
+    walkTopic(topic, (t) => {
+      if (t.id) ids.add(t.id);
+    });
+  }
   return ids;
 }
 
@@ -434,7 +447,7 @@ export function removeTopic(sheets: Sheet[], id: string): Topic | undefined {
     return undefined;
   }
   const sheet = sheets[detached.sheetIndex];
-  const removedIds = collectTopicIds(detached.topic);
+  const removedIds = collectTopicIds(detached.topic, ...detached.droppedSummaries);
 
   pruneRelationships(sheet, removedIds);
 
@@ -525,8 +538,9 @@ export function removeTopicKeepChildren(sheets: Sheet[], id: string): string[] |
 
     const index = last.index;
     const children = removed.children?.attached ?? [];
+    const droppedSummaries: Topic[] = [];
     if (children.length === 0) {
-      adjustParentRanges(parent, 'attached', index);
+      droppedSummaries.push(...adjustParentRanges(parent, 'attached', index));
     } else {
       shiftRangesOnReplace(parent, index, children.length);
     }
@@ -555,7 +569,7 @@ export function removeTopicKeepChildren(sheets: Sheet[], id: string): string[] |
       parent.summaries = [...(parent.summaries ?? []), ...removed.summaries];
     }
 
-    pruneRelationships(sheet, new Set([id]));
+    pruneRelationships(sheet, new Set([id, ...collectTopicIds(...droppedSummaries)]));
     return children.flatMap((c) => (c.id ? [c.id] : []));
   }
   return undefined;
@@ -669,6 +683,10 @@ export function moveTopic(
     throw new MoveError('not_found', 'Impossibile staccare il blocco da spostare.');
   }
   const detached = source.topic;
+  if (source.droppedSummaries.length > 0) {
+    // I sommari spariti con il loro range non devono lasciare relazioni orfane.
+    pruneRelationships(sheets[source.sheetIndex], collectTopicIds(...source.droppedSummaries));
+  }
   if (sheetIndexOf(sheets, targetId) !== source.sheetIndex) {
     // Le relazioni non attraversano i fogli: quelle che toccano il sottoalbero si perdono.
     pruneRelationships(sheets[source.sheetIndex], collectTopicIds(detached));
