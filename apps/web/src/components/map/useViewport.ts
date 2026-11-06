@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Layout, LayoutNode, Point } from '@xmap/core';
 import { clampZoom, computeFitView, type View } from './viewport.js';
 
@@ -14,6 +14,8 @@ const SYNC_DELAY_MS = 120;
  * (il browser ridisegna in vettoriale alla scala giusta); durante i gesti la CSS applica solo la
  * differenza rispetto a quella vista, e a gesto concluso la si riporta nell'attributo.
  */
+const MAP_MOVING_ATTR = 'data-map-moving';
+
 export function useViewport(layout: Layout | null) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -29,6 +31,14 @@ export function useViewport(layout: Layout | null) {
   const selectedNodeRef = useRef<LayoutNode | null>(null);
   const frameRef = useRef(0);
   const syncTimerRef = useRef<number | undefined>(undefined);
+  const syncDueRef = useRef(0); // istante in cui allineare lo stato React (vedi `scheduleSync`)
+  // Larghezze di canvas e barra del blocco lette da `applyView`; `undefined` = da misurare.
+  const widthsRef = useRef<{ container?: number; toolbar?: number }>({});
+  const observedRef = useRef<{ ro: ResizeObserver | null; container: Element | null; toolbar: Element | null }>({
+    ro: null,
+    container: null,
+    toolbar: null,
+  });
   const motionRef = useRef(0); // rAF di animazione o inerzia
   const zoomTargetRef = useRef<number | null>(null); // zoom di arrivo dei click +/- in corso
 
@@ -42,6 +52,19 @@ export function useViewport(layout: Layout | null) {
   const applyView = useCallback(() => {
     const v = viewRef.current;
     const svg = svgRef.current;
+    const toolbar = toolbarRef.current;
+    const n = selectedNodeRef.current;
+    // Su schermi stretti la barra resta dentro il canvas invece di uscire a destra. Le larghezze
+    // vengono dalla cache di `widthsRef` (aggiornata dal ResizeObserver): una lettura di
+    // `offsetWidth` qui, a ogni frame dei gesti e a ogni render, forzerebbe un layout sincrono
+    // (su iPad la barra del blocco è sempre visibile). Si misura davvero solo la prima volta.
+    let maxLeft = 0;
+    if (toolbar && n) {
+      const w = widthsRef.current;
+      w.container ??= containerRef.current?.clientWidth;
+      w.toolbar ??= toolbar.offsetWidth;
+      maxLeft = Math.max(8, (w.container ?? Infinity) - w.toolbar - 8);
+    }
     if (svg) {
       const c = committedRef.current;
       const s = v.k / c.k;
@@ -55,12 +78,9 @@ export function useViewport(layout: Layout | null) {
     if (editorLayerRef.current) {
       editorLayerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
     }
-    const n = selectedNodeRef.current;
-    if (toolbarRef.current && n) {
-      // Su schermi stretti la barra resta dentro il canvas invece di uscire a destra.
-      const maxLeft = Math.max(8, (containerRef.current?.clientWidth ?? Infinity) - toolbarRef.current.offsetWidth - 8);
-      toolbarRef.current.style.left = `${Math.max(8, Math.min(v.x + n.x * v.k, maxLeft))}px`;
-      toolbarRef.current.style.top = `${v.y + (n.y - 42) * v.k}px`;
+    if (toolbar && n) {
+      toolbar.style.left = `${Math.max(8, Math.min(v.x + n.x * v.k, maxLeft))}px`;
+      toolbar.style.top = `${v.y + (n.y - 42) * v.k}px`;
     }
   }, []);
 
@@ -74,12 +94,26 @@ export function useViewport(layout: Layout | null) {
   }, [applyView]);
 
   // Allinea attributo e stato React (percentuale, ecc.) dopo che il gesto si è fermato.
+  // Si chiama a ogni evento del gesto (fino a 240 Hz con Apple Pencil): invece di cancellare e
+  // ricreare un timer ogni volta si sposta solo la scadenza, e il timer si riarma per il residuo.
   const scheduleSync = useCallback(() => {
-    window.clearTimeout(syncTimerRef.current);
-    syncTimerRef.current = window.setTimeout(() => {
+    syncDueRef.current = performance.now() + SYNC_DELAY_MS;
+    if (syncTimerRef.current !== undefined) return;
+    // Mappa in movimento: le superfici di vetro sopra la mappa rinunciano al blur
+    // (`:root[data-map-moving]` in theme.css), che WebKit ricalcolerebbe a ogni frame.
+    document.documentElement.setAttribute(MAP_MOVING_ATTR, '');
+    const run = () => {
+      const wait = syncDueRef.current - performance.now();
+      if (wait > 1) {
+        syncTimerRef.current = window.setTimeout(run, wait);
+        return;
+      }
+      syncTimerRef.current = undefined;
+      document.documentElement.removeAttribute(MAP_MOVING_ATTR);
       commitView();
       setView({ ...viewRef.current });
-    }, SYNC_DELAY_MS);
+    };
+    syncTimerRef.current = window.setTimeout(run, SYNC_DELAY_MS);
   }, [commitView]);
 
   // Più eventi nello stesso frame producono una sola scrittura sullo style.
@@ -165,8 +199,48 @@ export function useViewport(layout: Layout | null) {
     [animateTo]
   );
 
+  // Tiene sotto osservazione canvas e barra del blocco (che si monta e smonta con la selezione):
+  // le loro larghezze si rileggono solo quando cambiano davvero, non a ogni render o frame.
+  // Dichiarato prima dell'effetto che chiama `applyView`, così una barra nuova si misura subito.
+  useLayoutEffect(() => {
+    const o = observedRef.current;
+    const container = containerRef.current;
+    const toolbar = toolbarRef.current;
+    if (container === o.container && toolbar === o.toolbar) return;
+    const ro = (o.ro ??= new ResizeObserver(() => {
+      const w = widthsRef.current;
+      w.container = containerRef.current?.clientWidth;
+      w.toolbar = toolbarRef.current?.offsetWidth;
+      applyView();
+    }));
+    if (container !== o.container) {
+      if (o.container) ro.unobserve(o.container);
+      if (container) ro.observe(container);
+      o.container = container;
+      widthsRef.current.container = undefined;
+    }
+    if (toolbar !== o.toolbar) {
+      if (o.toolbar) ro.unobserve(o.toolbar);
+      if (toolbar) ro.observe(toolbar);
+      o.toolbar = toolbar;
+      widthsRef.current.toolbar = undefined;
+    }
+  });
+  useEffect(
+    () => () => {
+      document.documentElement.removeAttribute(MAP_MOVING_ATTR);
+      const o = observedRef.current;
+      o.ro?.disconnect();
+      o.ro = null;
+      o.container = null;
+      o.toolbar = null;
+    },
+    []
+  );
+
   // Dopo ogni render riapplica la vista viva (SVG appena montato, barra del nodo).
-  // Un gruppo appena montato riparte dalla vista viva, senza differenza CSS.
+  // Un gruppo appena montato riparte dalla vista viva, senza differenza CSS. Non legge il layout
+  // (larghezze in cache): durante i gesti costa solo qualche scrittura di style.
   useLayoutEffect(() => {
     const g = viewportGroupRef.current;
     if (g && !g.hasAttribute('transform')) commitView();

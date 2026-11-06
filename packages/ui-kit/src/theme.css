@@ -193,6 +193,14 @@
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
 }
+/* Durante pan/pinch/zoom (attributo messo dalla mappa) niente blur: WebKit lo
+   ricalcolerebbe a ogni frame sotto ogni superficie. Lo sfondo un po' più pieno
+   compensa; a gesto finito il vetro torna com'era. */
+:root[data-map-moving] .surface-glass {
+  background-color: color-mix(in oklab, var(--popover) 94%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 
 /* Drag & drop nell'albero laterale. */
 .drop-into {

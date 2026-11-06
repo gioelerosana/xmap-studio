@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type { Layout, Point } from '@xmap/core';
-import { computeDropTarget, isDraggable, subtreeOf, type DropTarget } from './dragTarget.js';
+import type { Layout, LayoutNode, Point } from '@xmap/core';
+import { computeDropTargetIn, isDraggable, prepareDrop, subtreeOf, type DropContext, type DropTarget } from './dragTarget.js';
 import type { ContextMenuState, DragIndexRef, DragOverlay, MapEditing, MapHandlers } from './types.js';
 import type { Viewport } from './useViewport.js';
 import { clampZoom, type View } from './viewport.js';
@@ -127,13 +127,28 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       ptr: { x: number; y: number };
       raf: number;
       lastSig: string;
+      /** Indice di `computeDropTargetIn`, costruito all'inizio del drag (rifatto se cambia il layout). */
+      ctx: DropContext | null;
+      /** Ultimo punto mondo valutato: se puntatore e vista sono fermi il frame non ricalcola nulla. */
+      lastWorld: Point | null;
+      lastLayout: Layout | null;
+      /** Fantasma già montato da React: lo si sposta scrivendone il `transform`. */
+      ghostEl: SVGGElement | null;
       /** Topic libero: si muove senza bersaglio di rilascio; `delta` è lo spostamento in coordinate mondo. */
-      floating?: { delta: Point };
+      floating?: {
+        delta: Point;
+        /** Blocchi del sotto-albero e loro connettori nel DOM, cercati per il layout `elsLayout`. */
+        els: { m: LayoutNode; node: Element | null; edge: SVGElement | null }[] | null;
+        elsLayout: Layout | null;
+      };
     }
     let drag: ActiveDrag | null = null;
 
+    // Rettangolo del canvas letto all'inizio del gesto: pinch e pinch da trackpad lo usano a ogni
+    // evento (fino a 240 Hz con la penna) senza interrogare il layout ogni volta.
+    let gestureRect: DOMRect | null = null;
     const local = (x: number, y: number) => {
-      const rect = container.getBoundingClientRect();
+      const rect = gestureRect ?? container.getBoundingClientRect();
       return { x: x - rect.left, y: y - rect.top };
     };
 
@@ -171,27 +186,45 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       }
     };
 
-    const dropAt = (d: ActiveDrag): DropTarget | null => {
+    // Coordinate mondo con un rettangolo del canvas già letto (una sola lettura per frame).
+    const worldAt = (rect: DOMRect, x: number, y: number): Point => {
+      const v = viewRef.current;
+      return { x: (x - rect.left - v.x) / v.k, y: (y - rect.top - v.y) / v.k };
+    };
+
+    const dropAt = (d: ActiveDrag, wp: Point): DropTarget | null => {
       const l = layoutRef.current;
       const idx = dragIndexRef.current;
       if (!l || !idx) return null;
-      return computeDropTarget(l, idx, d.src, toWorld(d.ptr.x, d.ptr.y), d.excluded);
+      if (!d.ctx || d.ctx.layout !== l || d.ctx.idx !== idx) d.ctx = prepareDrop(l, idx, d.src, d.excluded);
+      return computeDropTargetIn(d.ctx, wp);
     };
 
     // Anteprima di un topic libero: sposta i blocchi del sotto-albero e i loro connettori.
-    const previewFloating = (d: ActiveDrag) => {
+    // Gli elementi si cercano una volta per drag (di nuovo solo se cambia il layout).
+    const previewFloating = (d: ActiveDrag, wp: Point) => {
       const l = layoutRef.current;
       const svg = svgRef.current;
       if (!l || !svg || !d.floating) return;
       const n = l.nodes[d.src];
-      const wp = toWorld(d.ptr.x, d.ptr.y);
       const delta = { x: wp.x - d.grab.x - n.x, y: wp.y - d.grab.y - n.y };
       d.floating.delta = delta;
-      for (const i of d.excluded) {
-        const m = l.nodes[i];
-        const sel = CSS.escape(m.id);
-        svg.querySelector(`[data-node-id="${sel}"]`)?.setAttribute('transform', `translate(${m.x + delta.x}, ${m.y + delta.y})`);
-        const edge = svg.querySelector<SVGElement>(`[data-edge-child="${sel}"]`);
+      let els = d.floating.els;
+      if (!els || d.floating.elsLayout !== l || els.some((e) => e.node?.isConnected === false)) {
+        d.floating.elsLayout = l;
+        els = [...d.excluded].map((i) => {
+          const m = l.nodes[i];
+          const sel = CSS.escape(m.id);
+          return {
+            m,
+            node: svg.querySelector(`[data-node-id="${sel}"]`),
+            edge: svg.querySelector<SVGElement>(`[data-edge-child="${sel}"]`),
+          };
+        });
+        d.floating.els = els;
+      }
+      for (const { m, node, edge } of els) {
+        node?.setAttribute('transform', `translate(${m.x + delta.x}, ${m.y + delta.y})`);
         if (edge) edge.style.transform = `translate(${delta.x}px, ${delta.y}px)`;
       }
     };
@@ -210,19 +243,30 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       }
     };
 
-    const updateOverlay = (d: ActiveDrag) => {
+    // Il bersaglio passa da React (render della MapView) solo quando cambia; tra un cambio e
+    // l'altro il fantasma si sposta scrivendo direttamente il suo `transform`.
+    const updateOverlay = (d: ActiveDrag, wp: Point) => {
       const l = layoutRef.current;
       if (!l) return;
-      const wp = toWorld(d.ptr.x, d.ptr.y);
-      const drop = dropAt(d);
+      const drop = dropAt(d, wp);
       const ghost = { x: wp.x - d.grab.x, y: wp.y - d.grab.y };
-      const sig = `${ghost.x.toFixed(1)},${ghost.y.toFixed(1)}|${drop?.targetId}:${drop?.placement}`;
+      const ghostSig = `${ghost.x.toFixed(1)},${ghost.y.toFixed(1)}`;
+      const sig = `${ghostSig}|${drop?.targetId}:${drop?.placement}`;
       if (sig === d.lastSig) return;
+      const sameDrop = d.lastSig.slice(d.lastSig.indexOf('|')) === sig.slice(sig.indexOf('|'));
       d.lastSig = sig;
+      if (d.ghostEl && !d.ghostEl.isConnected) d.ghostEl = null;
+      d.ghostEl ??= svgRef.current?.querySelector<SVGGElement>('[data-drag-ghost]') ?? null;
+      if (sameDrop && d.ghostEl) {
+        d.ghostEl.setAttribute('transform', `translate(${ghost.x}, ${ghost.y})`);
+        return;
+      }
       setDragOverlay({ sourceId: l.nodes[d.src].id, ghost, drop });
     };
 
     // Ad ogni frame: scorrimento automatico vicino ai bordi e aggiornamento di fantasma/bersaglio.
+    // Una sola lettura del rettangolo del canvas, prima di ogni scrittura (niente layout forzati);
+    // con puntatore, vista e layout fermi il frame non ricalcola il bersaglio.
     const dragTick = () => {
       const d = drag;
       if (!d) return;
@@ -236,8 +280,15 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
         applyView();
         scheduleSync();
       }
-      if (d.floating) previewFloating(d);
-      else updateOverlay(d);
+      const wp = worldAt(rect, d.ptr.x, d.ptr.y);
+      const l = layoutRef.current;
+      const still = d.lastWorld && d.lastWorld.x === wp.x && d.lastWorld.y === wp.y && d.lastLayout === l;
+      if (!still) {
+        d.lastWorld = wp;
+        d.lastLayout = l;
+        if (d.floating) previewFloating(d, wp);
+        else updateOverlay(d, wp);
+      }
       d.raf = requestAnimationFrame(dragTick);
     };
 
@@ -253,7 +304,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       window.removeEventListener('keydown', onDragKey);
       const l = layoutRef.current;
       if (d.floating) {
-        previewFloating(d);
+        previewFloating(d, toWorld(d.ptr.x, d.ptr.y));
         const { delta } = d.floating;
         restoreFloating(d);
         const n = l?.nodes[d.src];
@@ -267,7 +318,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       }
       setDim(d.ids, false);
       setDragOverlay(null);
-      const drop = commit ? dropAt(d) : null;
+      const drop = commit ? dropAt(d, toWorld(d.ptr.x, d.ptr.y)) : null;
       if (drop && l) handlers.current.onMoveTopic?.(l.nodes[d.src].id, drop.targetId, drop.placement);
     };
 
@@ -284,9 +335,12 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       const ids = [...excluded].map((i) => l.nodes[i].id);
       mode = 'drag';
       moved = true;
-      drag = { src, excluded, ids, grab: { x: wp.x - n.x, y: wp.y - n.y }, ptr: { ...p }, raf: 0, lastSig: '' };
+      drag = { src, excluded, ids, grab: { x: wp.x - n.x, y: wp.y - n.y }, ptr: { ...p }, raf: 0, lastSig: '', ctx: null, lastWorld: null, lastLayout: null, ghostEl: null };
+      // Indice dei bersagli costruito subito, non al primo frame del trascinamento.
+      const di = dragIndexRef.current;
+      if (di) drag.ctx = prepareDrop(l, di, src, excluded);
       if (n.floating && n.floatOrigin && handlers.current.onMoveFloatingTopic) {
-        drag.floating = { delta: { x: 0, y: 0 } };
+        drag.floating = { delta: { x: 0, y: 0 }, els: null, elsLayout: null };
       } else {
         setDim(ids, true);
       }
@@ -386,7 +440,10 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       viewRef.current = { ...v, x: v.x + e.clientX - last.x, y: v.y + e.clientY - last.y };
       last = { x: e.clientX, y: e.clientY };
       samples.push({ t: now, x: viewRef.current.x, y: viewRef.current.y });
-      samples = samples.filter((s) => now - s.t <= VELOCITY_WINDOW_MS);
+      // Campioni in ordine di tempo: si scartano in testa quelli fuori finestra, senza nuovi array.
+      let old = 0;
+      while (old < samples.length && now - samples[old].t > VELOCITY_WINDOW_MS) old++;
+      if (old > 0) samples.splice(0, old);
       scheduleApply();
     };
 
@@ -432,6 +489,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
       gestureCleanupRef.current = null;
+      gestureRect = null;
     };
 
     const onDown = (e: PointerEvent) => {
@@ -473,6 +531,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
         pointerType = e.pointerType;
         moved = false;
         start = { x: e.clientX, y: e.clientY };
+        gestureRect = container.getBoundingClientRect();
         window.addEventListener('pointermove', onMove, { passive: true });
         window.addEventListener('pointerup', onUp);
         window.addEventListener('pointercancel', onUp);
@@ -588,6 +647,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       e.preventDefault();
       cancelMotion();
       gestureView = pointers.size >= 2 ? null : { ...viewRef.current };
+      if (gestureView) gestureRect = container.getBoundingClientRect();
     };
     const onGestureChange = (e: Event) => {
       e.preventDefault();
@@ -603,6 +663,8 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
     };
     const onGestureEnd = (e: Event) => {
       e.preventDefault();
+      // Il rettangolo resta se nel frattempo è iniziato un gesto con i puntatori (lo azzera `cleanup`).
+      if (gestureView && pointers.size === 0) gestureRect = null;
       gestureView = null;
     };
 

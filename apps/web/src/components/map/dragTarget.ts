@@ -162,6 +162,63 @@ function makeTarget(
 }
 
 /**
+ * Dati di un trascinamento che non dipendono dal puntatore, calcolati una volta all'inizio del
+ * gesto (`prepareDrop`): a ogni frame `computeDropTargetIn` scorre solo array già filtrati,
+ * senza allocazioni.
+ */
+export interface DropContext {
+  layout: Layout;
+  idx: DragIndex;
+  sourceIndex: number;
+  excluded: Set<number>;
+  /** Blocchi del foglio della sorgente, in ordine di `layout.nodes` (anche quelli esclusi). */
+  sheetNodes: number[];
+  /** Come `sheetNodes`, senza il sotto-albero trascinato: candidati dell'hit-test. */
+  hitNodes: number[];
+  /** Spazi tra fratelli consecutivi, quattro valori ciascuno: `left, right, top, bottom`. */
+  gapRects: Float64Array;
+  /** Fratello successivo di ogni spazio: bersaglio `before`. */
+  gapTargets: number[];
+  hasLeftBranches: boolean;
+}
+
+export function prepareDrop(layout: Layout, idx: DragIndex, sourceIndex: number, excluded: Set<number>): DropContext {
+  const nodes = layout.nodes;
+  const sheet = nodes[sourceIndex]?.sheetIndex;
+  const sheetNodes: number[] = [];
+  const hitNodes: number[] = [];
+  let hasLeftBranches = false;
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].sheetIndex !== sheet) continue;
+    sheetNodes.push(i);
+    if (!excluded.has(i)) hitNodes.push(i);
+    if (nodes[i].side === 'left') hasLeftBranches = true;
+  }
+  const rects: number[] = [];
+  const gapTargets: number[] = [];
+  for (const list of idx.children) {
+    const sibs = list.filter((c) => !excluded.has(c) && nodes[c].sheetIndex === sheet);
+    for (let k = 0; k + 1 < sibs.length; k++) {
+      const a = nodes[sibs[k]];
+      const b = nodes[sibs[k + 1]];
+      rects.push(Math.min(a.x, b.x) - DROP_PAD, Math.max(a.x + a.w, b.x + b.w) + DROP_PAD, a.y + a.h, b.y);
+      gapTargets.push(sibs[k + 1]);
+    }
+  }
+  return {
+    layout,
+    idx,
+    sourceIndex,
+    excluded,
+    sheetNodes,
+    hitNodes,
+    gapRects: Float64Array.from(rects),
+    gapTargets,
+    hasLeftBranches,
+  };
+}
+
+/**
  * Bersaglio di rilascio per un blocco trascinato, dato il puntatore in coordinate mondo.
  * `excluded` è il sotto-albero trascinato (sé stesso e i discendenti): mai bersaglio.
  *
@@ -169,6 +226,8 @@ function makeTarget(
  * - tra due fratelli → before sul secondo;
  * - in spazio vuoto → into sul blocco più vicino dal lato dei suoi figli (a sinistra del puntatore
  *   sui rami destri, a destra sui rami sinistri) entro una distanza ragionevole.
+ *
+ * Durante un trascinamento si usa `computeDropTargetIn` sul contesto di `prepareDrop`.
  */
 export function computeDropTarget(
   layout: Layout,
@@ -177,17 +236,21 @@ export function computeDropTarget(
   p: Point,
   excluded: Set<number>
 ): DropTarget | null {
+  return computeDropTargetIn(prepareDrop(layout, idx, sourceIndex, excluded), p);
+}
+
+/** Come `computeDropTarget`, sul contesto precalcolato di un trascinamento. */
+export function computeDropTargetIn(ctx: DropContext, p: Point): DropTarget | null {
+  const { layout, idx, sourceIndex, excluded } = ctx;
   const nodes = layout.nodes;
-  const source = nodes[sourceIndex];
-  if (!source) return null;
+  if (!nodes[sourceIndex]) return null;
 
   for (const i of excluded) {
     if (nodes[i] && inside(nodes[i], p, DROP_PAD)) return null;
   }
 
   let hit = -1;
-  for (let i = 0; i < nodes.length; i++) {
-    if (excluded.has(i) || nodes[i].sheetIndex !== source.sheetIndex) continue;
+  for (const i of ctx.hitNodes) {
     if (inside(nodes[i], p, DROP_PAD)) {
       hit = i;
       break;
@@ -207,16 +270,11 @@ export function computeDropTarget(
 
   // Spazio vuoto tra due fratelli consecutivi della stessa colonna; mai tra i figli del
   // sotto-albero trascinato (il blocco finirebbe dentro sé stesso).
-  for (const list of idx.children) {
-    const sibs = list.filter((c) => !excluded.has(c) && nodes[c].sheetIndex === source.sheetIndex);
-    for (let k = 0; k + 1 < sibs.length; k++) {
-      const a = nodes[sibs[k]];
-      const b = nodes[sibs[k + 1]];
-      const left = Math.min(a.x, b.x) - DROP_PAD;
-      const right = Math.max(a.x + a.w, b.x + b.w) + DROP_PAD;
-      if (p.x >= left && p.x <= right && p.y > a.y + a.h && p.y < b.y) {
-        return makeTarget(layout, idx, sourceIndex, sibs[k + 1], 'before');
-      }
+  const g = ctx.gapRects;
+  for (let k = 0; k < ctx.gapTargets.length; k++) {
+    const o = k * 4;
+    if (p.x >= g[o] && p.x <= g[o + 1] && p.y > g[o + 2] && p.y < g[o + 3]) {
+      return makeTarget(layout, idx, sourceIndex, ctx.gapTargets[k], 'before');
     }
   }
 
@@ -224,15 +282,13 @@ export function computeDropTarget(
   // sui rami sinistri (lì i figli crescono verso sinistra), da entrambi i lati per la radice
   // della mappa mentale.
   // Se è il sotto-albero trascinato, nessun bersaglio.
-  const hasLeftBranches = nodes.some((n) => n.side === 'left' && n.sheetIndex === source.sheetIndex);
   let best = -1;
   let bestScore = Infinity;
-  for (let i = 0; i < nodes.length; i++) {
+  for (const i of ctx.sheetNodes) {
     const n = nodes[i];
-    if (n.sheetIndex !== source.sheetIndex) continue;
     const distRight = p.x - (n.x + n.w);
     const distLeft = n.x - p.x;
-    const isMindMapRoot = hasLeftBranches && idx.parent[i] === -1 && !n.floating && !n.childrenBelow;
+    const isMindMapRoot = ctx.hasLeftBranches && idx.parent[i] === -1 && !n.floating && !n.childrenBelow;
     const dx = n.side === 'left' ? distLeft : isMindMapRoot ? Math.max(distLeft, distRight) : distRight;
     const dy = p.y < n.y ? n.y - p.y : p.y > n.y + n.h ? p.y - n.y - n.h : 0;
     if (dx < -DROP_PAD || dx > NEAR_MAX_DX || dy > NEAR_MAX_DY) continue;
