@@ -117,7 +117,7 @@ function layoutNodeEqual(a: LayoutNode, b: LayoutNode): boolean {
 }
 
 function lookEqual(a: NodeLook, b: NodeLook): boolean {
-  return a.fill === b.fill && a.stroke === b.stroke && a.text === b.text && a.textLight === b.textLight && a.solid === b.solid;
+  return a === b || (a.fill === b.fill && a.stroke === b.stroke && a.text === b.text && a.textLight === b.textLight && a.solid === b.solid);
 }
 
 function nodeCardPropsEqual(prev: NodeCardProps, next: NodeCardProps): boolean {

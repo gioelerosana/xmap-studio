@@ -18,7 +18,7 @@ interface BoundaryLayerProps {
  * Cornici XMind disegnate sotto i blocchi. Non intercettano il puntatore: pan,
  * clic e trascinamento passano alla mappa come se la cornice non ci fosse.
  */
-export const BoundaryLayer: React.FC<BoundaryLayerProps> = ({ boundaries }) => (
+const BoundaryLayerView: React.FC<BoundaryLayerProps> = ({ boundaries }) => (
   <g data-boundary-layer pointerEvents="none">
     {boundaries.map((frame) => (
       <BoundaryShape key={`${frame.topicId}:${frame.id}`} frame={frame} />
@@ -59,3 +59,6 @@ const BoundaryShape: React.FC<{ frame: BoundaryFrame }> = ({ frame }) => {
     </g>
   );
 };
+
+// Dipende solo dalle cornici: un cambio di selezione non le ridisegna.
+export const BoundaryLayer = React.memo(BoundaryLayerView);

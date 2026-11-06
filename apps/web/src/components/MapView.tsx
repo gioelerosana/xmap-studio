@@ -24,13 +24,16 @@ import { useMediaQuery } from './map/useMediaQuery.js';
 import { useRevealNode } from './map/useRevealNode.js';
 import { useTopicResize } from './map/useTopicResize.js';
 import { useViewport } from './map/useViewport.js';
+import type { ControlPointsPatch } from './map/RelationshipLayer.js';
+import type { NodeLook } from './map/nodeLook.js';
 import type { ContextMenuState, DragOverlay, MapHandlers, MapViewProps } from './map/types.js';
 
 export type { MapEditing, MapViewProps } from './map/types.js';
 
 const NO_BOUNDARIES: readonly BoundaryFrame[] = [];
 
-export const MapView: React.FC<MapViewProps> = ({
+// `memo`: App passa props stabili, così toast, modali e header non ridisegnano la mappa.
+export const MapView = React.memo(function MapView({
   layout,
   boundaries = NO_BOUNDARIES,
   viewKey,
@@ -70,7 +73,7 @@ export const MapView: React.FC<MapViewProps> = ({
   isConnectingRelationship = false,
   onConnectRelationshipTarget,
   mapControlsSlot = null,
-}) => {
+}: MapViewProps) {
   const isCoarse = useMediaQuery('(pointer: coarse)');
   const compact = useMediaQuery(COMPACT_QUERY);
   const editingRef = useRef(editing);
@@ -203,6 +206,18 @@ export const MapView: React.FC<MapViewProps> = ({
     (topicId: string) => handlers.current.onResizeTopicWidth?.(topicId, null),
     []
   );
+  const changeControlPoints = useCallback(
+    (relId: string, points: ControlPointsPatch) => handlers.current.onRelationshipControlPointsChange?.(relId, points),
+    []
+  );
+
+  // Aspetto dei blocchi: dipende solo da layout e tema. Calcolato qui, un cambio di selezione
+  // non lo rifà per ogni blocco e NodeCard riconosce l'oggetto invariato per identità.
+  const looks = useMemo(() => {
+    const map = new Map<string, NodeLook>();
+    if (effectiveLayout) for (const node of effectiveLayout.nodes) map.set(node.id, nodeLook(node, darkMode));
+    return map;
+  }, [effectiveLayout, darkMode]);
 
   // Contenuto pesante dell'SVG: dipende solo da layout/selezione/tema, non da zoom
   // e pan, così durante i gesti React non lo ricostruisce.
@@ -246,7 +261,7 @@ export const MapView: React.FC<MapViewProps> = ({
           <NodeCard
             key={node.id}
             node={node}
-            look={nodeLook(node, darkMode)}
+            look={looks.get(node.id) ?? nodeLook(node, darkMode)}
             isSelected={selectedSet.has(node.id)}
             isPrimary={node.id === selectedTopicId}
             isEditing={editingId === node.id}
@@ -269,16 +284,14 @@ export const MapView: React.FC<MapViewProps> = ({
             nodes={l.nodes}
             selectedRelationshipId={selectedRelationshipId}
             onSelectRelationship={setSelectedRelationshipId}
-            onControlPointsChange={(relId, points) =>
-              handlers.current.onRelationshipControlPointsChange?.(relId, points)
-            }
+            onControlPointsChange={changeControlPoints}
             toWorld={toWorld}
             darkMode={darkMode}
           />
         </g>
       </>
     );
-  }, [effectiveLayout, boundaries, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, toWorld, isCoarse, startResize, selectNode, activateNode, toggleCollapse, resetWidth, editingId]);
+  }, [effectiveLayout, boundaries, selectedTopicId, selectedTopicIds, selectedRelationshipId, darkMode, resourceUrls, formulaSvgCache, looks, toWorld, isCoarse, startResize, selectNode, activateNode, toggleCollapse, resetWidth, changeControlPoints, editingId]);
 
   if (!layout || layout.nodes.length === 0) {
     return (
@@ -480,4 +493,4 @@ export const MapView: React.FC<MapViewProps> = ({
       )}
     </div>
   );
-};
+});
