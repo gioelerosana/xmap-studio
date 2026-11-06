@@ -579,7 +579,7 @@ export type MovePlacement = 'before' | 'after' | 'into';
 
 export class MoveError extends XmapError {
   constructor(
-    public readonly reason: 'not_found' | 'immovable' | 'cycle' | 'no_siblings',
+    public readonly reason: 'not_found' | 'immovable' | 'cycle' | 'no_siblings' | 'invalid_target',
     message: string
   ) {
     super(CODE_MOVE, message);
@@ -614,6 +614,17 @@ function reorderSiblings(sheets: Sheet[], id: string, targetId: string, placemen
     return true;
   }
   return false;
+}
+
+/** Gruppo del blocco nella lista dei figli del genitore; `undefined` per la radice o se manca. */
+function targetGroupOf(sheets: Sheet[], id: string): ChildGroup | undefined {
+  for (const sheet of sheets) {
+    if (!sheet.rootTopic) continue;
+    const path: PathItem[] = [];
+    if (!findPath(sheet.rootTopic, id, path)) continue;
+    return path[path.length - 1]?.group;
+  }
+  return undefined;
 }
 
 export function moveTopic(
@@ -675,6 +686,20 @@ export function moveTopic(
 
   if ((placement === 'before' || placement === 'after') && reorderSiblings(sheets, id, targetId, placement)) {
     return;
+  }
+
+  // Fuori dal riordino fra fratelli, "prima/dopo" ha senso solo accanto a un figlio `attached`:
+  // un blocco libero vuole una `position`, un sommario la sua voce in `summaries`.
+  if (placement === 'before' || placement === 'after') {
+    const group = targetGroupOf(sheets, targetId);
+    if (group !== undefined && group !== 'attached') {
+      throw new MoveError(
+        'invalid_target',
+        group === 'detached'
+          ? 'Un blocco può affiancare un blocco libero solo se è anch\'esso un blocco libero dello stesso genitore.'
+          : 'Un blocco può affiancare un sommario solo se è anch\'esso un sommario dello stesso genitore.'
+      );
+    }
   }
 
   // Stacca il sorgente senza toccare relazioni: sono lo stesso foglio o vanno potate sotto.

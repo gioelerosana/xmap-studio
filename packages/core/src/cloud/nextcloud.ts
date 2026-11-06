@@ -51,7 +51,15 @@ export interface LoginFlow {
   pollPath: string;
 }
 
-export type NextcloudErrorCode = 'auth' | 'conflict' | 'not_found' | 'network' | 'server' | 'proxy' | 'invalid';
+export type NextcloudErrorCode =
+  | 'auth'
+  | 'forbidden'
+  | 'conflict'
+  | 'not_found'
+  | 'network'
+  | 'server'
+  | 'proxy'
+  | 'invalid';
 
 /** Errore con codice stabile e messaggio in italiano, pronto per la UI. */
 export class NextcloudError extends Error {
@@ -202,6 +210,12 @@ export class NextcloudClient {
    * quello (altrimenti `conflict`); `createOnly`: `If-None-Match: *`, fallisce
    * con `conflict` se il file esiste già. Restituisce il nuovo ETag
    * (`OC-ETag` o `ETag` della risposta), se presente.
+   *
+   * Un ETag debole (`W/"…"`) non corrisponde mai in `If-Match`, che usa il
+   * confronto forte: ogni salvataggio sarebbe un falso conflitto. In quel caso
+   * l'ETag attuale si legge con una PROPFIND (Depth 0) e si confronta in modo
+   * debole; il PUT parte senza `If-Match` solo se coincide. La protezione NON
+   * è atomica: una modifica arrivata fra la PROPFIND e il PUT viene sovrascritta.
    */
   async upload(
     path: string,
@@ -210,11 +224,34 @@ export class NextcloudClient {
   ): Promise<{ etag: string | null }> {
     const createOnly = options?.createOnly === true;
     const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
-    if (options?.ifMatch !== undefined) headers['If-Match'] = options.ifMatch;
+    const ifMatch = options?.ifMatch;
+    if (ifMatch !== undefined) {
+      if (isWeakEtag(ifMatch)) {
+        await this.assertEtag(path, ifMatch);
+      } else {
+        headers['If-Match'] = ifMatch;
+      }
+    }
     if (createOnly) headers['If-None-Match'] = '*';
     const response = await this.dav(path, { method: 'PUT', headers, body: bytes.slice() });
     if (!UPLOAD_OK_STATUSES.includes(response.status)) throw await failureOf(response, createOnly);
     return { etag: etagOf(response) };
+  }
+
+  /** Verifica (confronto debole) che l'ETag attuale del file sia `expected`; altrimenti `conflict`. */
+  private async assertEtag(path: string, expected: string): Promise<void> {
+    const response = await this.dav(path, {
+      method: 'PROPFIND',
+      headers: { Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
+      body: PROPFIND_BODY,
+    });
+    // File sparito: come il 412 che darebbe `If-Match` su una risorsa inesistente.
+    if (response.status === 404) throw new NextcloudError('conflict', CONFLICT_MESSAGE, 412);
+    if (response.status !== 207) throw response.ok ? invalidResponse() : await failureOf(response);
+    const [entry] = parseMultistatus(await response.text(), davRootOf(this.account));
+    if (entry?.etag === undefined || opaqueTag(entry.etag) !== opaqueTag(expected)) {
+      throw new NextcloudError('conflict', CONFLICT_MESSAGE, 412);
+    }
   }
 
   /** Revoca l'app password (`DELETE ocs/v2.php/core/apppassword`): da chiamare allo scollegamento. */
@@ -261,6 +298,8 @@ const CONFLICT_MESSAGE =
   "Il file su Nextcloud è stato modificato da quando l'hai aperto. Salvalo con un altro nome o riaprilo.";
 const CREATE_CONFLICT_MESSAGE = 'Esiste già un file con questo nome.';
 const AUTH_MESSAGE = "Accesso a Nextcloud negato: ricollega l'account dalle impostazioni.";
+const FORBIDDEN_MESSAGE =
+  'Permessi insufficienti su Nextcloud per questa operazione (cartella o file in sola lettura).';
 const NOT_FOUND_MESSAGE = 'File o cartella non trovati su Nextcloud.';
 const NETWORK_MESSAGE = 'Nextcloud non raggiungibile: controlla la connessione.';
 
@@ -335,7 +374,9 @@ async function failureOf(response: Response, createOnly = false): Promise<Nextcl
     if (proxyMessage !== null) return new NextcloudError('proxy', proxyMessage, response.status);
   }
   const { status } = response;
-  if (status === 401 || status === 403) return new NextcloudError('auth', AUTH_MESSAGE, status);
+  if (status === 401) return new NextcloudError('auth', AUTH_MESSAGE, status);
+  // 403: credenziali valide ma permessi mancanti; ricollegare l'account non servirebbe.
+  if (status === 403) return new NextcloudError('forbidden', FORBIDDEN_MESSAGE, status);
   if (status === 404) return new NextcloudError('not_found', NOT_FOUND_MESSAGE, status);
   if (status === 412) {
     return new NextcloudError('conflict', createOnly ? CREATE_CONFLICT_MESSAGE : CONFLICT_MESSAGE, status);
@@ -380,6 +421,18 @@ function etagOf(response: Response): string | null {
   const raw = (response.headers.get('OC-ETag') ?? response.headers.get('ETag'))?.trim();
   if (!raw) return null;
   return raw.startsWith('"') || raw.startsWith('W/') ? raw : `"${raw}"`;
+}
+
+function isWeakEtag(etag: string): boolean {
+  return /^W\//i.test(etag.trim());
+}
+
+/** Parte opaca dell'ETag per il confronto debole: senza `W/` né virgolette. */
+function opaqueTag(etag: string): string {
+  return etag
+    .trim()
+    .replace(/^W\//i, '')
+    .replace(/^"(.*)"$/, '$1');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
