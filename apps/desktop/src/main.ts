@@ -37,6 +37,12 @@ const MAX_BYTE = 255;
 const XMIND_EXTENSION = /\.xmind$/i;
 const initialFiles = new Map<number, string | null>();
 const allowedCloseIds = new Set<number>();
+/**
+ * Percorso scelto nel dialogo di `dialog:saveBytes` e rifiutato perché XMind è
+ * aperto: è l'unico `targetPath` che il renderer può ripresentare con `force`,
+ * così non può far scrivere il main process in un percorso arbitrario.
+ */
+const pendingForcedSaves = new Map<number, string>();
 const startupFiles = findXmindFiles(process.argv);
 const startupFile = startupFiles.shift() ?? null;
 const queuedFiles: string[] = startupFiles;
@@ -168,6 +174,7 @@ function createWindow(initialFile: string | null = null): BrowserWindow {
   window.on('closed', () => {
     initialFiles.delete(id);
     allowedCloseIds.delete(id);
+    pendingForcedSaves.delete(id);
   });
 
   // Se il server di sviluppo non risponde si ripiega sulla UI compilata; se
@@ -276,8 +283,9 @@ ipcMain.handle('dialog:openFile', async (event) => {
   return readFileForRenderer(result.filePaths[0]);
 });
 
+// Usato solo per il file passato all'avvio (sempre `.xmind`): niente letture di file arbitrari.
 ipcMain.handle('fs:openPath', async (_, filePath: unknown) => {
-  if (!isAbsolutePath(filePath) || !isRegularFile(filePath)) return null;
+  if (!isAbsolutePath(filePath) || !XMIND_EXTENSION.test(filePath) || !isRegularFile(filePath)) return null;
   return readFileForRenderer(filePath);
 });
 
@@ -289,15 +297,27 @@ ipcMain.handle('dialog:saveFile', async (event, suggestedName?: string) => {
     filters: [{ name: 'XMind Map', extensions: ['xmind'] }],
   });
   if (result.canceled || !result.filePath) return null;
-  return result.filePath;
+  // Su Linux il dialogo GTK non aggiunge l'estensione del filtro: senza, `fs:saveAtomic` rifiuterebbe il percorso.
+  return XMIND_EXTENSION.test(result.filePath) ? result.filePath : `${result.filePath}.xmind`;
 });
+
+/** Estensioni dei filtri dei dialoghi: solo stringhe non vuote, senza punto iniziale. */
+function sanitizeExtensions(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const extensions = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.replace(/^\./, '').trim())
+    .filter((item) => item !== '');
+  return extensions.length > 0 ? extensions : undefined;
+}
 
 ipcMain.handle(
   'dialog:openAnyFile',
   async (event, options?: { description?: string; extensions?: string[] }) => {
     const owner = senderWindow(event);
     if (!owner) return null;
-    const extensions = options?.extensions ?? ['xmind'];
+    // Senza estensioni (es. "Allega file") si accetta qualunque file, non solo i `.xmind`.
+    const extensions = sanitizeExtensions(options?.extensions) ?? ['*'];
     const result = await dialog.showOpenDialog(owner, {
       properties: ['openFile'],
       filters: [{ name: options?.description || 'File', extensions }],
@@ -324,11 +344,21 @@ ipcMain.handle(
     const owner = senderWindow(event);
     if (!owner) return null;
     const bytes = toBytes(bytesValue);
-    const extensions = options?.extensions ?? ['bin'];
-    let outputPath = options?.targetPath;
+    const extensions = sanitizeExtensions(options?.extensions) ?? ['bin'];
+    const ownerId = owner.webContents.id;
+    let outputPath: string | undefined;
+    if (options?.targetPath !== undefined) {
+      // Ripetizione dopo la conferma "forza": vale solo il percorso appena rifiutato per XMind aperto.
+      const pending = pendingForcedSaves.get(ownerId);
+      pendingForcedSaves.delete(ownerId);
+      if (pending === undefined || pending !== options.targetPath) {
+        throw new Error('Percorso di salvataggio non valido: ripeti il salvataggio.');
+      }
+      outputPath = pending;
+    }
     if (!outputPath) {
       const result = await dialog.showSaveDialog(owner, {
-        defaultPath: suggestedName,
+        defaultPath: typeof suggestedName === 'string' ? suggestedName : undefined,
         filters: [{ name: options?.description || 'File', extensions }],
       });
       if (result.canceled || !result.filePath) return null;
@@ -341,9 +371,11 @@ ipcMain.handle(
     if (writesXmind || outputPath.toLowerCase().endsWith('.xmind')) {
       const { guardedSave } = await loadCore();
       const res = await guardedSave(outputPath, bytes, { force: options?.force === true });
+      if (!res.ok && res.code === 'xmind_running') pendingForcedSaves.set(ownerId, outputPath);
       return res.ok ? { path: outputPath } : { ...res, path: outputPath };
     }
-    fs.writeFileSync(outputPath, Buffer.from(bytes));
+    // Asincrono: un export grande (PNG, PDF) non deve bloccare il main process e tutte le finestre.
+    await fs.promises.writeFile(outputPath, bytes);
     return { path: outputPath };
   }
 );

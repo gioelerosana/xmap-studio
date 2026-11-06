@@ -169,12 +169,15 @@ export function useWorkbookSave({
 
   const handleSave = useCallback(async () => {
     if (!workbook) return;
-    if (!workbook.dirty) {
+    // Mappa nuova mai salvata: "Salva" deve poterla scrivere anche senza modifiche.
+    const neverSaved =
+      workbook.path === null && workbook.fileName === UNTITLED_FILE_NAME && !fileHandle && !cloudFile;
+    if (!workbook.dirty && !neverSaved) {
       addToast('info', 'Nessuna modifica da salvare.');
       return;
     }
     await writeWorkbook(false, false);
-  }, [workbook, writeWorkbook, addToast]);
+  }, [workbook, writeWorkbook, addToast, fileHandle, cloudFile]);
 
   const handleSaveAs = useCallback(async () => {
     if (!workbook) return;

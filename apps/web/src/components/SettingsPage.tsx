@@ -22,6 +22,7 @@ import {
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from '../appInfo.js';
 import type { UpdateStatus } from '../app/electronBridge.js';
 import { hasPendingUpdate } from '../app/useUpdateStatus.js';
+import { isDialogOpen } from '../app/dialogOpen.js';
 import { AppMark } from './AppMark.js';
 import { SettingRow, SettingsSection } from './SettingsLayout.js';
 import { UpdatesSection } from './UpdatesSection.js';
@@ -162,7 +163,10 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
     const previouslyFocused = document.activeElement as HTMLElement | null;
     pageRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) onCloseRef.current();
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // Un dialog aperto sopra la pagina (Nextcloud, conferme) chiude da sé con Esc: la pagina resta.
+      if (isDialogOpen()) return;
+      onCloseRef.current();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {

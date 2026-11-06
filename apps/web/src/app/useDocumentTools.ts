@@ -18,10 +18,12 @@ export function useDocumentTools({ controller, selectedTopic, hasWorkbook, refre
     try {
       const { bytes, mime, extension } = await controller.exportEquation(selectedTopic.id, format);
       const base = sanitizeName(selectedTopic.title || controller.mapTitle() || 'equazione');
-      await saveBytes(bytes, `${base}.${extension}`, mime, {
+      const saved = await saveBytes(bytes, `${base}.${extension}`, mime, {
         description: format.toUpperCase(),
         extensions: [extension],
       });
+      // Dialogo annullato: niente è stato scritto.
+      if (!saved) return;
       addToast('success', `Equazione esportata in ${format.toUpperCase()}`);
     } catch (err: any) {
       addToast('error', `Esportazione non riuscita: ${err.message}`);
