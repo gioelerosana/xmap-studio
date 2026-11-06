@@ -232,8 +232,12 @@ SVG standalone con dimensioni in px esplicite e restituisce:
 `validateArchiveBytes` (`packages/core/src/safety/validate.ts`) esegue, in memoria:
 
 1. lo ZIP si riapre e ogni entry ha CRC valido;
-2. `content.json` è un array JSON; `manifest.json`/`metadata.json` sono JSON validi;
-3. ogni riferimento `xap:resources/X` ha la entry `resources/X` nello ZIP;
+2. `content.json` è un array JSON non vuoto e ogni foglio ha un `rootTopic`;
+   `manifest.json`/`metadata.json` sono JSON validi;
+3. ogni riferimento `xap:resources/X` in un campo `src` (immagine del blocco,
+   equazione MathJax, immagini nelle note) ha la entry `resources/X` nello ZIP, e
+   ogni `xap:attachments/X` in un `href` ha la sua entry; il testo dell'utente
+   (titoli, note, etichette) che contiene quelle stringhe non conta;
 4. ogni `resources/X` presente nello ZIP è registrata nel manifest;
 5. `content.json` e `metadata.json` sono nel manifest.
 
