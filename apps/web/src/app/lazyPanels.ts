@@ -24,6 +24,10 @@ export const LazyThemeEditorModal = lazyNamed(() =>
 );
 export const LazyImportModal = lazyNamed(() => import('../components/ImportModal.js').then((m) => m.ImportModal));
 export const LazySettingsPage = lazyNamed(() => import('../components/SettingsPage.js').then((m) => m.SettingsPage));
+// Solo con un account Nextcloud collegato: chi non lo usa non lo scarica all'avvio.
+export const LazyNextcloudBrowserModal = lazyNamed(() =>
+  import('../components/NextcloudBrowserModal.js').then((m) => m.NextcloudBrowserModal)
+);
 export const LazyLatexEditorModal = lazyNamed(() =>
   import('../components/latex/LatexEditorModal.js').then((m) => m.LatexEditorModal)
 );

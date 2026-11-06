@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { Layout } from '@xmap/core';
 import type { DropIndicator } from './dragTarget.js';
 import { nodeLook } from './nodeLook.js';
@@ -27,9 +28,13 @@ export function TopicDragOverlay({
   layout: Layout | null;
   darkMode: boolean;
 }) {
-  if (!dragOverlay || !layout) return null;
-  const src = layout.nodes.find((n) => n.id === dragOverlay.sourceId);
-  if (!src) return null;
+  // Una sola ricerca per trascinamento: la sorgente cambia solo con un nuovo drag o un nuovo layout.
+  const sourceId = dragOverlay?.sourceId;
+  const src = useMemo(
+    () => (sourceId && layout ? layout.nodes.find((n) => n.id === sourceId) : undefined),
+    [layout, sourceId]
+  );
+  if (!dragOverlay || !layout || !src) return null;
   const look = nodeLook(src, darkMode);
   const { ghost, drop } = dragOverlay;
   const target = drop ? layout.nodes[drop.targetIndex] : undefined;
@@ -75,7 +80,9 @@ export function TopicDragOverlay({
           />
         </g>
       )}
-      <g transform={`translate(${ghost.x}, ${ghost.y})`} opacity={0.75}>
+      {/* `data-drag-ghost`: tra un cambio di bersaglio e l'altro i gesti spostano il fantasma
+          scrivendo direttamente questo `transform`, senza render di React a ogni frame. */}
+      <g data-drag-ghost transform={`translate(${ghost.x}, ${ghost.y})`} opacity={0.75}>
         <rect
           width={src.w}
           height={src.h}

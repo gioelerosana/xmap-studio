@@ -35,7 +35,7 @@ const stop = (e: React.SyntheticEvent): void => e.stopPropagation();
 const isCoarse = (): boolean => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 
 /** Relazioni XMind (frecce fra blocchi) con maniglie per piegarle. Da renderizzare dentro l'SVG della mappa. */
-export const RelationshipLayer: React.FC<RelationshipLayerProps> = ({
+const RelationshipLayerView: React.FC<RelationshipLayerProps> = ({
   relationships,
   nodes,
   selectedRelationshipId,
@@ -209,3 +209,7 @@ export const RelationshipLayer: React.FC<RelationshipLayerProps> = ({
     </g>
   );
 };
+
+// Props stabili dal chiamante (callback in `useCallback`, `toWorld` fisso): un cambio di
+// selezione dei blocchi non ricalcola frecce ed etichette di tutte le relazioni.
+export const RelationshipLayer = React.memo(RelationshipLayerView);

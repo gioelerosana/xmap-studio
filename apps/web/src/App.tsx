@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minimize2 } from 'lucide-react';
 import { Banner, Button, Modal, ToastContainer } from '@xmap/ui-kit';
-import { AppController, DEFAULT_LAYOUT_OPTS, layoutBoundaries, layoutSheets, loadMathJax, type BoundaryFrame, type Layout, type MapStructure, type WorkbookDto } from '@xmap/core';
+import { AppController, DEFAULT_LAYOUT_OPTS, layoutBoundaries, layoutSheets, loadMathJax, type BoundaryFrame, type Layout, type MapStructure, type RelationshipView, type WorkbookDto } from '@xmap/core';
 import { MapView, type MapEditing } from './components/MapView.js';
 import { FloatingToolbar } from './components/toolbar/FloatingToolbar.js';
 import { EmptyState } from './components/EmptyState.js';
@@ -14,6 +14,7 @@ import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
 import { UNTITLED_FILE_NAME, sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
 import { useInstallPrompt } from './app/useInstallPrompt.js';
+import { useStableCallback } from './app/useStableCallback.js';
 import { InstallInvite } from './components/InstallInvite.js';
 import { useToasts } from './app/useToasts.js';
 import { nextTheme } from './app/themeCycle.js';
@@ -33,12 +34,12 @@ import { useMapKeyboard } from './app/useMapKeyboard.js';
 import { useGlobalShortcuts } from './app/useGlobalShortcuts.js';
 import { buildMenuItems } from './app/buildMenuItems.js';
 import { AppHeader } from './app/AppHeader.js';
-import { NextcloudBrowserModal } from './components/NextcloudBrowserModal.js';
 import { nextcloudAvailable, useNextcloudAccount, type NextcloudFileRef } from './adapters/nextcloud.js';
 import {
   LazyExportModal,
   LazyImportModal,
   LazyLatexEditorModal,
+  LazyNextcloudBrowserModal,
   LazyPrintModal,
   LazySettingsPage,
   LazyThemeEditorModal,
@@ -53,6 +54,10 @@ const ThemeEditorModal = LazyThemeEditorModal.Component;
 const ImportModal = LazyImportModal.Component;
 const SettingsPage = LazySettingsPage.Component;
 const LatexEditorModal = LazyLatexEditorModal.Component;
+const NextcloudBrowserModal = LazyNextcloudBrowserModal.Component;
+
+// Foglio senza relazioni: sempre lo stesso array, così la barra flottante memoizzata non si ridisegna.
+const NO_RELATIONSHIPS: RelationshipView[] = [];
 
 export const App: React.FC = () => {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI);
@@ -205,6 +210,11 @@ export const App: React.FC = () => {
   const themeMounted = useMountedOnce(themeModalOpen && workbook !== null);
   const importMounted = useMountedOnce(importModalOpen);
   useEffect(preloadPanels, []);
+  // La finestra di Nextcloud serve solo con un account collegato: allora la si scarica a browser libero.
+  useEffect(() => {
+    if (!nextcloudEnabled) return;
+    LazyNextcloudBrowserModal.preload().catch((err: unknown) => console.warn('Pannello non precaricato:', err));
+  }, [nextcloudEnabled]);
 
   const { writeWorkbook, handleSave, handleSaveAs, saveToNextcloud } = useWorkbookSave({
     controller,
@@ -384,28 +394,92 @@ export const App: React.FC = () => {
 
   const resolveResource = useCallback((src: string) => controller.resourceBytes(src), [controller]);
 
-  const menuItems = buildMenuItems(
-    { workbook, selectedTopic, selectedTopicId, theme: settings.theme, layout: headerLayout, nextcloud: nextcloudEnabled },
-    {
-      onNewMap: handleNewMap,
-      onOpen: handleOpenLocalFile,
-      onOpenNextcloud: () => setNextcloudBrowser('open'),
-      onSaveNextcloud: () => setNextcloudBrowser('save'),
-      onUndo: () => doUndoRedo('undo'),
-      onRedo: () => doUndoRedo('redo'),
-      onToggleTheme: cycleTheme,
-      onExport: () => setExportModalOpen(true),
-      onPrint: () => setPrintModalOpen(true),
-      onEditTheme: () => setThemeModalOpen(true),
-      onZen: () => setZenMode(true),
-      onImport: () => setImportModalOpen(true),
-      onAttach: handleAttach,
-      onMerge: handleMerge,
-      onSplit: handleSplit,
-      onDelete: handleDeleteSelected,
-      onAbout: () => setAboutOpen(true),
-    }
+  // Gestori con identità fissa per i componenti memoizzati (MapView, barra flottante, header,
+  // linguette): un toast, `busy` o un modale aperto non devono ridisegnare la mappa.
+  const onNewMap = useStableCallback(handleNewMap);
+  const onOpenLocalFile = useStableCallback(handleOpenLocalFile);
+  const onSave = useStableCallback(handleSave);
+  const onUndo = useStableCallback(() => doUndoRedo('undo'));
+  const onRedo = useStableCallback(() => doUndoRedo('redo'));
+  const onToggleTheme = useStableCallback(cycleTheme);
+  const onToggleSettings = useCallback(() => setSettingsOpen((open) => !open), []);
+  const onAddSheet = useStableCallback(sheetActions.addSheet);
+  const onSelectTopic = useStableCallback(selection.onSelectTopic);
+  const onClearSelection = useCallback(() => selectSingle(undefined), [selectSingle]);
+  const onCreateSummary = useStableCallback(handleCreateSummary);
+  const onAddChild = useStableCallback((id: string) => createTopic(id, 'child'));
+  const onAddSibling = useStableCallback((id: string, where?: 'after' | 'before') => createTopic(id, where ?? 'after'));
+  const onDeleteSelected = useStableCallback(handleDeleteSelected);
+  const onRemoveTopicKeepChildren = useStableCallback(handleRemoveTopicKeepChildren);
+  const onStartEdit = useStableCallback(startEdit);
+  const onCommitEdit = useStableCallback(handleCommitEdit);
+  const onCancelEdit = useCallback(() => setEditing(null), []);
+  const onToggleCollapse = useStableCallback(handleToggleCollapse);
+  const onMoveTopic = useStableCallback(handleMove);
+  const onMoveFloatingTopic = useStableCallback(handleMoveFloating);
+  const onRelationshipControlPointsChange = useStableCallback(handleRelationshipControlPoint);
+  const onResizeTopicWidth = useStableCallback(handleResizeTopicWidth);
+  const onResizeTopicImage = useStableCallback(handleResizeTopicImage);
+  const onCopyTopic = useStableCallback(handleCopyTopic);
+  const onCutTopic = useStableCallback(handleCutTopic);
+  const onPasteTopic = useStableCallback(handlePasteTopic);
+  const onDuplicateTopic = useStableCallback(handleDuplicateTopic);
+  const onStartConnectRelationship = useStableCallback((id: string) => setConnectingTopicId(id));
+  const onConnectRelationshipTarget = useStableCallback(handleConnectRelationshipTarget);
+  const onInsertImagePicked = useStableCallback((file: Blob) => void insertImage(file, 'picker'));
+  const onToggleSelectionMode = useStableCallback(() => selection.setSelectionMode((v) => !v));
+  const onRenameSheet = useStableCallback(sheetActions.renameSheet);
+  const onDuplicateSheet = useStableCallback(sheetActions.duplicateSheet);
+  const onDeleteSheet = useStableCallback(sheetActions.deleteSheet);
+  const onMoveSheet = useStableCallback(sheetActions.moveSheet);
+  const onAttach = useStableCallback(handleAttach);
+  const onMerge = useStableCallback(handleMerge);
+  const onSplit = useStableCallback(handleSplit);
+
+  // I gestori sono stabili: il menu (e quindi l'header memoizzato) cambia solo con lo stato che mostra.
+  const menuItems = useMemo(
+    () =>
+      buildMenuItems(
+        { workbook, selectedTopic, selectedTopicId, theme: settings.theme, layout: headerLayout, nextcloud: nextcloudEnabled },
+        {
+          onNewMap,
+          onOpen: onOpenLocalFile,
+          onOpenNextcloud: () => setNextcloudBrowser('open'),
+          onSaveNextcloud: () => setNextcloudBrowser('save'),
+          onUndo,
+          onRedo,
+          onToggleTheme,
+          onExport: () => setExportModalOpen(true),
+          onPrint: () => setPrintModalOpen(true),
+          onEditTheme: () => setThemeModalOpen(true),
+          onZen: () => setZenMode(true),
+          onImport: () => setImportModalOpen(true),
+          onAttach,
+          onMerge,
+          onSplit,
+          onDelete: onDeleteSelected,
+          onAbout: () => setAboutOpen(true),
+        }
+      ),
+    [
+      workbook,
+      selectedTopic,
+      selectedTopicId,
+      settings.theme,
+      headerLayout,
+      nextcloudEnabled,
+      onNewMap,
+      onOpenLocalFile,
+      onUndo,
+      onRedo,
+      onToggleTheme,
+      onAttach,
+      onMerge,
+      onSplit,
+      onDeleteSelected,
+    ]
   );
+  const mapTitle = workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio';
 
   return (
     <div className="flex flex-col h-dvh w-screen overflow-hidden bg-background text-foreground select-none">
@@ -413,7 +487,7 @@ export const App: React.FC = () => {
         <AppHeader
           headerRef={headerRef}
           layout={headerLayout}
-          title={workbook ? controller.mapTitle() || workbook.fileName : 'XMap Studio'}
+          title={mapTitle}
           workbook={workbook}
           busy={busy}
           theme={settings.theme}
@@ -422,14 +496,14 @@ export const App: React.FC = () => {
           isElectron={isElectron}
           isWindowMaximized={isWindowMaximized}
           menuItems={menuItems}
-          onNewMap={handleNewMap}
-          onAddSheet={sheetActions.addSheet}
-          onOpen={handleOpenLocalFile}
-          onSave={handleSave}
-          onUndo={() => doUndoRedo('undo')}
-          onRedo={() => doUndoRedo('redo')}
-          onToggleTheme={cycleTheme}
-          onToggleSettings={() => setSettingsOpen((open) => !open)}
+          onNewMap={onNewMap}
+          onAddSheet={onAddSheet}
+          onOpen={onOpenLocalFile}
+          onSave={onSave}
+          onUndo={onUndo}
+          onRedo={onRedo}
+          onToggleTheme={onToggleTheme}
+          onToggleSettings={onToggleSettings}
         />
       )}
 
@@ -481,40 +555,40 @@ export const App: React.FC = () => {
                 viewKey={`${documentKey}:${activeSheetIndex}`}
                 selectedTopicId={selectedTopicId}
                 selectedTopicIds={selectedTopicIds}
-                onSelectTopic={selection.onSelectTopic}
+                onSelectTopic={onSelectTopic}
                 selectionMode={selection.selectionMode}
-                onClearSelection={() => selectSingle(undefined)}
-                onAddSummary={handleCreateSummary}
+                onClearSelection={onClearSelection}
+                onAddSummary={onCreateSummary}
                 canAddSummary={canAddSummary}
                 onOpenLatex={openLatex}
-                onAddChild={(id) => createTopic(id, 'child')}
-                onAddSibling={(id, where) => createTopic(id, where ?? 'after')}
-                onDeleteTopic={handleDeleteSelected}
-                onRemoveTopicKeepChildren={handleRemoveTopicKeepChildren}
+                onAddChild={onAddChild}
+                onAddSibling={onAddSibling}
+                onDeleteTopic={onDeleteSelected}
+                onRemoveTopicKeepChildren={onRemoveTopicKeepChildren}
                 editing={editing}
-                onStartEdit={startEdit}
-                onCommitEdit={handleCommitEdit}
-                onCancelEdit={() => setEditing(null)}
-                onToggleCollapse={handleToggleCollapse}
+                onStartEdit={onStartEdit}
+                onCommitEdit={onCommitEdit}
+                onCancelEdit={onCancelEdit}
+                onToggleCollapse={onToggleCollapse}
                 resourceResolver={resolveResource}
                 // In stampa e nell'export immagine la mappa si ridisegna in chiaro: colori di formule e testo sono calcolati in JS.
                 darkMode={darkMode && !printModalOpen && !exportModalOpen}
                 zen={zen}
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
-                onMoveTopic={handleMove}
-                onMoveFloatingTopic={handleMoveFloating}
-                onRelationshipControlPointsChange={handleRelationshipControlPoint}
-                onResizeTopicWidth={handleResizeTopicWidth}
-                onResizeTopicImage={handleResizeTopicImage}
-                onCopyTopic={handleCopyTopic}
-                onCutTopic={handleCutTopic}
-                onPasteTopic={handlePasteTopic}
-                onDuplicateTopic={handleDuplicateTopic}
-                onStartConnectRelationship={(id) => setConnectingTopicId(id)}
+                onMoveTopic={onMoveTopic}
+                onMoveFloatingTopic={onMoveFloatingTopic}
+                onRelationshipControlPointsChange={onRelationshipControlPointsChange}
+                onResizeTopicWidth={onResizeTopicWidth}
+                onResizeTopicImage={onResizeTopicImage}
+                onCopyTopic={onCopyTopic}
+                onCutTopic={onCutTopic}
+                onPasteTopic={onPasteTopic}
+                onDuplicateTopic={onDuplicateTopic}
+                onStartConnectRelationship={onStartConnectRelationship}
                 canPaste={canPaste}
                 isConnectingRelationship={Boolean(connectingTopicId)}
-                onConnectRelationshipTarget={handleConnectRelationshipTarget}
+                onConnectRelationshipTarget={onConnectRelationshipTarget}
                 mapControlsSlot={mapControlsSlot}
               />
 
@@ -523,17 +597,17 @@ export const App: React.FC = () => {
                   topic={selectedTopic}
                   selectedTopicIds={selectedTopicIds}
                   allTopics={allTopics}
-                  relationships={currentSheet?.relationships || []}
+                  relationships={currentSheet?.relationships ?? NO_RELATIONSHIPS}
                   isEditingText={Boolean(editing)}
                   actions={topicActions}
                   canAddSummary={canAddSummary}
-                  onAddSummaryForSelection={handleCreateSummary}
+                  onAddSummaryForSelection={onCreateSummary}
                   onOpenLatex={openLatex}
-                  onStartConnectRelationship={(id) => setConnectingTopicId(id)}
-                  onInsertImage={(file) => void insertImage(file, 'picker')}
+                  onStartConnectRelationship={onStartConnectRelationship}
+                  onInsertImage={onInsertImagePicked}
                   mapControlsSlotRef={setMapControlsSlot}
                   selectionMode={selection.selectionMode}
-                  onToggleSelectionMode={() => selection.setSelectionMode((v) => !v)}
+                  onToggleSelectionMode={onToggleSelectionMode}
                 />
               )}
 
@@ -556,10 +630,10 @@ export const App: React.FC = () => {
                   sheets={workbook.sheets}
                   activeIndex={activeSheetIndex}
                   onSelect={selectSheet}
-                  onRename={sheetActions.renameSheet}
-                  onDuplicate={sheetActions.duplicateSheet}
-                  onDelete={sheetActions.deleteSheet}
-                  onMove={sheetActions.moveSheet}
+                  onRename={onRenameSheet}
+                  onDuplicate={onDuplicateSheet}
+                  onDelete={onDeleteSheet}
+                  onMove={onMoveSheet}
                 />
               )}
             </div>
@@ -649,25 +723,27 @@ export const App: React.FC = () => {
       </Suspense>
 
       {nextcloudEnabled && nextcloudAccount && nextcloudBrowser && (
-        <NextcloudBrowserModal
-          isOpen
-          onClose={() => setNextcloudBrowser(null)}
-          mode={nextcloudBrowser}
-          account={nextcloudAccount}
-          suggestedName={
-            workbook && workbook.fileName !== UNTITLED_FILE_NAME
-              ? workbook.fileName
-              : `${sanitizeName((workbook && controller.mapTitle()) || 'mappa')}.xmind`
-          }
-          onOpenFile={(entry) => {
-            setNextcloudBrowser(null);
-            void openFromNextcloud(entry);
-          }}
-          onSaveHere={(path, existing) => {
-            setNextcloudBrowser(null);
-            void saveToNextcloud(path, existing);
-          }}
-        />
+        <Suspense fallback={null}>
+          <NextcloudBrowserModal
+            isOpen
+            onClose={() => setNextcloudBrowser(null)}
+            mode={nextcloudBrowser}
+            account={nextcloudAccount}
+            suggestedName={
+              workbook && workbook.fileName !== UNTITLED_FILE_NAME
+                ? workbook.fileName
+                : `${sanitizeName((workbook && controller.mapTitle()) || 'mappa')}.xmind`
+            }
+            onOpenFile={(entry) => {
+              setNextcloudBrowser(null);
+              void openFromNextcloud(entry);
+            }}
+            onSaveHere={(path, existing) => {
+              setNextcloudBrowser(null);
+              void saveToNextcloud(path, existing);
+            }}
+          />
+        </Suspense>
       )}
 
       <Modal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} title={APP_NAME} size="sm">

@@ -1,4 +1,4 @@
-import type { Ref } from 'react';
+import { memo, type Ref } from 'react';
 import type { WorkbookDto } from '@xmap/core';
 import { Button, HeaderBar, IconButton, Menu, Separator, cn, type MenuItem } from '@xmap/ui-kit';
 import { SquarePlus, FilePlus, FolderOpen, Save, Undo2, Redo2, MoreVertical, Settings } from 'lucide-react';
@@ -31,7 +31,8 @@ interface AppHeaderProps {
   onToggleSettings: () => void;
 }
 
-export function AppHeader({
+// Memoizzato: con props stabili (App) toast, busy e popover non lo ridisegnano.
+export const AppHeader = memo(function AppHeader({
   headerRef,
   layout,
   title,
@@ -137,4 +138,4 @@ export function AppHeader({
       }
     />
   );
-}
+});

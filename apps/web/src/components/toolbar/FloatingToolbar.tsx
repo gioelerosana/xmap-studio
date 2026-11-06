@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { memo, useRef } from 'react';
 import { Braces, ImagePlus, PaintBucket, Sigma, SquareDashedMousePointer, ZoomIn } from 'lucide-react';
 import { cn } from '@xmap/ui-kit';
 
@@ -36,7 +36,7 @@ const INLINE_BRANCH_COLORS = 5;
  * default, in basso, a sinistra o a destra, dove diventa una colonna verticale); la posizione
  * è ricordata. Sotto `sm` resta fissa in basso.
  */
-export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
+const FloatingToolbarImpl: React.FC<FloatingToolbarProps> = ({
   topic,
   selectedTopicIds,
   allTopics,
@@ -227,3 +227,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     </>
   );
 };
+
+// Memoizzata: si ridisegna solo quando cambiano blocco, selezione o mappa, non per toast o modali dell'app.
+export const FloatingToolbar = memo(FloatingToolbarImpl);

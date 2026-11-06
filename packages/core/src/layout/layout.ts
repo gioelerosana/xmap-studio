@@ -350,7 +350,7 @@ export interface NodeSizeInput {
  * mandare a capo un titolo costa, e a ogni modifica il layout rimisura tutti i
  * blocchi, quasi tutti invariati. Si svuota quando cambia la misura del testo.
  */
-const nodeSizeCache = new Map<string, { w: number; h: number }>();
+const nodeSizeCache = new Map<string, { w: number; h: number; math: boolean }>();
 const NODE_SIZE_CACHE_MAX = 20000;
 /**
  * Ultima misura di ogni blocco per id, con i campi da cui dipende. A ogni modifica
@@ -366,8 +366,41 @@ function invalidateSizeCaches(): void {
   sizeById.clear();
 }
 
+/**
+ * true se la misura del blocco può dipendere da MathJax: un'equazione, o un titolo
+ * con formule `$…$` (anche nei frammenti). Gli altri blocchi si misurano solo col testo.
+ */
+function sizeDependsOnMath(node: {
+  latex?: string;
+  title?: string;
+  displayTitle?: string;
+  titleRuns?: TitleRun[];
+}): boolean {
+  return (
+    Boolean(node.latex) ||
+    (node.title?.includes('$') ?? false) ||
+    (node.displayTitle?.includes('$') ?? false) ||
+    (node.titleRuns?.some((run) => run.text.includes('$')) ?? false)
+  );
+}
+
+/**
+ * Svuota le sole misure che dipendono da MathJax. Con una mappa piena di formule
+ * MathJax notifica più volte all'apertura (motore pronto, file di glifi arrivati):
+ * rimisurare ogni volta anche migliaia di blocchi di solo testo, che non cambiano,
+ * renderebbe lenta l'apertura proprio sui dispositivi più deboli.
+ */
+function invalidateMathSizes(): void {
+  for (const [key, entry] of nodeSizeCache) {
+    if (entry.math) nodeSizeCache.delete(key);
+  }
+  for (const [id, entry] of sizeById) {
+    if (sizeDependsOnMath(entry.inputs)) sizeById.delete(id);
+  }
+}
+
 // Prima che MathJax sia caricato le formule si misurano come sorgente: dopo, quelle misure non valgono più.
-onMathJaxReady(invalidateSizeCaches);
+onMathJaxReady(invalidateMathSizes);
 
 function nodeSizeKey(node: NodeSizeInput, overrideWidth: number | null | undefined): string {
   return JSON.stringify([
@@ -395,7 +428,7 @@ export function estimateNodeSize(node: NodeSizeInput, overrideWidth?: number | n
   if (hit) return { w: hit.w, h: hit.h };
   const size = computeNodeSize(node, overrideWidth);
   if (nodeSizeCache.size >= NODE_SIZE_CACHE_MAX) nodeSizeCache.clear();
-  nodeSizeCache.set(key, size);
+  nodeSizeCache.set(key, { w: size.w, h: size.h, math: sizeDependsOnMath(node) });
   return { w: size.w, h: size.h };
 }
 

@@ -35,6 +35,47 @@ const MAX_HISTORY = 200;
  */
 const MAX_HISTORY_CHARS = 64 * 1024 * 1024;
 
+/** Snapshot di cronologia: il JSON di ogni foglio, nell'ordine di `content`. */
+export type HistorySnapshot = readonly string[];
+
+/** JSON di ogni foglio (`null` per un elemento non serializzabile, come `JSON.stringify` di un array). */
+function serializeSheets(content: Sheet[]): string[] {
+  return content.map((sheet) => JSON.stringify(sheet) ?? 'null');
+}
+
+function parseSheets(snapshot: HistorySnapshot): Sheet[] {
+  return snapshot.map((json) => JSON.parse(json) as Sheet);
+}
+
+function snapshotChars(snapshot: HistorySnapshot): number {
+  let chars = 0;
+  for (const json of snapshot) chars += json.length;
+  return chars;
+}
+
+/** Stessi fogli nello stesso ordine (di solito confronti per riferimento, vedi `shareUnchanged`). */
+function sameSnapshot(a: HistorySnapshot, b: HistorySnapshot): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Riusa le stringhe di `prev` per i fogli non cambiati: una mappa a più fogli tiene
+ * una sola copia dei fogli non toccati, e i confronti successivi (cronologia, cache
+ * dei DTO) diventano confronti di riferimento.
+ */
+function shareUnchanged(next: string[], prev: HistorySnapshot | undefined): string[] {
+  if (!prev) return next;
+  const n = Math.min(next.length, prev.length);
+  for (let i = 0; i < n; i++) {
+    if (next[i] === prev[i]) next[i] = prev[i];
+  }
+  return next;
+}
+
 export class OpenWorkbook {
   public path: string | null;
   public fileName: string;
@@ -42,10 +83,11 @@ export class OpenWorkbook {
   public content: Sheet[];
   public manifest: Record<string, unknown>;
   /**
-   * Snapshot serializzati (JSON) del contenuto: una sola `JSON.stringify` per
-   * modifica invece di stringify + parse, e molta meno memoria di un albero di oggetti.
+   * Snapshot serializzati (JSON, uno per foglio) del contenuto: una sola
+   * `JSON.stringify` per modifica invece di stringify + parse, molta meno memoria
+   * di un albero di oggetti, e i fogli invariati condividono la stessa stringa.
    */
-  public history: string[];
+  public history: HistorySnapshot[];
   /**
    * Revisione di ogni snapshot, unica per tutta la vita del workbook: lo stato
    * salvato si riconosce dalla revisione, non dalla posizione, che cambia con
@@ -56,10 +98,20 @@ export class OpenWorkbook {
   /** Revisione scritta su disco; `null` se nessuno snapshot coincide più con il file. */
   private savedRevision: number | null;
   public pos: number;
-  /** Somma delle lunghezze degli snapshot in `history`. */
+  /** Somma delle lunghezze degli snapshot in `history` (un foglio condiviso conta in ogni snapshot). */
   private historyChars: number;
   public xmindRunning: string[];
   public originalHash: string;
+  /**
+   * DTO già costruiti, per foglio, con il JSON da cui derivano. Fuori da una
+   * modifica `content` coincide con `history[pos]` (ogni modifica finisce con
+   * `pushHistory`/`replaceHistoryTop`), quindi un foglio con lo stesso JSON riusa
+   * il DTO di prima: i fogli non toccati non si ricostruiscono, e lo stesso oggetto
+   * evita alla UI layout e rendering (es. dopo un salvataggio o un undo).
+   */
+  private sheetDtoCache: Array<{ json: string; dto: SheetDto } | undefined> = [];
+  /** Ultimo array di fogli di `toDto`, riusato se nessun foglio è cambiato. */
+  private lastSheetsDto: SheetDto[] | null = null;
 
   constructor(
     path: string | null,
@@ -73,11 +125,11 @@ export class OpenWorkbook {
     this.path = path;
     this.fileName = fileName;
     this.archive = archive;
-    const snapshot = JSON.stringify(content);
-    this.content = JSON.parse(snapshot) as Sheet[];
+    const snapshot = serializeSheets(content);
+    this.content = parseSheets(snapshot);
     this.manifest = manifest;
     this.history = [snapshot];
-    this.historyChars = snapshot.length;
+    this.historyChars = snapshotChars(snapshot);
     this.revisions = [0];
     this.nextRevision = 1;
     this.savedRevision = 0;
@@ -104,23 +156,24 @@ export class OpenWorkbook {
   }
 
   public pushHistory(): void {
-    const snapshot = JSON.stringify(this.content);
+    const current = this.history[this.pos];
+    const snapshot = shareUnchanged(serializeSheets(this.content), current);
     // Nessun cambiamento reale (es. stesso stile riapplicato): niente passo di
     // undo vuoto e la mappa non diventa "modificata".
-    if (snapshot === this.history[this.pos]) return;
+    if (sameSnapshot(snapshot, current)) return;
     // Troncamento se siamo tornati indietro: il ramo redo si scarta.
     if (this.pos + 1 < this.history.length) {
-      for (const dropped of this.history.splice(this.pos + 1)) this.historyChars -= dropped.length;
+      for (const dropped of this.history.splice(this.pos + 1)) this.historyChars -= snapshotChars(dropped);
       this.revisions.splice(this.pos + 1);
     }
     this.history.push(snapshot);
-    this.historyChars += snapshot.length;
+    this.historyChars += snapshotChars(snapshot);
     this.revisions.push(this.nextRevision++);
     while (
       this.history.length > 1 &&
       (this.history.length > MAX_HISTORY || this.historyChars > MAX_HISTORY_CHARS)
     ) {
-      this.historyChars -= this.history[0].length;
+      this.historyChars -= snapshotChars(this.history[0]);
       this.history.shift();
       this.revisions.shift();
     }
@@ -133,9 +186,10 @@ export class OpenWorkbook {
       this.pushHistory();
       return;
     }
-    const snapshot = JSON.stringify(this.content);
-    if (snapshot === this.history[this.pos]) return;
-    this.historyChars += snapshot.length - this.history[this.pos].length;
+    const current = this.history[this.pos];
+    const snapshot = shareUnchanged(serializeSheets(this.content), current);
+    if (sameSnapshot(snapshot, current)) return;
+    this.historyChars += snapshotChars(snapshot) - snapshotChars(current);
     this.history[this.pos] = snapshot;
     // Contenuto nuovo, revisione nuova: se lo snapshot era quello salvato, ora non lo è più.
     this.revisions[this.pos] = this.nextRevision++;
@@ -144,14 +198,14 @@ export class OpenWorkbook {
   public undo(): void {
     if (this.canUndo()) {
       this.pos--;
-      this.content = JSON.parse(this.history[this.pos]) as Sheet[];
+      this.content = parseSheets(this.history[this.pos]);
     }
   }
 
   public redo(): void {
     if (this.canRedo()) {
       this.pos++;
-      this.content = JSON.parse(this.history[this.pos]) as Sheet[];
+      this.content = parseSheets(this.history[this.pos]);
     }
   }
 
@@ -172,14 +226,36 @@ export class OpenWorkbook {
     this.savedRevision = revision ?? this.currentRevision();
   }
 
+  /**
+   * DTO del foglio `index`, riusato se il suo JSON nello snapshot corrente è lo
+   * stesso da cui era stato costruito. È condiviso fra chiamate: non va mutato.
+   */
+  private cachedSheetDto(sheet: Sheet, index: number): SheetDto {
+    const json = this.history[this.pos]?.[index];
+    const hit = this.sheetDtoCache[index];
+    if (json !== undefined && hit !== undefined && hit.json === json) return hit.dto;
+    const dto = buildSheetDto(sheet, index);
+    this.sheetDtoCache[index] = json === undefined ? undefined : { json, dto };
+    return dto;
+  }
+
   /** DTO di un solo foglio: per il layout della mappa non serve ricostruire gli altri. */
   public sheetDto(index: number): SheetDto | undefined {
     const sheet = this.content[index];
-    return sheet ? buildSheetDto(sheet, index) : undefined;
+    return sheet ? this.cachedSheetDto(sheet, index) : undefined;
   }
 
   public toDto(): WorkbookDto {
-    const sheetsDto: SheetDto[] = this.content.map((sheet, index) => buildSheetDto(sheet, index));
+    const sheetsDto: SheetDto[] = this.content.map((sheet, index) => this.cachedSheetDto(sheet, index));
+    // Fogli eliminati: le loro voci non servono più.
+    if (this.sheetDtoCache.length > sheetsDto.length) this.sheetDtoCache.length = sheetsDto.length;
+    // Nessun foglio cambiato: lo stesso array, così chi dipende da `sheets` non ricalcola.
+    const last = this.lastSheetsDto;
+    const sheets =
+      last !== null && last.length === sheetsDto.length && sheetsDto.every((dto, i) => dto === last[i])
+        ? last
+        : sheetsDto;
+    this.lastSheetsDto = sheets;
 
     return {
       path: this.path,
@@ -187,7 +263,7 @@ export class OpenWorkbook {
       dirty: this.isDirty(),
       canUndo: this.canUndo(),
       canRedo: this.canRedo(),
-      sheets: sheetsDto,
+      sheets,
       xmindRunning: this.xmindRunning,
     };
   }

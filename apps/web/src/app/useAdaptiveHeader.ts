@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 /** Livelli di compattazione dell'header: da questo livello in poi l'elemento va nel menu. */
 const HEADER_LEVEL = { iconsOnly: 1, redoTheme: 2, title: 3, undo: 4, open: 5, max: 5 } as const;
@@ -50,12 +50,16 @@ export function useAdaptiveHeader(hasWorkbook: boolean, visible: boolean = true)
     return () => ro.disconnect();
   }, [visible]);
 
-  const layout: HeaderLayout = {
-    showLabels: headerLevel < HEADER_LEVEL.iconsOnly,
-    inlineRedo: headerLevel < HEADER_LEVEL.redoTheme,
-    inlineUndo: headerLevel < HEADER_LEVEL.undo,
-    inlineOpen: headerLevel < HEADER_LEVEL.open,
-    showTitle: headerLevel < HEADER_LEVEL.title,
-  };
+  // Oggetto stabile per livello: l'header e il menu memoizzati non si ridisegnano a ogni render dell'app.
+  const layout = useMemo<HeaderLayout>(
+    () => ({
+      showLabels: headerLevel < HEADER_LEVEL.iconsOnly,
+      inlineRedo: headerLevel < HEADER_LEVEL.redoTheme,
+      inlineUndo: headerLevel < HEADER_LEVEL.undo,
+      inlineOpen: headerLevel < HEADER_LEVEL.open,
+      showTitle: headerLevel < HEADER_LEVEL.title,
+    }),
+    [headerLevel]
+  );
   return { headerRef, layout };
 }

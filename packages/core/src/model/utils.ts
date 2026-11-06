@@ -58,13 +58,24 @@ export function topicAllChildren(topic: Topic): Topic[] {
 export function findTopic(sheets: Sheet[], id: string): Topic | undefined {
   for (const sheet of sheets) {
     if (sheet.rootTopic) {
-      let found: Topic | undefined;
-      walkTopic(sheet.rootTopic, (t) => {
-        if (!found && t.id === id) {
-          found = t;
-        }
-      });
+      const found = findInTopic(sheet.rootTopic, id);
       if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/** Primo topic con `id` in pre-ordine (come `walkTopic`), fermandosi appena trovato. */
+function findInTopic(topic: Topic, id: string): Topic | undefined {
+  if (topic.id === id) return topic;
+  if (!topic.children) return undefined;
+  for (const group of CHILD_GROUPS) {
+    const list = topic.children[group];
+    if (Array.isArray(list)) {
+      for (const child of list) {
+        const found = findInTopic(child, id);
+        if (found) return found;
+      }
     }
   }
   return undefined;
@@ -74,14 +85,7 @@ export function findTopic(sheets: Sheet[], id: string): Topic | undefined {
  * Restituisce l'indice della sheet che contiene il topic specificato.
  */
 export function sheetIndexOf(sheets: Sheet[], topicId: string): number {
-  return sheets.findIndex((sheet) => {
-    if (!sheet.rootTopic) return false;
-    let found = false;
-    walkTopic(sheet.rootTopic, (t) => {
-      if (t.id === topicId) found = true;
-    });
-    return found;
-  });
+  return sheets.findIndex((sheet) => Boolean(sheet.rootTopic && findInTopic(sheet.rootTopic, topicId)));
 }
 
 /**

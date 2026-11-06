@@ -39,15 +39,57 @@ export function useTopicResize({
   const lastWidthTapRef = useRef<number>(0);
   /** Stacca i listener su `window` del ridimensionamento in corso, se c'è. */
   const detachRef = useRef<(() => void) | null>(null);
+  // Anteprima in attesa del prossimo frame: con la penna (240 Hz) i pointermove sono più dei frame,
+  // e ogni `setResizing` rifà il layout effettivo e il render della mappa.
+  const pendingRef = useRef<ResizeState | null>(null);
+  const frameRef = useRef(0);
 
   // Smontaggio a metà ridimensionamento: i listener su `window` non devono sopravvivere al componente.
   useEffect(
     () => () => {
       detachRef.current?.();
       activeResizeRef.current = null;
+      cancelAnimationFrame(frameRef.current);
     },
     []
   );
+
+  // Una sola anteprima per frame; uguale alla precedente (larghezza arrotondata) non fa render.
+  const queueResizing = useCallback((next: ResizeState) => {
+    const cur = pendingRef.current ?? resizingRef.current;
+    if (
+      cur &&
+      cur.topicId === next.topicId &&
+      cur.width === next.width &&
+      cur.height === next.height &&
+      cur.imageSize?.width === next.imageSize?.width &&
+      cur.imageSize?.height === next.imageSize?.height
+    ) {
+      return;
+    }
+    pendingRef.current = next;
+    if (frameRef.current) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = 0;
+      const p = pendingRef.current;
+      pendingRef.current = null;
+      if (p && activeResizeRef.current) setResizing(p);
+    });
+  }, []);
+
+  const cancelQueued = () => {
+    cancelAnimationFrame(frameRef.current);
+    frameRef.current = 0;
+    pendingRef.current = null;
+  };
+
+  // Sotto-albero del blocco ridimensionato: si calcola una volta per gesto, non a ogni frame.
+  const resizingId = resizing?.topicId;
+  const resizeSubtree = useMemo(() => {
+    if (!layout || !resizingId) return null;
+    const i = layout.nodes.findIndex((n) => n.id === resizingId);
+    return i < 0 ? null : subtreeOf(layout, i);
+  }, [layout, resizingId]);
 
   // Layout effettivo con anteprima live durante il ridimensionamento
   const effectiveLayout = useMemo(() => {
@@ -59,7 +101,7 @@ export function useTopicResize({
     const deltaW = resizing.width - targetNode.w;
     // Sul lato sinistro il blocco resta agganciato al bordo destro: cresce verso sinistra e i figli lo seguono.
     const toLeft = targetNode.side === 'left';
-    const desc = subtreeOf(layout, nodeIdx);
+    const desc = resizeSubtree ?? new Set<number>();
     const newNodes = layout.nodes.map((n, i) => {
       if (i === nodeIdx) {
         return {
@@ -77,12 +119,13 @@ export function useTopicResize({
       return n;
     });
     return { ...layout, nodes: newNodes };
-  }, [layout, resizing]);
+  }, [layout, resizing, resizeSubtree]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && activeResizeRef.current) {
         activeResizeRef.current = null;
+        cancelQueued();
         setResizing(null);
       }
     };
@@ -133,7 +176,7 @@ export function useTopicResize({
         if (state.type === 'width') {
           const liveW = Math.max(40, Math.round(state.startWidth + dx));
           const { h: liveH } = estimateNodeSize(node, liveW);
-          setResizing({ topicId: node.id, width: liveW, height: liveH });
+          queueResizing({ topicId: node.id, width: liveW, height: liveH });
         } else if (state.type === 'image') {
           const ratio = state.startImageW / Math.max(1, state.startImageH);
           const liveImageW = Math.max(40, Math.round(state.startImageW + dx));
@@ -143,7 +186,7 @@ export function useTopicResize({
             imageW: liveImageW,
             imageH: liveImageH,
           });
-          setResizing({
+          queueResizing({
             topicId: node.id,
             width: liveW,
             height: liveH,
@@ -157,7 +200,9 @@ export function useTopicResize({
 
         const state = activeResizeRef.current;
         activeResizeRef.current = null;
-        const currentResizing = resizingRef.current;
+        // L'ultima anteprima può essere ancora in attesa del frame: conta quella.
+        const currentResizing = pendingRef.current ?? resizingRef.current;
+        cancelQueued();
         setResizing(null);
 
         if (state && state.moved && currentResizing) {
@@ -186,11 +231,11 @@ export function useTopicResize({
         if (detachRef.current === detach) detachRef.current = null;
       };
       detachRef.current = detach;
-      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointermove', onMove, { passive: true });
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', onUp);
     },
-    [toWorld]
+    [toWorld, queueResizing]
   );
 
   return { effectiveLayout, startResize };

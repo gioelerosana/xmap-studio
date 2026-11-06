@@ -15,11 +15,17 @@ export function installTextMeasurer(): void {
   const family =
     getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim() || 'system-ui, sans-serif';
   const cache = new Map<string, number>();
+  // Assegnare `ctx.font` costa (il browser rianalizza la stringa del font): si cambia solo se diverso.
+  let currentFont = '';
   setTextMeasurer((text, fontSizePx, bold, themeFamily) => {
     const key = `${bold ? 'b' : 'n'}${fontSizePx}|${themeFamily ?? ''}|${text}`;
     const hit = cache.get(key);
     if (hit !== undefined) return hit;
-    ctx.font = `${bold ? 700 : 400} ${fontSizePx}px ${themeFontStack(themeFamily, family)}`;
+    const font = `${bold ? 700 : 400} ${fontSizePx}px ${themeFontStack(themeFamily, family)}`;
+    if (font !== currentFont) {
+      ctx.font = font;
+      currentFont = font;
+    }
     const width = ctx.measureText(text).width;
     if (cache.size > 20000) cache.clear();
     cache.set(key, width);
