@@ -20,6 +20,14 @@ export interface NodeEditorProps {
   selectAll: boolean;
   onCommit: (text: string, exit: EditExit, runs?: TitleRun[]) => void;
   onCancel: () => void;
+  /** Blocco in modifica: si fissa all'apertura e non segue i cambi successivi della prop. */
+  topicId: string;
+  /**
+   * Smontaggio senza conferma né annullamento (il blocco sparisce dal layout per collasso, undo,
+   * eliminazione, cambio di foglio…) con il testo cambiato: `topicId` è quello dell'apertura.
+   * Chi la riceve decide se il blocco esiste ancora; altrimenti il testo si scarta.
+   */
+  onUnmountCommit?: (topicId: string, text: string, runs?: TitleRun[]) => void;
 }
 
 interface StyledChar {
@@ -91,21 +99,43 @@ function resolveStyle(startEl: HTMLElement | null, root: HTMLElement): TextStyle
   return result;
 }
 
+/**
+ * Ultimo nodo del contenuto, ignorando i testi vuoti: un `<br>` in coda è quello che il browser
+ * aggiunge a un contenteditable svuotato (o il segnaposto di `renderRunsToElement`), non un a capo.
+ */
+function trailingNode(root: Node): Node | null {
+  let cur: Node | null = root.lastChild;
+  while (cur) {
+    if (cur.nodeType === Node.TEXT_NODE && (cur.textContent ?? '') === '') {
+      cur = cur.previousSibling;
+    } else if (cur.nodeType === Node.ELEMENT_NODE && cur.nodeName !== 'BR' && cur.lastChild) {
+      cur = cur.lastChild;
+    } else {
+      return cur;
+    }
+  }
+  return null;
+}
+
+// Un elemento per unità UTF-16: gli indici coincidono con gli offset della selezione DOM
+// (emoji e simboli fuori dal BMP occupano due unità); i run riuniscono le due metà.
 function getStyledChars(root: HTMLElement): StyledChar[] {
   const chars: StyledChar[] = [];
+  const trailing = trailingNode(root);
 
   function walk(node: Node) {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent ?? '';
       if (text.length > 0) {
         const style = resolveStyle(node.parentElement, root);
-        for (const char of text) {
-          chars.push({ char, style: { ...style } });
+        for (let i = 0; i < text.length; i++) {
+          chars.push({ char: text[i], style: { ...style } });
         }
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
       if (el.tagName === 'BR') {
+        if (el === trailing) return;
         const style = resolveStyle(el.parentElement, root);
         chars.push({ char: '\n', style: { ...style } });
       } else {
@@ -179,8 +209,13 @@ function renderRunsToElement(root: HTMLElement, runs: TitleRun[]) {
       )
   );
 
+  // Un a capo in coda non crea una riga visibile: senza un `<br>` dopo, il cursore resterebbe
+  // sulla riga precedente. Il `<br>` finale non entra nel titolo (vedi `getStyledChars`).
+  const endsWithNewline = runs[runs.length - 1]?.text.endsWith('\n') ?? false;
+
   if (!hasAnyStyle) {
     root.textContent = runs.map((r) => r.text).join('');
+    if (endsWithNewline) root.appendChild(document.createElement('br'));
     return;
   }
 
@@ -228,6 +263,7 @@ function renderRunsToElement(root: HTMLElement, runs: TitleRun[]) {
     }
     root.appendChild(span);
   }
+  if (endsWithNewline) root.appendChild(document.createElement('br'));
 }
 
 function getSelectionOffsets(root: HTMLElement): { start: number; end: number } | null {
@@ -300,6 +336,27 @@ function setSelectionOffsets(root: HTMLElement, start: number, end: number) {
   }
 }
 
+const PLAIN_RUN_KEYS = ['text', 'bold', 'italic', 'underline', 'strikethrough', 'color', 'fontSizePx'];
+
+/** Titolo dell'editor: testo e, solo se c'è formattazione, i run. */
+function readContent(root: HTMLElement): { text: string; runs?: TitleRun[] } {
+  const runs = charsToRuns(getStyledChars(root));
+  const text = runs.map((r) => r.text).join('');
+  const hasStyle = runs.some(
+    (r) =>
+      r.bold ||
+      r.italic ||
+      r.underline ||
+      r.strikethrough ||
+      r.color ||
+      r.fontSizePx ||
+      Object.keys(r).some((k) => !PLAIN_RUN_KEYS.includes(k))
+  );
+  return { text, runs: hasStyle ? runs : undefined };
+}
+
+const contentKey = (c: { text: string; runs?: TitleRun[] }): string => JSON.stringify([c.text, c.runs ?? null]);
+
 /**
  * Editor in place del titolo di un blocco con supporto alla formattazione parziale (attributedTitle):
  * Invio conferma, Maiusc+Invio va a capo, Tab conferma, Esc annulla, incolla solo testo semplice,
@@ -317,9 +374,15 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
   selectAll,
   onCommit,
   onCancel,
+  topicId,
+  onUnmountCommit,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const done = useRef(false);
+  const startTopicId = useRef(topicId);
+  // Allo smontaggio servono le callback più recenti, non quelle del primo render.
+  const onUnmountCommitRef = useRef(onUnmountCommit);
+  onUnmountCommitRef.current = onUnmountCommit;
 
   const fit = () => {
     const el = ref.current;
@@ -345,6 +408,19 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       setSelectionOffsets(el, totalLen, totalLen);
     }
     fit();
+    // Contenuto di partenza così come lo rilegge `readContent`: allo smontaggio si conferma solo
+    // se è cambiato (niente passi di annullamento vuoti). Lo smontaggio simulato di StrictMode
+    // arriva prima di ogni modifica, quindi non conferma nulla.
+    const initialSnapshot = contentKey(readContent(el));
+    return () => {
+      // Già confermato (Invio, Tab, blur) o annullato (Esc): niente da fare. Il blur non arriva
+      // a un editor smontato, quindi senza questo il testo scritto andrebbe perso.
+      if (done.current) return;
+      const content = readContent(el);
+      if (contentKey(content) === initialSnapshot) return;
+      done.current = true;
+      onUnmountCommitRef.current?.(startTopicId.current, content.text, content.runs);
+    };
     // Solo all'apertura.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -357,23 +433,8 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       onCommit(initialText, exit);
       return;
     }
-    const chars = getStyledChars(el);
-    const runs = charsToRuns(chars);
-    const text = runs.map((r) => r.text).join('');
-    const hasStyle = runs.some(
-      (r) =>
-        r.bold ||
-        r.italic ||
-        r.underline ||
-        r.strikethrough ||
-        r.color ||
-        r.fontSizePx ||
-        Object.keys(r).some(
-          (k) =>
-            !['text', 'bold', 'italic', 'underline', 'strikethrough', 'color', 'fontSizePx'].includes(k)
-        )
-    );
-    onCommit(text, exit, hasStyle ? runs : undefined);
+    const { text, runs } = readContent(el);
+    onCommit(text, exit, runs);
   };
 
   // Applica `mutate` ai caratteri selezionati; senza selezione a tutto il testo (comandi dalla barra).
@@ -481,7 +542,8 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
+    // Gli appunti di Windows usano CRLF: nel titolo resta solo `\n`.
+    const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
     if (!text) return;
 
     const el = ref.current;
@@ -502,8 +564,8 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
         : {};
 
     const insertedChars: StyledChar[] = [];
-    for (const char of text) {
-      insertedChars.push({ char, style: { ...insertStyle } });
+    for (let i = 0; i < text.length; i++) {
+      insertedChars.push({ char: text[i], style: { ...insertStyle } });
     }
 
     const newChars = [
@@ -536,8 +598,20 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       onPaste={handlePaste}
       onBlur={() => finish('blur')}
       onKeyDown={(e) => {
+        // Ctrl/Cmd+S (e Maiusc per «Salva con nome») passa all'app: il suo salvataggio toglie il
+        // focus all'editor, il blur conferma il testo e poi si salva. Qui non si fa altro.
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          !e.altKey &&
+          e.key.toLowerCase() === 's' &&
+          !e.nativeEvent.isComposing
+        ) {
+          return;
+        }
         e.stopPropagation();
-        if (e.nativeEvent.isComposing) return;
+        // Safari conferma la composizione IME con un keydown di Invio con `isComposing` falso
+        // ma keyCode 229: senza questo controllo chiuderebbe l'editor a metà parola.
+        if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
         const isCtrlOrMeta = e.ctrlKey || e.metaKey;
         if (isCtrlOrMeta && !e.altKey && !e.shiftKey) {
           const key = e.key.toLowerCase();

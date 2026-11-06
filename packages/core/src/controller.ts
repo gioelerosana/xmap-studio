@@ -86,7 +86,7 @@ import { validateArchiveBytes, ValidationReport } from './safety/validate.js';
 import { toMarkdown } from './exporters/markdown.js';
 import { toOPML } from './exporters/opml.js';
 import { toOutline } from './exporters/outline.js';
-import { importToSheet } from './exporters/import.js';
+import { importToSheets } from './exporters/import.js';
 import { Layout, MapStructure } from './layout/types.js';
 import { DEFAULT_LAYOUT_OPTS, layoutSheets } from './layout/layout.js';
 import {
@@ -111,8 +111,12 @@ const XAP_PREFIX = 'xap:';
 
 export class AppController {
   private currentWorkbook: OpenWorkbook | null = null;
-  /** Ultimo blocco creato e posizione di cronologia in cui è nato (per fondere creazione e rinomina). */
-  private lastCreated: { id: string; wb: OpenWorkbook; pos: number } | null = null;
+  /**
+   * Ultimo blocco creato e revisione dello snapshot in cui è nato (per fondere creazione e rinomina).
+   * Si confronta la revisione, non la posizione: con la cronologia piena `pos` resta fermo e
+   * un passo successivo alla creazione avrebbe la stessa posizione.
+   */
+  private lastCreated: { id: string; wb: OpenWorkbook; revision: number } | null = null;
 
   /**
    * `platform` abilita lettura/scrittura su disco e il rilevamento di XMind;
@@ -262,7 +266,7 @@ export class AppController {
   /** Registra la creazione di `newId` in un passo di cronologia e ne ricorda il blocco per fondere la rinomina successiva. */
   private commitCreation(wb: OpenWorkbook, newId: string): WorkbookDto {
     wb.pushHistory();
-    this.lastCreated = { id: newId, wb, pos: wb.pos };
+    this.lastCreated = { id: newId, wb, revision: wb.currentRevision() };
     return wb.toDto();
   }
 
@@ -276,8 +280,12 @@ export class AppController {
     mergeWithPrevious: boolean | undefined
   ): WorkbookDto {
     const lc = this.lastCreated;
-    if (mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.pos === wb.pos) {
+    if (mergeWithPrevious && lc && lc.id === topicId && lc.wb === wb && lc.revision === wb.currentRevision()) {
+      // Dopo un undo/redo la creazione non è in cima: `replaceHistoryTop` aggiunge un passo nuovo.
+      const replacesCreation = wb.pos === wb.history.length - 1;
       wb.replaceHistoryTop();
+      // Lo snapshot fuso ha una revisione nuova ma resta il passo di creazione del blocco.
+      if (replacesCreation) lc.revision = wb.currentRevision();
       return wb.toDto();
     }
     return this.commit(wb);
@@ -1044,28 +1052,41 @@ export class AppController {
     options: { asNewSheet?: boolean } = {}
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
-    const importedSheet = await importToSheet(format, text, async (t, latex) => {
+    const importedSheets = await importToSheets(format, text, async (t, latex) => {
       const { outcome, png } = await applyEquation(t, latex);
       wb.archive.resources.set(outcome.resource, png);
     });
+    this.ensureSameWorkbook(wb);
 
     const asNewSheet = options.asNewSheet ?? true;
     const root = wb.content[0]?.rootTopic;
-    if (asNewSheet || !root || !importedSheet.rootTopic) {
+    const [first, ...others] = importedSheets;
+    if (asNewSheet || !root || !first.rootTopic) {
       // Mai sovrascrivere il primo foglio: se non c'è una radice a cui
       // agganciare l'import, lo si aggiunge come foglio nuovo.
-      wb.content.push(importedSheet);
+      wb.content.push(first);
     } else {
-      appendAttachedChild(root, importedSheet.rootTopic);
+      appendAttachedChild(root, first.rootTopic);
     }
+    // Un outline con più fogli (Markdown con più `# `): i fogli dopo il primo
+    // diventano sempre fogli nuovi, anche agganciando il primo alla radice.
+    wb.content.push(...others);
 
     return this.commit(wb);
+  }
+
+  /** Dopo un'attesa asincrona: se nel frattempo si è aperta un'altra mappa, il risultato finirebbe in quella chiusa. */
+  private ensureSameWorkbook(wb: OpenWorkbook): void {
+    if (this.currentWorkbook !== wb) {
+      throw new XmapError(CODE_INVALID_INPUT, 'La mappa è cambiata durante l\'operazione: riprova.');
+    }
   }
 
   public async mergeWorkbook(otherBytes: Uint8Array): Promise<MergeResultDto> {
     const wb = this.ensureWorkbook();
     await validateArchiveBytes(otherBytes);
     const otherArchive = await readArchive(otherBytes);
+    this.ensureSameWorkbook(wb);
     const otherContentBytes = otherArchive.entries.get('content.json');
     if (!otherContentBytes) throw new XmapError(CODE_FORMAT, 'content.json assente nel file da unire');
 
@@ -1218,11 +1239,11 @@ export class AppController {
   /**
    * Segna il workbook come salvato dopo che i byte sono stati scritti da un
    * adapter esterno (Electron IPC, File System Access API). Opzionalmente
-   * aggiorna il percorso (Salva con nome).
+   * aggiorna il percorso (Salva con nome) o, senza percorso, il solo nome del file.
    */
-  public markSaved(path?: string, contentHash?: string, revision?: number): WorkbookDto {
+  public markSaved(path?: string, contentHash?: string, revision?: number, fileName?: string): WorkbookDto {
     const wb = this.ensureWorkbook();
-    wb.markSaved(path, contentHash, revision);
+    wb.markSaved(path, contentHash, revision, fileName);
     return wb.toDto();
   }
 

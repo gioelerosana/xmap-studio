@@ -33,7 +33,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file && (file.name.endsWith('.xmind') || file.type.includes('zip'))) {
+    if (file && (file.name.toLowerCase().endsWith('.xmind') || file.type.includes('zip'))) {
       onDropFiles(file);
     }
   };

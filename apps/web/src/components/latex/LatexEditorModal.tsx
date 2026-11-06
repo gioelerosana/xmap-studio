@@ -55,7 +55,10 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
     inlineMode,
   } = draft;
 
-  const canApply = !!latex.trim() && !preview?.error && !applying;
+  // Un errore dell'anteprima vale solo per il testo da cui è stata disegnata: se nel frattempo il
+  // testo è cambiato, la conferma lo rivalida subito (`handleApplyEquation`).
+  const previewCurrent = preview?.latex === latex.trim();
+  const canApply = !!latex.trim() && !(previewCurrent && preview?.error) && !applying;
   const apply = async () => {
     if (!canApply) return;
     if (await handleApplyEquation()) onClose();
@@ -87,7 +90,8 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
   // Esc chiude il dialog solo se non l'ha già usato un suggerimento aperto.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) onCloseRef.current();
+      // Esc durante la composizione IME annulla solo la parola in corso, non chiude l'editor.
+      if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing) onCloseRef.current();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);

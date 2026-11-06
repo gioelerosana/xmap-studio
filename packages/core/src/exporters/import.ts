@@ -11,21 +11,55 @@ export interface OutlineNode {
   children: OutlineNode[];
 }
 
+/** Prima radice di `parseOutlineSheets`. */
 export function parseOutline(format: 'markdown' | 'opml' | string, text: string): OutlineNode {
-  let root: OutlineNode;
+  return parseOutlineSheets(format, text)[0];
+}
+
+/**
+ * Radici dell'outline, una per foglio. Un Markdown con più intestazioni `# ` di
+ * primo livello (come lo scrive `toMarkdown` per più fogli) dà una radice per
+ * intestazione; con una sola, una radice. In OPML un solo `outline` di primo
+ * livello è la radice (il titolo dell'intestazione si ignora, come lo scrive
+ * `toOPML` per un foglio); con più `outline` la radice è il titolo dell'intestazione.
+ */
+export function parseOutlineSheets(format: 'markdown' | 'opml' | string, text: string): OutlineNode[] {
+  let roots: OutlineNode[];
   if (format === 'markdown') {
-    root = parseMarkdown(text);
+    roots = splitMarkdownSheets(text).map(parseMarkdown);
   } else if (format === 'opml') {
-    root = parseOPML(text);
+    const root = parseOPML(text);
+    roots = [root.children.length === 1 ? root.children[0] : root];
   } else {
     throw new XmapError(CODE_FORMAT, `Formato non supportato: ${format}`);
   }
 
-  if (root.children.length === 0 && !root.title && !root.latex) {
-    throw new XmapError(CODE_FORMAT, 'Nessun argomento riconosciuto nel file.');
+  for (const root of roots) {
+    if (root.children.length === 0 && !root.title && !root.latex) {
+      throw new XmapError(CODE_FORMAT, 'Nessun argomento riconosciuto nel file.');
+    }
   }
 
-  return root;
+  return roots;
+}
+
+/**
+ * Spezza il testo in un pezzo per intestazione `# ` (stesso criterio di
+ * `parseMarkdown`). Con una sola intestazione, o nessuna, il testo resta intero;
+ * le righe prima della prima intestazione vanno col primo pezzo.
+ */
+function splitMarkdownSheets(text: string): string[] {
+  const lines = text.split('\n');
+  const starts: number[] = [];
+  lines.forEach((line, i) => {
+    if (line.trim().startsWith('# ')) starts.push(i);
+  });
+  if (starts.length <= 1) return [text];
+  return starts.map((start, k) => {
+    const from = k === 0 ? 0 : start;
+    const to = k + 1 < starts.length ? starts[k + 1] : lines.length;
+    return lines.slice(from, to).join('\n');
+  });
 }
 
 export async function nodeToTopic(
@@ -65,15 +99,26 @@ export async function importToSheet(
   text: string,
   applyEq?: (topic: Topic, latex: string) => Promise<void> | void
 ): Promise<Sheet> {
-  const rootNode = parseOutline(format, text);
-  const rootTopic = await nodeToTopic(rootNode, applyEq);
+  return (await importToSheets(format, text, applyEq))[0];
+}
 
-  return {
-    id: newTopicId(),
-    class: 'sheet',
-    title: rootTopic.title || 'Mappa importata',
-    rootTopic,
-  };
+/** Un foglio per ogni radice di `parseOutlineSheets`, nell'ordine del file. */
+export async function importToSheets(
+  format: 'markdown' | 'opml' | string,
+  text: string,
+  applyEq?: (topic: Topic, latex: string) => Promise<void> | void
+): Promise<Sheet[]> {
+  const sheets: Sheet[] = [];
+  for (const rootNode of parseOutlineSheets(format, text)) {
+    const rootTopic = await nodeToTopic(rootNode, applyEq);
+    sheets.push({
+      id: newTopicId(),
+      class: 'sheet',
+      title: rootTopic.title || 'Mappa importata',
+      rootTopic,
+    });
+  }
+  return sheets;
 }
 
 export function parseMarkdown(text: string): OutlineNode {
@@ -183,9 +228,10 @@ function parseBullet(line: string): { indent: number; content: string } | null {
   } else if (rest === '+') {
     content = '';
   } else {
-    const numMatch = rest.match(/^(\d+)\.\s*(.*)$/);
+    // Elenco numerato: "1. testo" o "1." da solo; "3.14" è testo, non un elemento.
+    const numMatch = rest.match(/^\d+\.(?:\s+(.*))?$/);
     if (numMatch) {
-      content = numMatch[2];
+      content = numMatch[1] ?? '';
     }
   }
 
@@ -209,6 +255,8 @@ function splitLabels(s: string): { rest: string; labels: string[] } {
   const labels: string[] = [];
   while (rest.endsWith('`')) {
     const lastTick = rest.length - 1;
+    // "\`" è un backtick del titolo (vedi `escapeMarkdownTitle`), non la fine di un'etichetta.
+    if (isEscaped(rest, lastTick)) break;
     const openTick = rest.lastIndexOf('`', lastTick - 1);
     if (openTick === -1) break;
     const label = rest.slice(openTick + 1, lastTick);
@@ -223,28 +271,50 @@ function splitLabels(s: string): { rest: string; labels: string[] } {
   return { rest: rest.trim(), labels };
 }
 
+/** Vero se il carattere in `i` è preceduto da un numero dispari di backslash. */
+function isEscaped(s: string, i: number): boolean {
+  let n = 0;
+  for (let j = i - 1; j >= 0 && s[j] === '\\'; j--) n++;
+  return n % 2 === 1;
+}
+
+/** Indice dell'ultimo `$` non escapato in `s` fino a `from` incluso, o -1. */
+function lastUnescapedDollar(s: string, from: number): number {
+  for (let i = from; i >= 0; i--) {
+    if (s[i] === '$' && !isEscaped(s, i)) return i;
+  }
+  return -1;
+}
+
+/** Inverso di `escapeMarkdownTitle` (exporters/markdown.ts): `\\`, `` \` `` e `\$` tornano letterali. */
+function unescapeTitle(s: string): string {
+  return s.replace(/\\([\\`$])/g, '$1');
+}
+
 function splitLatex(s: string): { title: string; latex?: string } {
   const trimmed = s.trim();
-  if (trimmed.length >= 2 && trimmed.startsWith('$') && trimmed.endsWith('$')) {
+  const last = trimmed.length - 1;
+  if (trimmed.length >= 2 && trimmed.startsWith('$') && trimmed.endsWith('$') && !isEscaped(trimmed, last)) {
     const inner = trimmed.slice(1, -1);
     if (inner.length > 0) {
       return { title: '', latex: inner };
     }
   }
-  const close = trimmed.lastIndexOf('$');
+  // I `$` escapati sono testo del titolo, non delimitatori della formula.
+  const close = lastUnescapedDollar(trimmed, last);
   if (close > 0) {
-    const open = trimmed.lastIndexOf('$', close - 1);
+    const open = lastUnescapedDollar(trimmed, close - 1);
     if (open !== -1) {
       const before = trimmed.slice(0, open);
       if (before.length > 0 && before.endsWith(' ') && close > open + 1) {
         return {
-          title: before.trim(),
+          title: unescapeTitle(before.trim()),
           latex: trimmed.slice(open + 1, close),
         };
       }
     }
   }
-  return { title: trimmed };
+  return { title: unescapeTitle(trimmed) };
 }
 
 function bareLatex(s: string): string | undefined {
@@ -273,13 +343,14 @@ function bareLabels(s: string): string[] | undefined {
 
 export function parseOPML(text: string): OutlineNode {
   const titleMatch = text.match(/<title>([^<]*)<\/title>/i);
-  const headTitle = titleMatch ? titleMatch[1].trim() : '';
+  const headTitle = titleMatch ? unescapeXml(titleMatch[1]).trim() : '';
 
   const arena: OutlineNode[] = [{ title: headTitle, labels: [], children: [] }];
   const childrenMap: number[][] = [[]];
   const stack: number[] = [];
 
-  const regex = /<(\/)?outline([^>]*?)(\/)?>/gi;
+  // Gli attributi tra virgolette possono contenere '>' letterali (XML lo ammette).
+  const regex = /<(\/)?outline\b((?:[^>"']|"[^"]*"|'[^']*')*?)(\/)?>/gi;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {

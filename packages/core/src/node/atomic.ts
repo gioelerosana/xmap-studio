@@ -34,7 +34,9 @@ export async function atomicWrite(
 ): Promise<WriteReport> {
   const { makeBackup = true, expectedHash } = options;
 
-  const resolved = path.resolve(targetPath);
+  // Un collegamento simbolico va seguito: rinominare sul link lo sostituirebbe con un
+  // file normale e il file vero (es. in una cartella sincronizzata) non verrebbe aggiornato.
+  const resolved = resolveSymlink(path.resolve(targetPath));
   const dir = path.dirname(resolved);
 
   if (!fs.existsSync(dir)) {
@@ -59,7 +61,12 @@ export async function atomicWrite(
   try {
     const fd = fs.openSync(tempPath, 'wx');
     try {
-      fs.writeSync(fd, bytes, 0, bytes.length);
+      // writeSync può scrivere meno byte di quelli chiesti: si ripete fino alla fine.
+      let written = 0;
+      while (written < bytes.length) {
+        written += fs.writeSync(fd, bytes, written, bytes.length - written);
+      }
+      preserveMode(fd, resolved);
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);
@@ -124,28 +131,61 @@ export async function atomicWrite(
   };
 }
 
+/** Percorso reale di `target` se è un collegamento simbolico esistente; altrimenti `target`. */
+function resolveSymlink(target: string): string {
+  try {
+    if (fs.lstatSync(target).isSymbolicLink()) return fs.realpathSync(target);
+  } catch {
+    // Il file non esiste ancora (Salva con nome) o il link è interrotto: si scrive su `target`.
+  }
+  return target;
+}
+
+/**
+ * Riporta sul file temporaneo i permessi del file che sostituisce: senza, il rename
+ * lascerebbe i permessi di default (es. un file privato 0600 diventerebbe leggibile da tutti).
+ */
+function preserveMode(fd: number, target: string): void {
+  let mode: number;
+  try {
+    mode = fs.statSync(target).mode & 0o7777;
+  } catch {
+    return; // file nuovo: restano i permessi di default
+  }
+  try {
+    fs.fchmodSync(fd, mode);
+  } catch {
+    // Filesystem senza permessi POSIX (es. FAT, alcune condivisioni di rete)
+  }
+}
+
+/** Escape dei caratteri speciali delle regex, per usare un nome di file come letterale. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Tiene gli ultimi MAX_BACKUPS backup di `stem`. Riconosce solo i nomi generati da
+ * `atomicWrite` (`<stem>.backup.<AAAAMMGG-hhmmss>[-n].xmind`): un prefisso non basta,
+ * prenderebbe i backup di un altro file chiamato `<stem>.backup.X.xmind`. L'ordine viene
+ * dal timestamp nel nome e non dall'mtime, che `copyFileSync` su macOS/Windows copia
+ * dall'originale.
+ */
 function pruneBackups(dir: string, stem: string): void {
   try {
-    const prefix = `${stem}.backup.`;
-    const entries = fs.readdirSync(dir);
-    const backups: { file: string; mtime: number }[] = [];
+    const pattern = new RegExp(`^${escapeRegExp(stem)}\\.backup\\.(\\d{8}-\\d{6})(?:-(\\d+))?\\.xmind$`);
+    const backups: { file: string; ts: string; n: number }[] = [];
 
-    for (const file of entries) {
-      if (file.startsWith(prefix) && file.endsWith('.xmind')) {
-        const full = path.join(dir, file);
-        try {
-          const stat = fs.statSync(full);
-          backups.push({ file: full, mtime: stat.mtimeMs });
-        } catch {
-          // Ignora
-        }
-      }
+    for (const file of fs.readdirSync(dir)) {
+      const match = pattern.exec(file);
+      if (!match) continue;
+      backups.push({ file: path.join(dir, file), ts: match[1], n: match[2] ? Number(match[2]) : 0 });
     }
 
     if (backups.length <= MAX_BACKUPS) return;
 
-    // Ordina dal più vecchio al più recente
-    backups.sort((a, b) => a.mtime - b.mtime || a.file.localeCompare(b.file));
+    // Dal più vecchio al più recente: timestamp, poi contatore di collisione nello stesso secondo.
+    backups.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.n - b.n));
 
     const toRemove = backups.slice(0, backups.length - MAX_BACKUPS);
     for (const b of toRemove) {

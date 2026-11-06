@@ -31,11 +31,23 @@ self.addEventListener('install', (event) => {
   );
 });
 
+// Con `skipWaiting` il nuovo SW controlla subito anche le schede già aperte, che
+// restano sulla versione precedente: i loro chunk caricati più tardi (import
+// dinamici) esistono solo nella cache di quella versione, perché il server dopo
+// un deploy serve solo i file nuovi. Si tiene quindi anche la cache della
+// versione precedente (`caches.match` cerca in tutte) e si cancellano solo le
+// più vecchie. `caches.keys()` elenca le cache in ordine di creazione.
+const KEEP_PREVIOUS_CACHES = 1;
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('xmap-studio-') && k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => {
+        const old = keys.filter((k) => k.startsWith('xmap-studio-') && k !== CACHE);
+        const stale = old.slice(0, Math.max(0, old.length - KEEP_PREVIOUS_CACHES));
+        return Promise.all(stale.map((k) => caches.delete(k)));
+      })
       .then(() => self.clients.claim())
   );
 });
@@ -54,6 +66,14 @@ function withTimeout(promise, ms) {
       }
     );
   });
+}
+
+// Prima la cache della versione corrente: le cache precedenti (tenute per le
+// schede ancora aperte sulla vecchia versione) hanno copie vecchie degli stessi
+// URL senza hash (shell, icone, demo) e `caches.match` le troverebbe per prime.
+async function matchCached(request, options) {
+  const current = await (await caches.open(CACHE)).match(request, options);
+  return current || caches.match(request, options);
 }
 
 async function put(request, response) {
@@ -75,13 +95,13 @@ async function handleNavigation(event) {
   } catch {
     // offline o rete appesa: si ripiega sulla cache
   }
-  const cached = (await caches.match(SHELL)) || (await caches.match(event.request, { ignoreSearch: true }));
+  const cached = (await matchCached(SHELL)) || (await matchCached(event.request, { ignoreSearch: true }));
   return cached || network;
 }
 
 // Resto (bundle con hash, icone, demo): cache prima, rete come ripiego.
 async function handleAsset(event) {
-  const cached = await caches.match(event.request, { ignoreSearch: true });
+  const cached = await matchCached(event.request, { ignoreSearch: true });
   if (cached) return cached;
   const response = await fetch(event.request);
   event.waitUntil(put(event.request, response.clone()));

@@ -47,11 +47,11 @@ interface Box {
 }
 
 /**
- * Accetta `"(0,2)"` (indici inclusivi); rifiuta `"0,2"`, `"(a,b)"` e `"(2,1)"`
+ * Accetta `"(0,2)"` e `"(0, 2)"` (indici inclusivi, spazi attorno alla virgola come
+ * per i sommari, vedi `parseRange`); rifiuta `"0,2"`, `"(a,b)"` e `"(2,1)"`
  * (inizio dopo fine, il controllo è in `parseBoundaryRange`).
- * Prova: https://regex101.com/?regex=%5E%5C((%5Cd%2B),(%5Cd%2B)%5C)%24&testString=(0%2C2)%0A0%2C2%0A(a%2Cb)
  */
-const CHILD_RANGE_PATTERN = /^\((\d+),(\d+)\)$/;
+const CHILD_RANGE_PATTERN = /^\((\d+)\s*,\s*(\d+)\)$/;
 
 /** Margine sommato sui due lati della cornice (sinistra + destra, alto + basso). */
 const TOTAL_PADDING = BOUNDARY_PADDING + BOUNDARY_PADDING;

@@ -17,6 +17,8 @@ interface GlobalShortcutsOptions {
   handleOpenLocalFile: () => Promise<void>;
   handleAddChild: (parentId: string) => void;
   handleCreateSummary: () => void;
+  /** Con le Impostazioni aperte la mappa è nascosta: le scorciatoie che agiscono su di lei tacciono. */
+  settingsOpen: boolean;
   setSettingsOpen: Dispatch<SetStateAction<boolean>>;
   setPrintModalOpen: Dispatch<SetStateAction<boolean>>;
   setExportModalOpen: Dispatch<SetStateAction<boolean>>;
@@ -37,6 +39,7 @@ export function useGlobalShortcuts({
   handleOpenLocalFile,
   handleAddChild,
   handleCreateSummary,
+  settingsOpen,
   setSettingsOpen,
   setPrintModalOpen,
   setExportModalOpen,
@@ -55,6 +58,8 @@ export function useGlobalShortcuts({
       // sotto di lui non partono: valgono solo salvataggio, impostazioni e Zen.
       const inDialog = isDialogOpen();
       if (inDialog && !(key === 's' || key === ',' || (e.altKey && e.code === 'KeyZ'))) return;
+      // Con le Impostazioni aperte restano solo il salvataggio e Ctrl+, (che le chiude).
+      if (settingsOpen && !(key === 's' || key === ',')) return;
       // Ctrl+Alt+Z: modalità Zen (prima di Ctrl+Z, che è l'annulla).
       if (e.altKey && (key === 'z' || e.code === 'KeyZ')) {
         e.preventDefault();
@@ -97,13 +102,15 @@ export function useGlobalShortcuts({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleAddChild, handleCreateSummary, hasWorkbook, setSettingsOpen, setPrintModalOpen, setExportModalOpen, setZenMode]);
+  }, [doUndoRedo, handleSave, handleSaveAs, handleOpenLocalFile, selectedTopic, allTopics, handleAddChild, handleCreateSummary, hasWorkbook, settingsOpen, setSettingsOpen, setPrintModalOpen, setExportModalOpen, setZenMode]);
 
   // Esc fuori dai campi di testo: la selezione multipla torna singola, quella singola si toglie.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
       if (isDialogOpen()) return;
+      // Esc chiude le Impostazioni (SettingsPage): la selezione della mappa nascosta resta.
+      if (settingsOpen) return;
       if (editing) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
@@ -125,5 +132,5 @@ export function useGlobalShortcuts({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editing, selectedTopicIds, selectedTopicId, setSelectedTopicIds, selectSingle, zenMode, setZenMode]);
+  }, [editing, selectedTopicIds, selectedTopicId, setSelectedTopicIds, selectSingle, zenMode, setZenMode, settingsOpen]);
 }

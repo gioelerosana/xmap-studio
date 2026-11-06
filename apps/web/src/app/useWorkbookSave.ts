@@ -4,6 +4,7 @@ import { saveLocalXmindFile, confirmForceSave } from '../adapters/fileSystem.js'
 import { nextcloudClient, type NextcloudFileRef } from '../adapters/nextcloud.js';
 import type { AddToast } from './useToasts.js';
 import { UNTITLED_FILE_NAME, sanitizeName } from './fileNames.js';
+import { flushInPlaceEdit } from './flushInPlaceEdit.js';
 
 interface WorkbookSaveOptions {
   controller: AppController;
@@ -40,6 +41,9 @@ export function useWorkbookSave({
   const writeWorkbook = useCallback(
     async (force: boolean, saveAs: boolean): Promise<boolean> => {
       if (!workbook || savingRef.current) return false;
+      // I byte vengono dal controller: prima si conferma un titolo in corso di modifica.
+      await flushInPlaceEdit();
+      if (savingRef.current) return false;
       savingRef.current = true;
       setBusy(true);
       try {
@@ -105,7 +109,8 @@ export function useWorkbookSave({
         if (written.handle) setFileHandle(written.handle);
         // Da qui il file di riferimento è quello locale: "Salva" non deve più scrivere su Nextcloud.
         setCloudFile(undefined);
-        controller.markSaved(undefined, contentHash, revision);
+        // Il nome scelto nel dialogo (o quello del download) diventa il nome della mappa.
+        controller.markSaved(undefined, contentHash, revision, written.fileName || undefined);
         refreshState();
         addToast('success', `Mappa salvata (${validation.resourceRefs} risorse registrate)`);
         return true;
@@ -152,7 +157,7 @@ export function useWorkbookSave({
         );
         setCloudFile({ path, etag });
         setFileHandle(undefined);
-        controller.markSaved(undefined, contentHash, revision);
+        controller.markSaved(undefined, contentHash, revision, path.split('/').filter(Boolean).pop() || undefined);
         refreshState();
         addToast('success', 'Mappa salvata su Nextcloud');
         return true;
@@ -169,12 +174,17 @@ export function useWorkbookSave({
 
   const handleSave = useCallback(async () => {
     if (!workbook) return;
-    if (!workbook.dirty) {
+    await flushInPlaceEdit();
+    // Mappa nuova mai salvata: "Salva" deve poterla scrivere anche senza modifiche.
+    const neverSaved =
+      workbook.path === null && workbook.fileName === UNTITLED_FILE_NAME && !fileHandle && !cloudFile;
+    // `workbook.dirty` può essere vecchio (titolo appena confermato): vale il controller.
+    if (!controller.isDirty() && !neverSaved) {
       addToast('info', 'Nessuna modifica da salvare.');
       return;
     }
     await writeWorkbook(false, false);
-  }, [workbook, writeWorkbook, addToast]);
+  }, [workbook, controller, writeWorkbook, addToast, fileHandle, cloudFile]);
 
   const handleSaveAs = useCallback(async () => {
     if (!workbook) return;

@@ -30,6 +30,12 @@ export interface ModalProps {
   className?: string;
 }
 
+/**
+ * Dialog aperti, dal più vecchio al più recente. Con due dialog sovrapposti
+ * (es. conferma di chiusura sopra l'export) Esc chiude solo quello in cima.
+ */
+const openStack: symbol[] = [];
+
 const SIZES = {
   sm: 'max-w-sm',
   md: 'max-w-md',
@@ -61,11 +67,19 @@ export function Modal({
     // Rispetta un eventuale `autoFocus` di un campo interno.
     if (dialog && !dialog.contains(document.activeElement)) dialog.focus();
 
+    const token = Symbol('modal');
+    openStack.push(token);
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) onCloseRef.current();
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (openStack[openStack.length - 1] !== token) return;
+      // Consumato: chi ascolta dopo (pagina Impostazioni, scorciatoie della mappa) non lo riusa.
+      event.preventDefault();
+      onCloseRef.current();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
+      const index = openStack.indexOf(token);
+      if (index !== -1) openStack.splice(index, 1);
       document.removeEventListener('keydown', onKeyDown);
       previouslyFocused?.focus?.();
     };

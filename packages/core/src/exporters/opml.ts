@@ -75,11 +75,24 @@ function opmlAttrs(text: string, topic?: Topic): string {
   return attrs;
 }
 
+/** Caratteri non ammessi in XML 1.0 (controllo C0 tranne tab/a capo, surrogati isolati, U+FFFE/U+FFFF). */
+const INVALID_XML_CHARS =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * Escape per testo e valori di attributo. A capo, ritorno e tab diventano riferimenti
+ * numerici: un parser XML normalizza in spazi quelli letterali negli attributi, e le
+ * note su più righe arriverebbero su una sola riga.
+ */
 function xmlEscape(s: string): string {
   return s
+    .replace(INVALID_XML_CHARS, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replace(/'/g, '&apos;')
+    .replace(/\n/g, '&#10;')
+    .replace(/\r/g, '&#13;')
+    .replace(/\t/g, '&#9;');
 }

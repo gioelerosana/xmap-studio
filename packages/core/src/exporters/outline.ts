@@ -27,7 +27,7 @@ export function toOutline(sheets: Sheet[]): string {
 function writePreamble(topic: Topic, write: (s: string) => void): void {
   const notes = topicNotesText(topic);
   if (notes) {
-    for (const line of notes.split('\n')) {
+    for (const line of notes.replace(/\r\n?/g, '\n').split('\n')) {
       write(`> ${line}\n`);
     }
     write('\n');
@@ -48,7 +48,7 @@ function writeOutlineTopic(topic: Topic, depth: number, write: (s: string) => vo
 
   const notes = topicNotesText(topic);
   if (notes) {
-    for (const line of notes.split('\n')) {
+    for (const line of notes.replace(/\r\n?/g, '\n').split('\n')) {
       write(`${indent}    ${line}\n`);
     }
   }

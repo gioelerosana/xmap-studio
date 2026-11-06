@@ -203,7 +203,9 @@ export function useTopicEditing({
 
   const handleCommitEdit = (id: string, text: string, exit: EditExit, runs?: TitleRun[]) => {
     const isNew = editing?.id === id && editing.isNew;
-    setEditing(null);
+    // Solo se si sta ancora modificando questo blocco: la conferma di un editor smontato
+    // non deve chiudere l'editing nel frattempo passato a un altro blocco.
+    setEditing((cur) => (cur && cur.id !== id ? cur : null));
     const topic = allTopics.find((t) => t.id === id);
     try {
       if (topic) {

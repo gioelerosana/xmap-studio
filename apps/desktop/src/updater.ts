@@ -473,6 +473,15 @@ function restartToUpdate(): void {
 }
 
 /**
+ * L'utente ha annullato la chiusura di una finestra (modifiche non salvate):
+ * la richiesta di riavvio decade, altrimenti l'app si riavvierebbe alla
+ * prossima chiusura normale.
+ */
+export function cancelRestartRequest(): void {
+  restartRequested = false;
+}
+
+/**
  * Da chiamare in `window-all-closed`: se c'è un aggiornamento pronto e
  * l'utente ha chiesto il riavvio, riavvia sulla nuova versione.
  */

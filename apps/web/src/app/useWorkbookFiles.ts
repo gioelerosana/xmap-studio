@@ -11,6 +11,7 @@ import type { NextcloudAccount, NextcloudEntry } from '@xmap/core';
 import { subscribeIncomingFiles, type IncomingFile } from './incomingFiles.js';
 import type { AddToast } from './useToasts.js';
 import { UNTITLED_FILE_NAME } from './fileNames.js';
+import { isEditingInPlace } from './flushInPlaceEdit.js';
 
 export type CloseAction = null | 'confirm';
 export type ReplacementAction = 'save' | 'discard' | 'cancel';
@@ -198,6 +199,8 @@ export function useWorkbookFiles({
   const handleConfirmClose = async (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') {
       setClosePrompt(null);
+      // Il main process deve saperlo: annulla anche un riavvio per aggiornare in corso.
+      window.electronAPI?.cancelClose?.();
       return;
     }
     if (action === 'save') {
@@ -227,7 +230,8 @@ export function useWorkbookFiles({
   // Chiusura del tab/finestra del browser con modifiche non salvate.
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (controller.isDirty()) e.preventDefault();
+      // Anche un titolo ancora in modifica nell'editor in place andrebbe perso.
+      if (controller.isDirty() || isEditingInPlace()) e.preventDefault();
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);

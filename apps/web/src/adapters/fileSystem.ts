@@ -117,8 +117,9 @@ export async function saveLocalXmindFile(
   suggestedName: string = 'map.xmind',
   existingHandle?: FileSystemFileHandle,
   expectedHash?: string
-): Promise<{ handle?: FileSystemFileHandle } | null> {
+): Promise<{ handle?: FileSystemFileHandle; fileName: string } | null> {
   // `null` solo se l'utente annulla il dialogo: il file non è stato scritto.
+  // `fileName` è il nome con cui il file è stato scritto (handle o download).
   // Se abbiamo un handle esistente e possiamo scrivere
   if (existingHandle && 'createWritable' in existingHandle) {
     try {
@@ -132,7 +133,7 @@ export async function saveLocalXmindFile(
       const writable = await (existingHandle as any).createWritable();
       await writable.write(bytes);
       await writable.close();
-      return { handle: existingHandle };
+      return { handle: existingHandle, fileName: existingHandle.name || suggestedName };
     } catch (err) {
       if (err instanceof FileConflictError) throw err;
       // Procedi con showSaveFilePicker o download
@@ -156,7 +157,7 @@ export async function saveLocalXmindFile(
       const writable = await handle.createWritable();
       await writable.write(bytes);
       await writable.close();
-      return { handle };
+      return { handle, fileName: typeof handle.name === 'string' && handle.name ? handle.name : suggestedName };
     } catch (err: any) {
       if (err.name === 'AbortError') return null;
     }
@@ -164,7 +165,7 @@ export async function saveLocalXmindFile(
 
   // Fallback download browser
   downloadBlob(bytes, suggestedName, 'application/vnd.xmind.workbook');
-  return {};
+  return { fileName: suggestedName };
 }
 
 class FileConflictError extends Error {

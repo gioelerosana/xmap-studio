@@ -37,6 +37,17 @@ export function useTopicResize({
   resizingRef.current = resizing;
   const activeResizeRef = useRef<ActiveResize | null>(null);
   const lastWidthTapRef = useRef<number>(0);
+  /** Stacca i listener su `window` del ridimensionamento in corso, se c'è. */
+  const detachRef = useRef<(() => void) | null>(null);
+
+  // Smontaggio a metà ridimensionamento: i listener su `window` non devono sopravvivere al componente.
+  useEffect(
+    () => () => {
+      detachRef.current?.();
+      activeResizeRef.current = null;
+    },
+    []
+  );
 
   // Layout effettivo con anteprima live durante il ridimensionamento
   const effectiveLayout = useMemo(() => {
@@ -84,7 +95,11 @@ export function useTopicResize({
       e.stopPropagation();
       e.preventDefault();
 
+      // Un secondo ridimensionamento (multi-touch) sostituisce il primo: i suoi listener se ne vanno.
+      detachRef.current?.();
+
       const startPtr = { x: e.clientX, y: e.clientY };
+      const isMouse = e.pointerType === 'mouse';
       const startWorld = toWorld(e.clientX, e.clientY);
       const startWidth = node.w;
       const startHeight = node.h;
@@ -138,9 +153,7 @@ export function useTopicResize({
       };
 
       const onUp = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
+        detach();
 
         const state = activeResizeRef.current;
         activeResizeRef.current = null;
@@ -153,8 +166,9 @@ export function useTopicResize({
           } else if (state.type === 'image' && currentResizing.imageSize) {
             handlers.current.onResizeTopicImage?.(state.topicId, currentResizing.imageSize);
           }
-        } else if (state && !state.moved && state.type === 'width') {
-          // Doppio tap su touch per rimuovere customWidth
+        } else if (state && !state.moved && state.type === 'width' && !isMouse) {
+          // Doppio tap su touch per rimuovere customWidth; col mouse lo fa già `onDoubleClick`
+          // della maniglia, e contarlo due volte registrerebbe due passi di annullamento.
           const now = performance.now();
           if (now - lastWidthTapRef.current < 320) {
             lastWidthTapRef.current = 0;
@@ -165,6 +179,13 @@ export function useTopicResize({
         }
       };
 
+      const detach = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        if (detachRef.current === detach) detachRef.current = null;
+      };
+      detachRef.current = detach;
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', onUp);

@@ -6,7 +6,7 @@ export function toMarkdown(sheets: Sheet[]): string {
   for (const sheet of sheets) {
     const root = sheet.rootTopic;
     const heading = (root ? topicTitle(root) : '') || sheet.title || 'Mappa';
-    out += `# ${heading.replace(/\n/g, ' ')}\n\n`;
+    out += `# ${heading.replace(/\r?\n|\r/g, ' ')}\n\n`;
 
     if (root) {
       writePreamble(root, (s) => (out += s));
@@ -25,9 +25,9 @@ export function toMarkdown(sheets: Sheet[]): string {
 }
 
 function writePreamble(topic: Topic, write: (s: string) => void): void {
-  const notes = topicNotesText(topic);
+  const notes = noteLines(topic);
   if (notes) {
-    for (const line of notes.split('\n')) {
+    for (const line of notes) {
       write(`> ${line}\n`);
     }
     write('\n');
@@ -46,9 +46,9 @@ function writeMarkdownTopic(topic: Topic, depth: number, write: (s: string) => v
   const indent = '  '.repeat(depth);
   write(`${indent}- ${topicText(topic)}\n`);
 
-  const notes = topicNotesText(topic);
+  const notes = noteLines(topic);
   if (notes) {
-    for (const line of notes.split('\n')) {
+    for (const line of notes) {
       write(`${indent}  > ${line}\n`);
     }
   }
@@ -63,8 +63,23 @@ function writeMarkdownTopic(topic: Topic, depth: number, write: (s: string) => v
   }
 }
 
+/** Righe della nota senza `\r` (CRLF o CR soli), o `undefined` se non c'è nota. */
+function noteLines(topic: Topic): string[] | undefined {
+  const notes = topicNotesText(topic);
+  return notes ? notes.replace(/\r\n?/g, '\n').split('\n') : undefined;
+}
+
+/**
+ * Escape di `\`, `` ` `` e `$` nel titolo di un elemento: all'import (`splitLatex`,
+ * `splitLabels` in import.ts) un titolo come "costa $5 e $10$" o "`x`" diventerebbe
+ * formula o etichetta. Le formule vere si scrivono a parte, senza escape.
+ */
+function escapeMarkdownTitle(title: string): string {
+  return title.replace(/[\\`$]/g, '\\$&');
+}
+
 function topicText(topic: Topic): string {
-  const title = topicTitle(topic).replace(/\n/g, ' ').trim();
+  const title = escapeMarkdownTitle(topicTitle(topic).replace(/\r?\n|\r/g, ' ').trim());
   const latex = topicLatex(topic);
   const labels = topicLabels(topic);
 

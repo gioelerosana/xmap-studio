@@ -1,6 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import type { AppController } from '@xmap/core';
 import type { CloseAction } from './useWorkbookFiles.js';
+import { flushInPlaceEdit } from './flushInPlaceEdit.js';
 
 interface ElectronWindowOptions {
   isElectron: boolean;
@@ -31,8 +32,11 @@ export function useElectronWindow({ isElectron, controller, openInitialFile, set
   useEffect(() => {
     if (!isElectron || !window.electronAPI) return;
     return window.electronAPI.onBeforeClose(() => {
-      if (controller.isDirty()) setClosePrompt('confirm');
-      else window.electronAPI?.forceClose();
+      // Un titolo in corso di modifica conta come modifica: lo si conferma prima di decidere.
+      void flushInPlaceEdit().then(() => {
+        if (controller.isDirty()) setClosePrompt('confirm');
+        else window.electronAPI?.forceClose();
+      });
     });
   }, [isElectron, controller, setClosePrompt]);
 
