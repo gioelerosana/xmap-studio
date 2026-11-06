@@ -510,6 +510,9 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
                   target: { type: 'node', topicId: n.id },
                 });
                 suppressClickUntil = performance.now() + 400;
+                // Senza i listener il rilascio non toglierebbe il dito da `pointers`: il tocco
+                // successivo sembrerebbe un secondo dito e la mappa non risponderebbe più.
+                pointers.clear();
                 cleanup();
               }
             }
@@ -527,6 +530,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
                 target: { type: 'background' },
               });
               suppressClickUntil = performance.now() + 400;
+              pointers.clear();
               cleanup();
             }
           }, 500);

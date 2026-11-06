@@ -91,21 +91,43 @@ function resolveStyle(startEl: HTMLElement | null, root: HTMLElement): TextStyle
   return result;
 }
 
+/**
+ * Ultimo nodo del contenuto, ignorando i testi vuoti: un `<br>` in coda è quello che il browser
+ * aggiunge a un contenteditable svuotato (o il segnaposto di `renderRunsToElement`), non un a capo.
+ */
+function trailingNode(root: Node): Node | null {
+  let cur: Node | null = root.lastChild;
+  while (cur) {
+    if (cur.nodeType === Node.TEXT_NODE && (cur.textContent ?? '') === '') {
+      cur = cur.previousSibling;
+    } else if (cur.nodeType === Node.ELEMENT_NODE && cur.nodeName !== 'BR' && cur.lastChild) {
+      cur = cur.lastChild;
+    } else {
+      return cur;
+    }
+  }
+  return null;
+}
+
+// Un elemento per unità UTF-16: gli indici coincidono con gli offset della selezione DOM
+// (emoji e simboli fuori dal BMP occupano due unità); i run riuniscono le due metà.
 function getStyledChars(root: HTMLElement): StyledChar[] {
   const chars: StyledChar[] = [];
+  const trailing = trailingNode(root);
 
   function walk(node: Node) {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent ?? '';
       if (text.length > 0) {
         const style = resolveStyle(node.parentElement, root);
-        for (const char of text) {
-          chars.push({ char, style: { ...style } });
+        for (let i = 0; i < text.length; i++) {
+          chars.push({ char: text[i], style: { ...style } });
         }
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
       if (el.tagName === 'BR') {
+        if (el === trailing) return;
         const style = resolveStyle(el.parentElement, root);
         chars.push({ char: '\n', style: { ...style } });
       } else {
@@ -179,8 +201,13 @@ function renderRunsToElement(root: HTMLElement, runs: TitleRun[]) {
       )
   );
 
+  // Un a capo in coda non crea una riga visibile: senza un `<br>` dopo, il cursore resterebbe
+  // sulla riga precedente. Il `<br>` finale non entra nel titolo (vedi `getStyledChars`).
+  const endsWithNewline = runs[runs.length - 1]?.text.endsWith('\n') ?? false;
+
   if (!hasAnyStyle) {
     root.textContent = runs.map((r) => r.text).join('');
+    if (endsWithNewline) root.appendChild(document.createElement('br'));
     return;
   }
 
@@ -228,6 +255,7 @@ function renderRunsToElement(root: HTMLElement, runs: TitleRun[]) {
     }
     root.appendChild(span);
   }
+  if (endsWithNewline) root.appendChild(document.createElement('br'));
 }
 
 function getSelectionOffsets(root: HTMLElement): { start: number; end: number } | null {
@@ -481,7 +509,8 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
+    // Gli appunti di Windows usano CRLF: nel titolo resta solo `\n`.
+    const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
     if (!text) return;
 
     const el = ref.current;
@@ -502,8 +531,8 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
         : {};
 
     const insertedChars: StyledChar[] = [];
-    for (const char of text) {
-      insertedChars.push({ char, style: { ...insertStyle } });
+    for (let i = 0; i < text.length; i++) {
+      insertedChars.push({ char: text[i], style: { ...insertStyle } });
     }
 
     const newChars = [
@@ -537,7 +566,9 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       onBlur={() => finish('blur')}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.nativeEvent.isComposing) return;
+        // Safari conferma la composizione IME con un keydown di Invio con `isComposing` falso
+        // ma keyCode 229: senza questo controllo chiuderebbe l'editor a metà parola.
+        if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
         const isCtrlOrMeta = e.ctrlKey || e.metaKey;
         if (isCtrlOrMeta && !e.altKey && !e.shiftKey) {
           const key = e.key.toLowerCase();

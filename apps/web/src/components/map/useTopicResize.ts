@@ -85,6 +85,7 @@ export function useTopicResize({
       e.preventDefault();
 
       const startPtr = { x: e.clientX, y: e.clientY };
+      const isMouse = e.pointerType === 'mouse';
       const startWorld = toWorld(e.clientX, e.clientY);
       const startWidth = node.w;
       const startHeight = node.h;
@@ -153,8 +154,9 @@ export function useTopicResize({
           } else if (state.type === 'image' && currentResizing.imageSize) {
             handlers.current.onResizeTopicImage?.(state.topicId, currentResizing.imageSize);
           }
-        } else if (state && !state.moved && state.type === 'width') {
-          // Doppio tap su touch per rimuovere customWidth
+        } else if (state && !state.moved && state.type === 'width' && !isMouse) {
+          // Doppio tap su touch per rimuovere customWidth; col mouse lo fa già `onDoubleClick`
+          // della maniglia, e contarlo due volte registrerebbe due passi di annullamento.
           const now = performance.now();
           if (now - lastWidthTapRef.current < 320) {
             lastWidthTapRef.current = 0;

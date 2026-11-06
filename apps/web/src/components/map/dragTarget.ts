@@ -204,9 +204,10 @@ export function computeDropTarget(
     return makeTarget(layout, idx, sourceIndex, hit, 'into');
   }
 
-  // Spazio vuoto tra due fratelli consecutivi della stessa colonna.
+  // Spazio vuoto tra due fratelli consecutivi della stessa colonna; mai tra i figli del
+  // sotto-albero trascinato (il blocco finirebbe dentro sé stesso).
   for (const list of idx.children) {
-    const sibs = list.filter((c) => c !== sourceIndex && nodes[c].sheetIndex === source.sheetIndex);
+    const sibs = list.filter((c) => !excluded.has(c) && nodes[c].sheetIndex === source.sheetIndex);
     for (let k = 0; k + 1 < sibs.length; k++) {
       const a = nodes[sibs[k]];
       const b = nodes[sibs[k + 1]];

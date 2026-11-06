@@ -135,7 +135,8 @@ export function useLatexEditor({ value, onValueChange, onSubmit }: LatexEditorOp
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    // keyCode 229: Invio che conferma la composizione IME in Safari (`isComposing` già falso).
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     const el = event.currentTarget;
     const { selectionStart: start, selectionEnd: end } = el;
     const plain = !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
