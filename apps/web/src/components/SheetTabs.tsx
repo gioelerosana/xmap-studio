@@ -5,7 +5,7 @@
  * Perché il menu è quello della mappa: clic destro su desktop, pressione lunga su touch,
  * con la stessa chiusura su Esc e clic fuori e la stessa navigazione da tastiera.
  */
-import { useEffect, useRef, useState, type FC, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
+import { memo, useEffect, useRef, useState, type FC, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, Copy, Pencil, Trash2 } from 'lucide-react';
 import type { SheetDto } from '@xmap/core';
 import { Button, Input, cn, type MenuItem } from '@xmap/ui-kit';
@@ -46,7 +46,7 @@ interface PressState {
   y: number;
 }
 
-export const SheetTabs: FC<SheetTabsProps> = ({
+const SheetTabsImpl: FC<SheetTabsProps> = ({
   sheets,
   activeIndex,
   onSelect,
@@ -265,3 +265,6 @@ const SheetTitleInput: FC<SheetTitleInputProps> = ({ initialTitle, onCommit, onC
     />
   );
 };
+
+// Memoizzata: le linguette cambiano solo con i fogli o il foglio attivo.
+export const SheetTabs = memo(SheetTabsImpl);
