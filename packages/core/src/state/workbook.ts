@@ -160,12 +160,14 @@ export class OpenWorkbook {
    * salva in modo asincrono passa la revisione dei byte scritti, così le
    * modifiche fatte durante la scrittura restano "non salvate".
    */
-  public markSaved(newPath?: string, newHash?: string, revision?: number): void {
+  public markSaved(newPath?: string, newHash?: string, revision?: number, newFileName?: string): void {
     if (!newHash) throw new XmapError(CODE_INVALID_INPUT, 'Hash del file salvato mancante.');
     if (newPath) {
       this.path = newPath;
       this.fileName = newPath.split(/[\\/]/).pop() || newPath;
     }
+    // Senza percorso (browser, Nextcloud) il nome scelto in "Salva con nome" arriva a parte.
+    if (newFileName) this.fileName = newFileName;
     this.originalHash = newHash;
     this.savedRevision = revision ?? this.currentRevision();
   }

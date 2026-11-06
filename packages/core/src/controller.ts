@@ -1235,11 +1235,11 @@ export class AppController {
   /**
    * Segna il workbook come salvato dopo che i byte sono stati scritti da un
    * adapter esterno (Electron IPC, File System Access API). Opzionalmente
-   * aggiorna il percorso (Salva con nome).
+   * aggiorna il percorso (Salva con nome) o, senza percorso, il solo nome del file.
    */
-  public markSaved(path?: string, contentHash?: string, revision?: number): WorkbookDto {
+  public markSaved(path?: string, contentHash?: string, revision?: number, fileName?: string): WorkbookDto {
     const wb = this.ensureWorkbook();
-    wb.markSaved(path, contentHash, revision);
+    wb.markSaved(path, contentHash, revision, fileName);
     return wb.toDto();
   }
 
