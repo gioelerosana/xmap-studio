@@ -86,7 +86,7 @@ import { validateArchiveBytes, ValidationReport } from './safety/validate.js';
 import { toMarkdown } from './exporters/markdown.js';
 import { toOPML } from './exporters/opml.js';
 import { toOutline } from './exporters/outline.js';
-import { importToSheet } from './exporters/import.js';
+import { importToSheets } from './exporters/import.js';
 import { Layout, MapStructure } from './layout/types.js';
 import { DEFAULT_LAYOUT_OPTS, layoutSheets } from './layout/layout.js';
 import {
@@ -1052,7 +1052,7 @@ export class AppController {
     options: { asNewSheet?: boolean } = {}
   ): Promise<WorkbookDto> {
     const wb = this.ensureWorkbook();
-    const importedSheet = await importToSheet(format, text, async (t, latex) => {
+    const importedSheets = await importToSheets(format, text, async (t, latex) => {
       const { outcome, png } = await applyEquation(t, latex);
       wb.archive.resources.set(outcome.resource, png);
     });
@@ -1060,13 +1060,17 @@ export class AppController {
 
     const asNewSheet = options.asNewSheet ?? true;
     const root = wb.content[0]?.rootTopic;
-    if (asNewSheet || !root || !importedSheet.rootTopic) {
+    const [first, ...others] = importedSheets;
+    if (asNewSheet || !root || !first.rootTopic) {
       // Mai sovrascrivere il primo foglio: se non c'è una radice a cui
       // agganciare l'import, lo si aggiunge come foglio nuovo.
-      wb.content.push(importedSheet);
+      wb.content.push(first);
     } else {
-      appendAttachedChild(root, importedSheet.rootTopic);
+      appendAttachedChild(root, first.rootTopic);
     }
+    // Un outline con più fogli (Markdown con più `# `): i fogli dopo il primo
+    // diventano sempre fogli nuovi, anche agganciando il primo alla radice.
+    wb.content.push(...others);
 
     return this.commit(wb);
   }

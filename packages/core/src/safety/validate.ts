@@ -1,7 +1,7 @@
 import { CODE_VALIDATION, XmapError } from '../errors.js';
 import type JSZip from 'jszip';
 import { loadJSZip } from '../archive/zip.js';
-import { collectAttachmentRefs, collectResourceRefs } from '../model/utils.js';
+import { RESOURCE_PREFIX } from '../model/types.js';
 
 export interface ValidationReport {
   entries: number;
@@ -10,6 +10,33 @@ export interface ValidationReport {
 }
 
 const ZIP_RESOURCE_DIR = 'resources/';
+const ATTACHMENT_PREFIX = 'xap:attachments/';
+
+/**
+ * Chiavi in cui il formato mette davvero un riferimento: `src` delle immagini
+ * (blocco, equazione MathJax, immagini nelle note ricche) e `href` dei link agli
+ * allegati. Le stringhe scritte dall'utente (titoli, note, etichette, LaTeX) non
+ * sono riferimenti anche se iniziano con `xap:`: altrimenti un titolo come
+ * "xap:resources/x" bloccherebbe il salvataggio.
+ */
+const RESOURCE_REF_KEY = 'src';
+const ATTACHMENT_REF_KEY = 'href';
+
+/** Raccoglie (senza prefisso) i valori stringa della chiave `key` che iniziano con `prefix`, a ogni profondità. */
+function collectFieldRefs(value: unknown, key: string, prefix: string, out: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const item of value) collectFieldRefs(item, key, prefix, out);
+    return;
+  }
+  if (value === null || typeof value !== 'object') return;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === key && typeof v === 'string') {
+      if (v.startsWith(prefix) && v.length > prefix.length) out.add(v.slice(prefix.length));
+    } else {
+      collectFieldRefs(v, key, prefix, out);
+    }
+  }
+}
 
 /**
  * Valida i byte dell'archivio PRIMA di toccare il disco:
@@ -48,8 +75,11 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
   await Promise.all(readPromises);
 
   const contentStr = contents.get('content.json');
-  if (!contentStr) {
+  if (contentStr === undefined) {
     throw new XmapError(CODE_VALIDATION, 'content.json assente nell\'output');
+  }
+  if (contentStr.trim() === '') {
+    throw new XmapError(CODE_VALIDATION, 'content.json è vuoto');
   }
 
   let contentObj: unknown;
@@ -104,7 +134,7 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
 
   // Verifica riferimenti a risorse
   const refs = new Set<string>();
-  collectResourceRefs(contentObj, refs);
+  collectFieldRefs(contentObj, RESOURCE_REF_KEY, RESOURCE_PREFIX, refs);
 
   for (const r of refs) {
     const path = `${ZIP_RESOURCE_DIR}${r}`;
@@ -116,8 +146,9 @@ export async function validateArchiveBytes(bytes: Uint8Array): Promise<Validatio
     }
   }
 
-  const attachments = new Set<string>();
-  collectAttachmentRefs(contentObj, attachments);
+  const attachmentNames = new Set<string>();
+  collectFieldRefs(contentObj, ATTACHMENT_REF_KEY, ATTACHMENT_PREFIX, attachmentNames);
+  const attachments = new Set([...attachmentNames].map((name) => `attachments/${name}`));
   for (const attachment of attachments) {
     if (!names.has(attachment)) {
       throw new XmapError(CODE_VALIDATION, `Riferimento ${attachment} senza allegato nello ZIP`);

@@ -159,28 +159,33 @@ function preserveMode(fd: number, target: string): void {
   }
 }
 
+/** Escape dei caratteri speciali delle regex, per usare un nome di file come letterale. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Tiene gli ultimi MAX_BACKUPS backup di `stem`. Riconosce solo i nomi generati da
+ * `atomicWrite` (`<stem>.backup.<AAAAMMGG-hhmmss>[-n].xmind`): un prefisso non basta,
+ * prenderebbe i backup di un altro file chiamato `<stem>.backup.X.xmind`. L'ordine viene
+ * dal timestamp nel nome e non dall'mtime, che `copyFileSync` su macOS/Windows copia
+ * dall'originale.
+ */
 function pruneBackups(dir: string, stem: string): void {
   try {
-    const prefix = `${stem}.backup.`;
-    const entries = fs.readdirSync(dir);
-    const backups: { file: string; mtime: number }[] = [];
+    const pattern = new RegExp(`^${escapeRegExp(stem)}\\.backup\\.(\\d{8}-\\d{6})(?:-(\\d+))?\\.xmind$`);
+    const backups: { file: string; ts: string; n: number }[] = [];
 
-    for (const file of entries) {
-      if (file.startsWith(prefix) && file.endsWith('.xmind')) {
-        const full = path.join(dir, file);
-        try {
-          const stat = fs.statSync(full);
-          backups.push({ file: full, mtime: stat.mtimeMs });
-        } catch {
-          // Ignora
-        }
-      }
+    for (const file of fs.readdirSync(dir)) {
+      const match = pattern.exec(file);
+      if (!match) continue;
+      backups.push({ file: path.join(dir, file), ts: match[1], n: match[2] ? Number(match[2]) : 0 });
     }
 
     if (backups.length <= MAX_BACKUPS) return;
 
-    // Ordina dal più vecchio al più recente
-    backups.sort((a, b) => a.mtime - b.mtime || a.file.localeCompare(b.file));
+    // Dal più vecchio al più recente: timestamp, poi contatore di collisione nello stesso secondo.
+    backups.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.n - b.n));
 
     const toRemove = backups.slice(0, backups.length - MAX_BACKUPS);
     for (const b of toRemove) {
