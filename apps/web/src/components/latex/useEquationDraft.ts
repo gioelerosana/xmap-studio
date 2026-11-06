@@ -52,7 +52,8 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
       return 100;
     }
   });
-  const [preview, setPreview] = useState<{ svg: string; error: string | null } | null>(null);
+  // `latex` è il testo (già ripulito) da cui è stata disegnata l'anteprima: dice se è aggiornata.
+  const [preview, setPreview] = useState<{ svg: string; error: string | null; latex: string } | null>(null);
   const [applying, setApplying] = useState(false);
 
   // Undo/redo (o modifiche da altre viste) cambiano il topic mentre l'editor è aperto:
@@ -66,6 +67,15 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
   // Anteprima LaTeX con debounce; si rifà quando arrivano glifi MathJax caricati su richiesta.
   const mathVersion = useMathJaxVersion();
   const previewTimer = useRef<number | null>(null);
+  const renderPreview = (trimmed: string) => {
+    try {
+      const res = controller.preview(trimmed, PREVIEW_EM_PX * (inlineFormula ? 1 : clampScale(scalePercent) / 100));
+      if (res.error) return { svg: '', error: res.error, latex: trimmed };
+      return { svg: res.svg.replaceAll('currentColor', previewInk), error: null, latex: trimmed };
+    } catch (err: any) {
+      return { svg: '', error: (err?.message as string | undefined) || 'Errore di sintassi', latex: trimmed };
+    }
+  };
   useEffect(() => {
     if (previewTimer.current) window.clearTimeout(previewTimer.current);
     const trimmed = latex.trim();
@@ -73,18 +83,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
       setPreview(null);
       return;
     }
-    previewTimer.current = window.setTimeout(() => {
-      try {
-        const res = controller.preview(trimmed, PREVIEW_EM_PX * (inlineFormula ? 1 : clampScale(scalePercent) / 100));
-        if (res.error) {
-          setPreview({ svg: '', error: res.error });
-        } else {
-          setPreview({ svg: res.svg.replaceAll('currentColor', previewInk), error: null });
-        }
-      } catch (err: any) {
-        setPreview({ svg: '', error: err?.message || 'Errore di sintassi' });
-      }
-    }, 220);
+    previewTimer.current = window.setTimeout(() => setPreview(renderPreview(trimmed)), 220);
     return () => {
       if (previewTimer.current) window.clearTimeout(previewTimer.current);
     };
@@ -106,7 +105,17 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
 
   // Restituisce `true` se l'equazione è stata applicata (l'editor può chiudersi).
   const handleApplyEquation = async (): Promise<boolean> => {
-    if (!latex.trim() || preview?.error) return false;
+    const trimmed = latex.trim();
+    if (!trimmed) return false;
+    // Conferma prima che l'anteprima (con debounce) abbia raggiunto il testo corrente: si valida
+    // subito, e un errore resta nell'editor come quello dell'anteprima, senza applicare.
+    let current = preview;
+    if (current?.latex !== trimmed) {
+      if (previewTimer.current) window.clearTimeout(previewTimer.current);
+      current = renderPreview(trimmed);
+      setPreview(current);
+    }
+    if (current.error) return false;
     setApplying(true);
     try {
       let mode: TitleMode;

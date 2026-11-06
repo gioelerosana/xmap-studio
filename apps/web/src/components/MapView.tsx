@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { titleBaseFontPx, type BoundaryFrame, type Layout, type LayoutNode } from '@xmap/core';
+import { titleBaseFontPx, type BoundaryFrame, type Layout, type LayoutNode, type TitleRun } from '@xmap/core';
 import { Braces, CornerDownLeft, Edit3, Network, Plus, Trash2 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
 import { BoundaryLayer } from './map/BoundaryLayer.js';
@@ -118,6 +118,16 @@ export const MapView: React.FC<MapViewProps> = ({
   };
   const handlers = useRef(handlersValue);
   handlers.current = handlersValue;
+  const onCommitEditRef = useRef(onCommitEdit);
+  onCommitEditRef.current = onCommitEdit;
+
+  // Editor smontato senza blur (il blocco è sparito dal layout) con il testo cambiato: si conferma
+  // sul blocco aperto all'inizio, con le callback dell'ultimo render (il genitore cerca il blocco
+  // tra i topic correnti e, se non c'è più, non scrive nulla; non chiude un editing nel frattempo
+  // passato a un altro blocco).
+  const commitUnmountedEdit = useCallback((topicId: string, text: string, runs?: TitleRun[]) => {
+    onCommitEditRef.current?.(topicId, text, 'blur', runs);
+  }, []);
 
   const { effectiveLayout, startResize } = useTopicResize({ layout, toWorld, handlers });
   useAutoFit({ layout, viewKey, selectedTopicId, viewport });
@@ -427,6 +437,8 @@ export const MapView: React.FC<MapViewProps> = ({
             selectAll={editing.mode === 'all'}
             onCommit={(text, exit, runs) => onCommitEdit(editing.id, text, exit, runs)}
             onCancel={() => onCancelEdit?.()}
+            topicId={editing.id}
+            onUnmountCommit={commitUnmountedEdit}
           />
         </div>
       )}

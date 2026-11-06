@@ -9,7 +9,7 @@ export const DROP_PAD = 6;
 /** Frazione dell'altezza (e minimo in px) delle fasce alta/bassa che significano before/after. */
 const BAND_FRACTION = 0.3;
 const BAND_MIN_PX = 12;
-/** Raggio di ricerca del blocco "più vicino a sinistra" quando si è in spazio vuoto. */
+/** Raggio di ricerca del blocco "più vicino" (dal lato dei suoi figli) quando si è in spazio vuoto. */
 const NEAR_MAX_DX = 260;
 const NEAR_MAX_DY = 120;
 const NEAR_DY_WEIGHT = 1.5;
@@ -167,7 +167,8 @@ function makeTarget(
  *
  * - sopra un blocco: fascia alta/bassa nella metà sinistra → before/after, altrimenti into;
  * - tra due fratelli → before sul secondo;
- * - in spazio vuoto → into sul blocco più vicino a sinistra entro una distanza ragionevole.
+ * - in spazio vuoto → into sul blocco più vicino dal lato dei suoi figli (a sinistra del puntatore
+ *   sui rami destri, a destra sui rami sinistri) entro una distanza ragionevole.
  */
 export function computeDropTarget(
   layout: Layout,
@@ -219,13 +220,20 @@ export function computeDropTarget(
     }
   }
 
-  // Blocco più vicino a sinistra: se è il sotto-albero trascinato, nessun bersaglio.
+  // Blocco più vicino dal lato dei suoi figli: a sinistra del puntatore sui rami destri, a destra
+  // sui rami sinistri (lì i figli crescono verso sinistra), da entrambi i lati per la radice
+  // della mappa mentale.
+  // Se è il sotto-albero trascinato, nessun bersaglio.
+  const hasLeftBranches = nodes.some((n) => n.side === 'left' && n.sheetIndex === source.sheetIndex);
   let best = -1;
   let bestScore = Infinity;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (n.sheetIndex !== source.sheetIndex) continue;
-    const dx = p.x - (n.x + n.w);
+    const distRight = p.x - (n.x + n.w);
+    const distLeft = n.x - p.x;
+    const isMindMapRoot = hasLeftBranches && idx.parent[i] === -1 && !n.floating && !n.childrenBelow;
+    const dx = n.side === 'left' ? distLeft : isMindMapRoot ? Math.max(distLeft, distRight) : distRight;
     const dy = p.y < n.y ? n.y - p.y : p.y > n.y + n.h ? p.y - n.y - n.h : 0;
     if (dx < -DROP_PAD || dx > NEAR_MAX_DX || dy > NEAR_MAX_DY) continue;
     const score = dx + NEAR_DY_WEIGHT * dy;

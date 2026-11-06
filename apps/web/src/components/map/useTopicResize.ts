@@ -37,6 +37,17 @@ export function useTopicResize({
   resizingRef.current = resizing;
   const activeResizeRef = useRef<ActiveResize | null>(null);
   const lastWidthTapRef = useRef<number>(0);
+  /** Stacca i listener su `window` del ridimensionamento in corso, se c'è. */
+  const detachRef = useRef<(() => void) | null>(null);
+
+  // Smontaggio a metà ridimensionamento: i listener su `window` non devono sopravvivere al componente.
+  useEffect(
+    () => () => {
+      detachRef.current?.();
+      activeResizeRef.current = null;
+    },
+    []
+  );
 
   // Layout effettivo con anteprima live durante il ridimensionamento
   const effectiveLayout = useMemo(() => {
@@ -83,6 +94,9 @@ export function useTopicResize({
     (e: React.PointerEvent<SVGElement>, node: LayoutNode, type: 'width' | 'image') => {
       e.stopPropagation();
       e.preventDefault();
+
+      // Un secondo ridimensionamento (multi-touch) sostituisce il primo: i suoi listener se ne vanno.
+      detachRef.current?.();
 
       const startPtr = { x: e.clientX, y: e.clientY };
       const isMouse = e.pointerType === 'mouse';
@@ -139,9 +153,7 @@ export function useTopicResize({
       };
 
       const onUp = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
+        detach();
 
         const state = activeResizeRef.current;
         activeResizeRef.current = null;
@@ -167,6 +179,13 @@ export function useTopicResize({
         }
       };
 
+      const detach = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        if (detachRef.current === detach) detachRef.current = null;
+      };
+      detachRef.current = detach;
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', onUp);

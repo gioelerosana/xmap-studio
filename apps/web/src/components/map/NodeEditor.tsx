@@ -20,6 +20,14 @@ export interface NodeEditorProps {
   selectAll: boolean;
   onCommit: (text: string, exit: EditExit, runs?: TitleRun[]) => void;
   onCancel: () => void;
+  /** Blocco in modifica: si fissa all'apertura e non segue i cambi successivi della prop. */
+  topicId: string;
+  /**
+   * Smontaggio senza conferma né annullamento (il blocco sparisce dal layout per collasso, undo,
+   * eliminazione, cambio di foglio…) con il testo cambiato: `topicId` è quello dell'apertura.
+   * Chi la riceve decide se il blocco esiste ancora; altrimenti il testo si scarta.
+   */
+  onUnmountCommit?: (topicId: string, text: string, runs?: TitleRun[]) => void;
 }
 
 interface StyledChar {
@@ -328,6 +336,27 @@ function setSelectionOffsets(root: HTMLElement, start: number, end: number) {
   }
 }
 
+const PLAIN_RUN_KEYS = ['text', 'bold', 'italic', 'underline', 'strikethrough', 'color', 'fontSizePx'];
+
+/** Titolo dell'editor: testo e, solo se c'è formattazione, i run. */
+function readContent(root: HTMLElement): { text: string; runs?: TitleRun[] } {
+  const runs = charsToRuns(getStyledChars(root));
+  const text = runs.map((r) => r.text).join('');
+  const hasStyle = runs.some(
+    (r) =>
+      r.bold ||
+      r.italic ||
+      r.underline ||
+      r.strikethrough ||
+      r.color ||
+      r.fontSizePx ||
+      Object.keys(r).some((k) => !PLAIN_RUN_KEYS.includes(k))
+  );
+  return { text, runs: hasStyle ? runs : undefined };
+}
+
+const contentKey = (c: { text: string; runs?: TitleRun[] }): string => JSON.stringify([c.text, c.runs ?? null]);
+
 /**
  * Editor in place del titolo di un blocco con supporto alla formattazione parziale (attributedTitle):
  * Invio conferma, Maiusc+Invio va a capo, Tab conferma, Esc annulla, incolla solo testo semplice,
@@ -345,9 +374,15 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
   selectAll,
   onCommit,
   onCancel,
+  topicId,
+  onUnmountCommit,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const done = useRef(false);
+  const startTopicId = useRef(topicId);
+  // Allo smontaggio servono le callback più recenti, non quelle del primo render.
+  const onUnmountCommitRef = useRef(onUnmountCommit);
+  onUnmountCommitRef.current = onUnmountCommit;
 
   const fit = () => {
     const el = ref.current;
@@ -373,6 +408,19 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       setSelectionOffsets(el, totalLen, totalLen);
     }
     fit();
+    // Contenuto di partenza così come lo rilegge `readContent`: allo smontaggio si conferma solo
+    // se è cambiato (niente passi di annullamento vuoti). Lo smontaggio simulato di StrictMode
+    // arriva prima di ogni modifica, quindi non conferma nulla.
+    const initialSnapshot = contentKey(readContent(el));
+    return () => {
+      // Già confermato (Invio, Tab, blur) o annullato (Esc): niente da fare. Il blur non arriva
+      // a un editor smontato, quindi senza questo il testo scritto andrebbe perso.
+      if (done.current) return;
+      const content = readContent(el);
+      if (contentKey(content) === initialSnapshot) return;
+      done.current = true;
+      onUnmountCommitRef.current?.(startTopicId.current, content.text, content.runs);
+    };
     // Solo all'apertura.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -385,23 +433,8 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       onCommit(initialText, exit);
       return;
     }
-    const chars = getStyledChars(el);
-    const runs = charsToRuns(chars);
-    const text = runs.map((r) => r.text).join('');
-    const hasStyle = runs.some(
-      (r) =>
-        r.bold ||
-        r.italic ||
-        r.underline ||
-        r.strikethrough ||
-        r.color ||
-        r.fontSizePx ||
-        Object.keys(r).some(
-          (k) =>
-            !['text', 'bold', 'italic', 'underline', 'strikethrough', 'color', 'fontSizePx'].includes(k)
-        )
-    );
-    onCommit(text, exit, hasStyle ? runs : undefined);
+    const { text, runs } = readContent(el);
+    onCommit(text, exit, runs);
   };
 
   // Applica `mutate` ai caratteri selezionati; senza selezione a tutto il testo (comandi dalla barra).
@@ -565,6 +598,16 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       onPaste={handlePaste}
       onBlur={() => finish('blur')}
       onKeyDown={(e) => {
+        // Ctrl/Cmd+S (e Maiusc per «Salva con nome») passa all'app: il suo salvataggio toglie il
+        // focus all'editor, il blur conferma il testo e poi si salva. Qui non si fa altro.
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          !e.altKey &&
+          e.key.toLowerCase() === 's' &&
+          !e.nativeEvent.isComposing
+        ) {
+          return;
+        }
         e.stopPropagation();
         // Safari conferma la composizione IME con un keydown di Invio con `isComposing` falso
         // ma keyCode 229: senza questo controllo chiuderebbe l'editor a metà parola.

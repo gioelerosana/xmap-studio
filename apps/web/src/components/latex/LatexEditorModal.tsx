@@ -55,7 +55,10 @@ const LatexDialog: React.FC<Omit<LatexEditorModalProps, 'topic'> & { topic: NonN
     inlineMode,
   } = draft;
 
-  const canApply = !!latex.trim() && !preview?.error && !applying;
+  // Un errore dell'anteprima vale solo per il testo da cui è stata disegnata: se nel frattempo il
+  // testo è cambiato, la conferma lo rivalida subito (`handleApplyEquation`).
+  const previewCurrent = preview?.latex === latex.trim();
+  const canApply = !!latex.trim() && !(previewCurrent && preview?.error) && !applying;
   const apply = async () => {
     if (!canApply) return;
     if (await handleApplyEquation()) onClose();
