@@ -101,6 +101,8 @@ export interface ElectronAPI {
   maximize: () => void;
   close: () => void;
   forceClose: () => void;
+  /** La chiusura chiesta dal main process è stata annullata dall'utente. */
+  cancelClose: () => void;
   isMaximized: () => Promise<boolean>;
   getInitialFile: () => Promise<string | null>;
   onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;
@@ -139,6 +141,7 @@ const api: ElectronAPI = {
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
   forceClose: () => ipcRenderer.send('window:forceClose'),
+  cancelClose: () => ipcRenderer.send('window:closeCancelled'),
   isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
   getInitialFile: () => ipcRenderer.invoke('app:getInitialFile'),
   onMaximizedChange: (callback) => {

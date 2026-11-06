@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Button, SegmentedControl, Textarea, Field, cn } from '@xmap/ui-kit';
+import { Modal, Button, SegmentedControl, Textarea, Field, Banner, cn } from '@xmap/ui-kit';
 import {
   Check,
   Copy,
@@ -89,6 +89,7 @@ const TextPanel: React.FC<{
 }> = ({ format, getExportContent, sheetCount, activeSheetIndex, selection, suggestedBase }) => {
   const [scopeKind, setScopeKind] = useState<ScopeKind>('all');
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const spec = TEXT_SPEC[format];
 
   // Una scelta non più valida (ramo deselezionato) torna a «tutta la mappa».
@@ -109,16 +110,30 @@ const TextPanel: React.FC<{
   ];
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(content);
+    setError(null);
+    try {
+      // Assente fuori da un contesto sicuro (http://IP-LAN): la si tratta come un rifiuto.
+      if (!navigator.clipboard) throw new Error('appunti non disponibili in questo contesto');
+      await navigator.clipboard.writeText(content);
+    } catch (err: unknown) {
+      const reason = err instanceof Error && err.message ? `: ${err.message}` : '';
+      setError(`Impossibile copiare negli appunti${reason}. Seleziona il testo e copialo a mano, oppure scaricalo.`);
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = async () => {
-    await saveBytes(new TextEncoder().encode(content), `${suggestedBase}.${spec.ext}`, spec.mime, {
-      description: spec.label,
-      extensions: [spec.ext],
-    });
+    setError(null);
+    try {
+      await saveBytes(new TextEncoder().encode(content), `${suggestedBase}.${spec.ext}`, spec.mime, {
+        description: spec.label,
+        extensions: [spec.ext],
+      });
+    } catch (err: unknown) {
+      setError(`Impossibile salvare il file: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   return (
@@ -127,6 +142,7 @@ const TextPanel: React.FC<{
         <SegmentedControl items={scopeItems} activeId={effectiveKind} onChange={setScopeKind} />
       </Field>
       <Textarea mono readOnly value={content} className="h-56 resize-none text-xs" />
+      {error && <Banner variant="error">{error}</Banner>}
       <div className="flex w-full items-center justify-end gap-2">
         <Button
           variant="outline"

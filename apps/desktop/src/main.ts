@@ -3,7 +3,7 @@ import type { GuardedSaveResult } from '@xmap/core/node';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { registerUpdater, relaunchIfRequested } from './updater.js';
+import { cancelRestartRequest, registerUpdater, relaunchIfRequested } from './updater.js';
 import type { PrintToPdfOptions } from './preload.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
@@ -289,6 +289,27 @@ ipcMain.handle('fs:openPath', async (_, filePath: unknown) => {
   return readFileForRenderer(filePath);
 });
 
+/**
+ * Aggiunge `.xmind` a un percorso scelto senza estensione. Il dialogo di sistema
+ * ha chiesto conferma solo per il nome senza estensione: se il file con
+ * l'estensione esiste già, la sovrascrittura va confermata qui. `null` = annullato.
+ */
+async function withXmindExtension(owner: BrowserWindow, filePath: string): Promise<string | null> {
+  if (XMIND_EXTENSION.test(filePath)) return filePath;
+  const target = `${filePath}.xmind`;
+  if (!fs.existsSync(target)) return target;
+  const { response } = await dialog.showMessageBox(owner, {
+    type: 'warning',
+    buttons: ['Sostituisci', 'Annulla'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Sostituire il file?',
+    message: `«${path.basename(target)}» esiste già.`,
+    detail: 'Sostituendolo, il contenuto attuale verrà sovrascritto (resta un backup).',
+  });
+  return response === 0 ? target : null;
+}
+
 ipcMain.handle('dialog:saveFile', async (event, suggestedName?: string) => {
   const owner = senderWindow(event);
   if (!owner) return null;
@@ -298,7 +319,7 @@ ipcMain.handle('dialog:saveFile', async (event, suggestedName?: string) => {
   });
   if (result.canceled || !result.filePath) return null;
   // Su Linux il dialogo GTK non aggiunge l'estensione del filtro: senza, `fs:saveAtomic` rifiuterebbe il percorso.
-  return XMIND_EXTENSION.test(result.filePath) ? result.filePath : `${result.filePath}.xmind`;
+  return withXmindExtension(owner, result.filePath);
 });
 
 /** Estensioni dei filtri dei dialoghi: solo stringhe non vuote, senza punto iniziale. */
@@ -366,7 +387,9 @@ ipcMain.handle(
     }
     const writesXmind = extensions.some((extension) => extension.toLowerCase() === 'xmind');
     if (writesXmind && !outputPath.toLowerCase().endsWith('.xmind')) {
-      outputPath += '.xmind';
+      const confirmed = await withXmindExtension(owner, outputPath);
+      if (!confirmed) return null;
+      outputPath = confirmed;
     }
     if (writesXmind || outputPath.toLowerCase().endsWith('.xmind')) {
       const { guardedSave } = await loadCore();
@@ -386,6 +409,9 @@ ipcMain.on('window:forceClose', (event) => {
   allowedCloseIds.add(window.webContents.id);
   window.close();
 });
+
+// Chiusura annullata dall'utente: un eventuale «Riavvia per aggiornare» decade.
+ipcMain.on('window:closeCancelled', () => cancelRestartRequest());
 
 // L'IPC di Electron perde le proprietà custom degli errori: l'esito è un
 // valore discriminato ({ ok, code, message, processes }), non un'eccezione.

@@ -67,6 +67,8 @@ declare global {
       maximize: () => void;
       close: () => void;
       forceClose: () => void;
+      /** Assente nelle shell desktop più vecchie. */
+      cancelClose?: () => void;
       isMaximized: () => Promise<boolean>;
       getInitialFile: () => Promise<string | null>;
       onMaximizedChange: (callback: (isMax: boolean) => void) => () => void;

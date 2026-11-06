@@ -19,6 +19,8 @@ interface ClipboardEventsOptions {
   insertImage: (file: Blob, source: ImageInsertSource) => Promise<void>;
   handleCopyTopic: (topicId?: string) => void;
   handleCutTopic: (topicId?: string) => void;
+  /** true con una pagina sopra la mappa (Impostazioni): la mappa nascosta non riceve incolla, taglia né drop. */
+  suspended: boolean;
 }
 
 /**
@@ -37,12 +39,13 @@ export function useClipboardEvents({
   insertImage,
   handleCopyTopic,
   handleCutTopic,
+  suspended,
 }: ClipboardEventsOptions) {
   const { selectSingle } = selection;
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (e.defaultPrevented) return;
+      if (e.defaultPrevented || suspended) return;
       if (isDialogOpen()) return;
       if (editing) return;
       const target = e.target as Element | null;
@@ -109,7 +112,7 @@ export function useClipboardEvents({
     };
 
     const onCopy = (e: ClipboardEvent) => {
-      if (editing || hasTextSelection()) return;
+      if (suspended || editing || hasTextSelection()) return;
       if (isDialogOpen()) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
@@ -120,7 +123,7 @@ export function useClipboardEvents({
     };
 
     const onCut = (e: ClipboardEvent) => {
-      if (editing || hasTextSelection()) return;
+      if (suspended || editing || hasTextSelection()) return;
       if (isDialogOpen()) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
@@ -139,6 +142,11 @@ export function useClipboardEvents({
 
     const onDrop = (e: DragEvent) => {
       if (e.defaultPrevented) return;
+      if (suspended) {
+        // Niente inserimento nella mappa nascosta, ma nemmeno navigazione verso il file trascinato.
+        e.preventDefault();
+        return;
+      }
       if (editing) return;
       const files = e.dataTransfer?.files;
       if (!files || files.length === 0) return;
@@ -164,5 +172,5 @@ export function useClipboardEvents({
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, inMemoryClipboard]);
+  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, inMemoryClipboard, suspended]);
 }

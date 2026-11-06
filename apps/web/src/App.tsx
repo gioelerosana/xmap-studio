@@ -320,6 +320,7 @@ export const App: React.FC = () => {
     insertImage,
     handleCopyTopic,
     handleCutTopic,
+    suspended: settingsOpen,
   });
 
   const { handleExportEquation, handleAttach, handleMerge, handleSplit } = useDocumentTools({
@@ -371,6 +372,7 @@ export const App: React.FC = () => {
     handleOpenLocalFile,
     handleAddChild,
     handleCreateSummary,
+    settingsOpen,
     setSettingsOpen,
     setPrintModalOpen,
     setExportModalOpen,
@@ -678,7 +680,7 @@ export const App: React.FC = () => {
 
       <Modal
         isOpen={closePrompt === 'confirm'}
-        onClose={() => setClosePrompt(null)}
+        onClose={() => void handleConfirmClose('cancel')}
         title="Salvare le modifiche?"
         description="Ci sono modifiche non salvate. Se chiudi senza salvare andranno perse."
         size="sm"
