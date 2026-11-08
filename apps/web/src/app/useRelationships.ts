@@ -26,7 +26,7 @@ export function useRelationships({ controller, refreshState, addToast }: Relatio
         addToast('success', 'Relazione creata');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile creare la relazione: ${msg}`);
+        addToast('error', `Impossibile creare la relazione: ${msg}`, err);
       }
       setConnectingTopicId(null);
     },
@@ -39,7 +39,7 @@ export function useRelationships({ controller, refreshState, addToast }: Relatio
         controller.setRelationshipControlPoints(relationshipId, points);
         refreshState();
       } catch (err: any) {
-        addToast('error', `Relazione non modificata: ${err.message}`);
+        addToast('error', `Relazione non modificata: ${err.message}`, err);
       }
     },
     [controller, refreshState, addToast]

@@ -84,7 +84,7 @@ export function useClipboardEvents({
           addToast('success', 'Blocco incollato');
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          addToast('error', `Impossibile incollare il blocco: ${msg}`);
+          addToast('error', `Impossibile incollare il blocco: ${msg}`, err);
         }
         return;
       }
@@ -100,7 +100,7 @@ export function useClipboardEvents({
           addToast('success', 'Nuovo blocco creato dal testo');
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          addToast('error', `Impossibile creare il blocco: ${msg}`);
+          addToast('error', `Impossibile creare il blocco: ${msg}`, err);
         }
       }
     };

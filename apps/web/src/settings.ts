@@ -21,6 +21,8 @@ export interface Settings {
   reduceMotion: boolean;
   /** Scala dell'interfaccia in percento (100 = dimensione nativa); oggi agisce solo nell'app desktop. */
   uiScale: number;
+  /** Menu Debug nelle impostazioni: si sblocca toccando 7 volte la versione in Informazioni. */
+  developerMode: boolean;
 }
 
 export const UI_SCALE_MIN = 50;
@@ -46,6 +48,7 @@ export function defaultSettings(): Settings {
     mapStructure: 'tree',
     reduceMotion: systemPrefers(REDUCE_MOTION_QUERY),
     uiScale: 100,
+    developerMode: false,
   };
 }
 
@@ -71,6 +74,7 @@ export function sanitizeSettings(value: unknown, base: Settings): Settings {
     mapStructure: pickOneOf(record.mapStructure, STRUCTURES, base.mapStructure),
     reduceMotion: typeof record.reduceMotion === 'boolean' ? record.reduceMotion : base.reduceMotion,
     uiScale: clampUiScale(record.uiScale) ?? base.uiScale,
+    developerMode: typeof record.developerMode === 'boolean' ? record.developerMode : base.developerMode,
   };
 }
 

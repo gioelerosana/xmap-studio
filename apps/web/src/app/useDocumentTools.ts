@@ -26,7 +26,7 @@ export function useDocumentTools({ controller, selectedTopic, hasWorkbook, refre
       if (!saved) return;
       addToast('success', `Equazione esportata in ${format.toUpperCase()}`);
     } catch (err: any) {
-      addToast('error', `Esportazione non riuscita: ${err.message}`);
+      addToast('error', `Esportazione non riuscita: ${err.message}`, err);
     }
   };
 
@@ -39,7 +39,7 @@ export function useDocumentTools({ controller, selectedTopic, hasWorkbook, refre
       refreshState();
       addToast('success', `Allegato: ${picked.name}`);
     } catch (err: any) {
-      addToast('error', `Allegato non aggiunto: ${err.message}`);
+      addToast('error', `Allegato non aggiunto: ${err.message}`, err);
     }
   };
 
@@ -52,7 +52,7 @@ export function useDocumentTools({ controller, selectedTopic, hasWorkbook, refre
       refreshState();
       addToast('success', `Unite ${res.addedSheets} mappe (${res.addedTopics} blocchi)`);
     } catch (err: any) {
-      addToast('error', `Unione non riuscita: ${err.message}`);
+      addToast('error', `Unione non riuscita: ${err.message}`, err);
     }
   };
 
@@ -71,7 +71,7 @@ export function useDocumentTools({ controller, selectedTopic, hasWorkbook, refre
       if (!saved) return;
       addToast('success', 'Ramo estratto in una nuova mappa');
     } catch (err: any) {
-      addToast('error', `Estrazione non riuscita: ${err.message}`);
+      addToast('error', `Estrazione non riuscita: ${err.message}`, err);
     }
   };
 

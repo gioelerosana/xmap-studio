@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Cloud, FileLock2, Info, Keyboard, Network, Palette, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Bug, Cloud, FileLock2, Info, Keyboard, Network, Palette, RefreshCw } from 'lucide-react';
 import {
   Button,
   IconButton,
@@ -27,6 +27,7 @@ import { AppMark } from './AppMark.js';
 import { SettingRow, SettingsSection } from './SettingsLayout.js';
 import { UpdatesSection } from './UpdatesSection.js';
 import { NextcloudSection } from './NextcloudSection.js';
+import { DebugSection } from './DebugSection.js';
 
 interface SettingsPageProps {
   onClose: () => void;
@@ -74,15 +75,30 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 
-type SectionId = 'appearance' | 'map' | 'files' | 'cloud' | 'shortcuts' | 'updates' | 'about';
+type SectionId = 'appearance' | 'map' | 'files' | 'cloud' | 'shortcuts' | 'updates' | 'about' | 'debug';
 
 export type SettingsSectionId = SectionId;
+
+/** Tocchi sulla versione per attivare il menu Debug, e pausa massima tra due tocchi. */
+const DEBUG_TAPS_TO_ENABLE = 7;
+const DEBUG_TAP_WINDOW_MS = 1500;
+/** Dal terzo tocco in poi, il conto alla rovescia compare sotto la versione. */
+const DEBUG_TAP_HINT_FROM = 3;
+const NOTICE_MS = 3000;
 
 /**
  * La sezione Aggiornamenti esiste solo nell'app desktop: nel browser non ha nulla da mostrare.
  * Nextcloud solo nel browser: il desktop ha già il file system.
+ * Debug solo con il menu sbloccato (`developerMode`).
  */
-const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; desktopOnly?: boolean; webOnly?: boolean }[] = [
+const SECTIONS: {
+  id: SectionId;
+  label: string;
+  icon: React.ReactNode;
+  desktopOnly?: boolean;
+  webOnly?: boolean;
+  devOnly?: boolean;
+}[] = [
   { id: 'appearance', label: 'Aspetto', icon: <Palette className="size-4" /> },
   { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
   { id: 'files', label: 'File e sicurezza', icon: <FileLock2 className="size-4" /> },
@@ -90,6 +106,7 @@ const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; desktopOn
   { id: 'shortcuts', label: 'Scorciatoie', icon: <Keyboard className="size-4" /> },
   { id: 'updates', label: 'Aggiornamenti', icon: <RefreshCw className="size-4" />, desktopOnly: true },
   { id: 'about', label: 'Informazioni', icon: <Info className="size-4" /> },
+  { id: 'debug', label: 'Debug', icon: <Bug className="size-4" />, devOnly: true },
 ];
 
 /**
@@ -150,14 +167,71 @@ function UiScaleControl({ value, onChange }: { value: number; onChange: (uiScale
  */
 export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSection, updateStatus }: SettingsPageProps) {
   const isElectron = Boolean(window.electronAPI);
-  const [active, setActive] = useState<SectionId>(initialSection ?? 'appearance');
+  const [active, setActive] = useState<SectionId>(() =>
+    initialSection === 'debug' && !settings.developerMode ? 'appearance' : (initialSection ?? 'appearance')
+  );
   const visibleSections = SECTIONS.filter(
-    (section) => (!section.desktopOnly || isElectron) && (!section.webOnly || !isElectron)
+    (section) =>
+      (!section.desktopOnly || isElectron) &&
+      (!section.webOnly || !isElectron) &&
+      (!section.devOnly || settings.developerMode)
   );
   const updateDot = hasPendingUpdate(updateStatus);
   const pageRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  const [tapCount, setTapCount] = useState(0);
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<number | undefined>(undefined);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(tapTimerRef.current);
+      window.clearTimeout(noticeTimerRef.current);
+    },
+    []
+  );
+
+  const showNotice = (message: string) => {
+    setNotice(message);
+    window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
+  };
+
+  const resetTaps = () => {
+    tapCountRef.current = 0;
+    setTapCount(0);
+  };
+
+  const onVersionTap = () => {
+    window.clearTimeout(tapTimerRef.current);
+    if (settings.developerMode) {
+      resetTaps();
+      showNotice('Il menu Debug è già attivo');
+      setActive('debug');
+      return;
+    }
+    const count = tapCountRef.current + 1;
+    if (count < DEBUG_TAPS_TO_ENABLE) {
+      tapCountRef.current = count;
+      setTapCount(count);
+      tapTimerRef.current = window.setTimeout(resetTaps, DEBUG_TAP_WINDOW_MS);
+      return;
+    }
+    resetTaps();
+    onUpdate({ developerMode: true });
+    setActive('debug');
+    showNotice('Menu Debug attivato');
+  };
+
+  const remainingTaps = DEBUG_TAPS_TO_ENABLE - tapCount;
+  const tapHint =
+    tapCount >= DEBUG_TAP_HINT_FROM
+      ? `Ancora ${remainingTaps} ${remainingTaps === 1 ? 'tocco' : 'tocchi'} per attivare il menu Debug`
+      : '';
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
@@ -220,6 +294,12 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
 
       <div className="min-h-0 flex-1 md:overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:p-8">
+          {notice ? (
+            <p aria-live="polite" className="text-sm text-foreground">
+              {notice}
+            </p>
+          ) : null}
+
           {active === 'appearance' && (
             <SettingsSection title="Aspetto">
               <SettingRow label="Tema">
@@ -306,11 +386,29 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
                 <AppMark size={36} />
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{APP_NAME}</div>
-                  <div className="font-mono text-2xs text-muted-foreground">{APP_VERSION_LABEL}</div>
+                  <button
+                    type="button"
+                    onClick={onVersionTap}
+                    className="cursor-default rounded-sm font-mono text-2xs text-muted-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {APP_VERSION_LABEL}
+                  </button>
+                  <p aria-live="polite" className="text-2xs text-muted-foreground">
+                    {tapHint}
+                  </p>
                   <p className="mt-1 text-sm text-muted-foreground">{APP_DESCRIPTION}</p>
                 </div>
               </div>
             </SettingsSection>
+          )}
+
+          {active === 'debug' && settings.developerMode && (
+            <DebugSection
+              onDisable={() => {
+                onUpdate({ developerMode: false });
+                setActive('about');
+              }}
+            />
           )}
 
           <Button variant="ghost" size="sm" className="self-start md:hidden" onClick={onReset}>

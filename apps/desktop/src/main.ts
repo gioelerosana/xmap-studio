@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { cancelRestartRequest, registerUpdater, relaunchIfRequested } from './updater.js';
+import { registerDebugLog } from './debug-log.js';
 import type { PrintToPdfOptions } from './preload.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
@@ -260,6 +261,7 @@ async function readFileForRenderer(filePath: string) {
 }
 
 // IPC handlers
+registerDebugLog();
 registerUpdater();
 ipcMain.handle('app:getInitialFile', (event) => {
   const id = event.sender.id;

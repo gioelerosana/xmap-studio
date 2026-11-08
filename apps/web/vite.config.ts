@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
@@ -124,11 +125,21 @@ function nextcloudProxy(): Plugin {
 // release nei package.json, qui si legge per mostrarla nella UI.
 const appVersion: string = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8')).version;
 
+// Commit della build, mostrato nel menu Debug; vuoto se git non c'è (es. tarball di AUR).
+function gitCommit(): string {
+  try {
+    return execFileSync('git', ['rev-parse', '--short=10', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
 export default defineConfig({
   // Percorsi relativi: in Electron la UI compilata si carica da file://.
   base: './',
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_COMMIT__: JSON.stringify(gitCommit()),
   },
   plugins: [react(), tailwindcss(), precacheManifest(), devServiceWorkerReset(), nextcloudProxy()],
   resolve: {

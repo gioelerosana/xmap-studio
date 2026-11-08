@@ -30,6 +30,20 @@ export type UpdateStatus = {
   state: UpdateState;
 };
 
+/** Risposta di `getDebugInfo`; ricalca `DesktopDebugInfo` di apps/desktop/src/debug-log.ts. */
+export type DesktopDebugInfo = {
+  platform?: string;
+  os?: string;
+  arch?: string;
+  isPackaged?: boolean;
+  execPath?: string;
+  userData?: string;
+  versions: Record<string, string | undefined>;
+  mainLog: { time: number; level: string; message: string; detail?: string }[];
+  /** Impostato dal renderer se la chiamata IPC fallisce. */
+  error?: string;
+};
+
 declare global {
   interface Window {
     electronAPI?: {
@@ -76,6 +90,8 @@ declare global {
       setZoomFactor: (factor: number) => void;
       setDarkMode: (dark: boolean) => void;
       onThemeUpdated: (callback: (dark: boolean) => void) => () => void;
+      /** Assente nelle shell desktop più vecchie. */
+      getDebugInfo?: () => Promise<DesktopDebugInfo>;
     };
   }
 }

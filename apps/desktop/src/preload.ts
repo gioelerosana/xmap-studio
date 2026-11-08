@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
+import type { DesktopDebugInfo } from './debug-log.js';
 
 /** Esito di un salvataggio sotto guardia (vedi `guardedSave` in @xmap/core/node). */
 export type SaveOutcome =
@@ -61,6 +62,7 @@ export type PrintToPdfOptions = {
   landscape: boolean;
 };
 export type OpenedFile = { path: string; name: string; bytes: Uint8Array };
+export type { DesktopDebugInfo };
 
 export interface ElectronAPI {
   getUpdateStatus: () => Promise<UpdateStatus>;
@@ -113,6 +115,8 @@ export interface ElectronAPI {
   setDarkMode: (dark: boolean) => void;
   /** Avvisa quando cambia l'aspetto del sistema (`nativeTheme` di Electron). */
   onThemeUpdated: (callback: (dark: boolean) => void) => () => void;
+  /** Informazioni di ambiente e log del main process, per Impostazioni › Debug. */
+  getDebugInfo: () => Promise<DesktopDebugInfo>;
 }
 
 const api: ElectronAPI = {
@@ -163,6 +167,7 @@ const api: ElectronAPI = {
     ipcRenderer.on('theme:updated', handler);
     return () => ipcRenderer.removeListener('theme:updated', handler);
   },
+  getDebugInfo: () => ipcRenderer.invoke('debug:getInfo'),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
