@@ -112,3 +112,14 @@ describe('mhchem', () => {
     expect(svg).toMatch(/<path id="[^"]*E429" d="M/);
   });
 });
+
+describe('SVG come XML valido', () => {
+  it('escapa < e > negli attributi (il browser rifiuta l\'SVG come immagine altrimenti)', async () => {
+    const { svg } = await renderLatexToSvgAsync('1 \\leq \\text{Mantissa} < 2 > 0 \\& x');
+    // Nessun `<`/`>` crudo dentro un valore di attributo.
+    const attrValues = [...svg.matchAll(/="([^"]*)"/g)].map((m) => m[1]);
+    expect(attrValues.some((v) => v.includes('<') || v.includes('>'))).toBe(false);
+    expect(svg).toContain('&lt; 2 &gt; 0');
+    expect(svg.startsWith('<svg')).toBe(true);
+  });
+});

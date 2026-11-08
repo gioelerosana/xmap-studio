@@ -5,6 +5,7 @@ import { mathjax } from '@mathjax/src/js/mathjax.js';
 import { TeX } from '@mathjax/src/js/input/tex.js';
 import { SVG } from '@mathjax/src/js/output/svg.js';
 import { liteAdaptor } from '@mathjax/src/js/adaptors/liteAdaptor.js';
+import { LiteElement } from '@mathjax/src/js/adaptors/lite/Element.js';
 import { RegisterHTMLHandler } from '@mathjax/src/js/handlers/html.js';
 // Frecce estensibili di mhchem (`\ce{A -> B}`): in MathJax 4 stanno in un'estensione del font.
 import { MathJaxMhchemFontExtension } from '@mathjax/mathjax-mhchem-font-extension/js/svg.js';
@@ -177,7 +178,10 @@ export async function createMathJaxConverter(): Promise<MathJaxConvert> {
   const convert: MathJaxConvert = (latex, display) => {
     try {
       const node = doc.convert(latex, { display, em: EM_PX, ex: EX_PX, containerWidth: CONTAINER_WIDTH_PX });
-      return { svg: adaptor.innerHTML(node) };
+      // Serializzazione XML, non HTML: in HTML MathJax lascia `<` e `>` crudi negli
+      // attributi (es. `data-latex="a < 2"`), e il browser rifiuta l'SVG come immagine.
+      const svgNode = adaptor.firstChild(node);
+      return { svg: svgNode instanceof LiteElement ? adaptor.serializeXML(svgNode) : adaptor.innerHTML(node) };
     } catch (err: unknown) {
       const pending = retryPromise(err);
       if (pending) return { pending };
