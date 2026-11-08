@@ -26,7 +26,7 @@ interface EquationDraftOptions {
   controller: AppController;
   darkMode: boolean;
   onChanged: () => void;
-  onToast: (type: 'info' | 'success' | 'warning' | 'error', message: string) => void;
+  onToast: (type: 'info' | 'success' | 'warning' | 'error', message: string, cause?: unknown) => void;
 }
 
 // Bozza dell'equazione dell'editor LaTeX: anteprima con debounce, applicazione e rimozione.
@@ -128,7 +128,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
       onToast('success', inlineMode ? 'Formula aggiornata' : 'Equazione applicata');
       return true;
     } catch (err: any) {
-      onToast('error', `Errore: ${err.message}`);
+      onToast('error', `Errore: ${err.message}`, err);
       return false;
     } finally {
       setApplying(false);
@@ -142,7 +142,7 @@ export function useEquationDraft({ topic: t, controller, darkMode, onChanged, on
       onToast('info', 'Equazione rimossa');
       return true;
     } catch (err: any) {
-      onToast('error', err.message);
+      onToast('error', err.message, err);
       return false;
     }
   };

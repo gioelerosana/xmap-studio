@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { AppController, RelationshipShape } from '@xmap/core';
 
 export type TextStylePatch = Parameters<AppController['setTopicTextStyle']>[1];
-export type ToastFn = (type: 'info' | 'success' | 'warning' | 'error', message: string) => void;
+export type ToastFn = (type: 'info' | 'success' | 'warning' | 'error', message: string, cause?: unknown) => void;
 
 /**
  * Modifiche a un blocco richieste dalla barra flottante. Ogni azione è un passo di undo,
@@ -41,7 +41,7 @@ export function useTopicActions({
         refreshState();
         if (success) addToast('success', success);
       } catch (err) {
-        addToast('error', err instanceof Error ? err.message : String(err));
+        addToast('error', err instanceof Error ? err.message : String(err), err);
       }
     };
     return {

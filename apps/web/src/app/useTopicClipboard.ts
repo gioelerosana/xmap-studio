@@ -62,7 +62,7 @@ export function useTopicClipboard({
         addToast('info', 'Blocco copiato');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile copiare il blocco: ${msg}`);
+        addToast('error', `Impossibile copiare il blocco: ${msg}`, err);
       }
     },
     [controller, selectedTopic, addToast]
@@ -89,7 +89,7 @@ export function useTopicClipboard({
         addToast('info', 'Blocco tagliato');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile tagliare il blocco: ${msg}`);
+        addToast('error', `Impossibile tagliare il blocco: ${msg}`, err);
       }
     },
     [controller, selectedTopic, allTopics, currentLayout, refreshState, addToast, selectSingle, setEditing]
@@ -106,7 +106,7 @@ export function useTopicClipboard({
         addToast('success', 'Blocco duplicato');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile duplicare il blocco: ${msg}`);
+        addToast('error', `Impossibile duplicare il blocco: ${msg}`, err);
       }
     },
     [controller, selectedTopic, refreshState, addToast, selectSingle]
@@ -150,7 +150,7 @@ export function useTopicClipboard({
           return;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          addToast('error', `Impossibile incollare il blocco: ${msg}`);
+          addToast('error', `Impossibile incollare il blocco: ${msg}`, err);
           return;
         }
       }
@@ -164,7 +164,7 @@ export function useTopicClipboard({
           addToast('success', 'Nuovo blocco creato dal testo');
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          addToast('error', `Impossibile creare il blocco: ${msg}`);
+          addToast('error', `Impossibile creare il blocco: ${msg}`, err);
         }
       }
     },

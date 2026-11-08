@@ -49,7 +49,7 @@ export function useSheetActions({
       try {
         action();
       } catch (err) {
-        addToast('error', err instanceof Error ? err.message : String(err));
+        addToast('error', err instanceof Error ? err.message : String(err), err);
       }
     };
     return {

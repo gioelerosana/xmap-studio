@@ -50,7 +50,7 @@ export function useTopicEditing({
         setEditing({ id: newId, mode: 'all', isNew: true });
         refreshState();
       } catch (err: any) {
-        addToast('error', err.message);
+        addToast('error', err.message, err);
       }
     },
     [controller, refreshState, addToast, selectSingle, setEditing]
@@ -63,7 +63,7 @@ export function useTopicEditing({
         selectSingle(newId);
         refreshState();
       } catch (err: any) {
-        addToast('error', err.message);
+        addToast('error', err.message, err);
       }
     },
     [controller, refreshState, addToast, selectSingle]
@@ -77,7 +77,7 @@ export function useTopicEditing({
         controller.setTopicFolded(topicId, !folded);
         refreshState();
       } catch (err: unknown) {
-        addToast('error', err instanceof Error ? err.message : String(err));
+        addToast('error', err instanceof Error ? err.message : String(err), err);
       }
     },
     [controller, refreshState, addToast, allTopics]
@@ -90,7 +90,7 @@ export function useTopicEditing({
         refreshState();
         addToast('success', 'Blocco spostato');
       } catch (err: any) {
-        addToast('error', `Spostamento non riuscito: ${err.message}`);
+        addToast('error', `Spostamento non riuscito: ${err.message}`, err);
       }
     },
     [controller, refreshState, addToast]
@@ -102,7 +102,7 @@ export function useTopicEditing({
         controller.setTopicCustomWidth(id, width);
         refreshState();
       } catch (err: any) {
-        addToast('error', `Ridimensionamento non riuscito: ${err.message}`);
+        addToast('error', `Ridimensionamento non riuscito: ${err.message}`, err);
       }
     },
     [controller, refreshState, addToast]
@@ -114,7 +114,7 @@ export function useTopicEditing({
         controller.setTopicImageSize(id, size);
         refreshState();
       } catch (err: any) {
-        addToast('error', `Ridimensionamento immagine non riuscito: ${err.message}`);
+        addToast('error', `Ridimensionamento immagine non riuscito: ${err.message}`, err);
       }
     },
     [controller, refreshState, addToast]
@@ -126,7 +126,7 @@ export function useTopicEditing({
         controller.setTopicPosition(id, position);
         refreshState();
       } catch (err: any) {
-        addToast('error', `Spostamento non riuscito: ${err.message}`);
+        addToast('error', `Spostamento non riuscito: ${err.message}`, err);
       }
     },
     [controller, refreshState, addToast]
@@ -142,7 +142,7 @@ export function useTopicEditing({
       refreshState();
       addToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
     } catch (err: any) {
-      addToast('error', err.message);
+      addToast('error', err.message, err);
     }
   };
 
@@ -157,7 +157,7 @@ export function useTopicEditing({
       addToast('info', 'Blocco rimosso, figli ricollegati — Ctrl+Z per annullare');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      addToast('error', msg);
+      addToast('error', msg, err);
     }
   };
 
@@ -181,7 +181,7 @@ export function useTopicEditing({
       refreshState();
       addToast('success', 'Sommario aggiunto');
     } catch (err: any) {
-      addToast('error', err.message || 'Impossibile creare il sommario.');
+      addToast('error', err.message || 'Impossibile creare il sommario.', err);
     }
   }, [selectedTopicIds, selectedTopicId, controller, refreshState, addToast, selectSingle, setEditing]);
 
@@ -223,7 +223,7 @@ export function useTopicEditing({
         }
       }
     } catch (err: any) {
-      addToast('error', err.message);
+      addToast('error', err.message, err);
       return;
     }
     if (exit === 'tab') createTopic(id, 'child');

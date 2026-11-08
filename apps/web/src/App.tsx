@@ -188,7 +188,7 @@ export const App: React.FC = () => {
       selectSingle(id);
       loadMathJax().then(
         () => setLatexTopicId(id),
-        (err: unknown) => addToast('error', `Editor delle formule non disponibile: ${err instanceof Error ? err.message : String(err)}`)
+        (err: unknown) => addToast('error', `Editor delle formule non disponibile: ${err instanceof Error ? err.message : String(err)}`, err)
       );
     },
     [selectSingle, addToast]
@@ -626,7 +626,7 @@ export const App: React.FC = () => {
                 controller.setSheetTheme(sheetIndex, patch);
                 refreshState();
               } catch (err) {
-                addToast('error', err instanceof Error ? err.message : String(err));
+                addToast('error', err instanceof Error ? err.message : String(err), err);
               }
             }}
           />
@@ -641,7 +641,7 @@ export const App: React.FC = () => {
                 refreshState();
                 addToast('success', 'Outline importato');
               } catch (err: any) {
-                addToast('error', `Import non riuscito: ${err.message}`);
+                addToast('error', `Import non riuscito: ${err.message}`, err);
               }
             }}
           />

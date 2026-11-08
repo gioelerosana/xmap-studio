@@ -74,7 +74,7 @@ export function useImageInsert({
         );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile aggiungere l'immagine: ${msg}`);
+        addToast('error', `Impossibile aggiungere l'immagine: ${msg}`, err);
       }
     },
     [

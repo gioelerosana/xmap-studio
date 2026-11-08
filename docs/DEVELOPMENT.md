@@ -65,6 +65,28 @@ caricamento su richiesta". La preview usa MathJax per produrre SVG; quando
 disponibile `@resvg/resvg-js` produce PNG. Nel browser si usa il percorso Canvas
 predisposto dal core.
 
+## Menu Debug
+
+Nascosto come le opzioni sviluppatore di Android: in **Impostazioni ›
+Informazioni** si tocca 7 volte la versione e compare la sezione **Debug**
+(preferenza `developerMode` in `settings.ts`; si spegne dalla sezione stessa).
+Mostra:
+
+- informazioni di ambiente (`apps/web/src/debugInfo.ts`): versione e commit
+  della build (`__APP_COMMIT__`, da `vite.config.ts`), browser/Electron,
+  schermo, MathJax, service worker, archiviazione, impostazioni;
+- il log dell'interfaccia (`apps/web/src/debugLog.ts`): `console.*`, errori e
+  promesse non gestiti, ogni toast con l'errore originale (stack, `code`,
+  `details` di `XmapError`, catena di `cause`). Per questo nei `catch` si passa
+  l'errore come terzo argomento: `addToast('error', messaggio, err)`;
+- nell'app desktop, il log del main process (`apps/desktop/src/debug-log.ts`,
+  IPC `debug:getInfo`): console, promesse rifiutate, renderer o processi figli
+  terminati.
+
+Tutto resta in memoria (1000 voci nel renderer, 500 nel main) e si perde alla
+chiusura: niente disco, niente rete. «Copia rapporto» e «Scarica .txt» producono
+il testo da allegare a una segnalazione.
+
 ## Convenzioni
 
 - Commenti in italiano, identificatori/API in inglese.

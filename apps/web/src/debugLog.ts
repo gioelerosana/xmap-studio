@@ -55,6 +55,8 @@ export function formatError(value: unknown): string {
       // Lo stack di V8 ripete già "Nome: messaggio" in testa: si tiene solo il resto.
       const frames = stack.startsWith(`${current.name}: `) ? stack.split('\n').slice(1).join('\n') : stack;
       lines.push(frames ? `${head}\n${frames}` : head);
+      // `XmapError` del core porta i dati di contesto in `details`.
+      if ('details' in current && current.details !== undefined) lines.push(`Dettagli: ${formatValue(current.details)}`);
       current = current.cause;
     } else {
       lines.push(`${prefix}${formatValue(current)}`);

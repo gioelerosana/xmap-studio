@@ -75,7 +75,7 @@ export function useWorkbookSave({
             outcome = await window.electronAPI.saveAtomic(savePath, bytes, { expectedHash, force: true });
           }
           if (!outcome.ok) {
-            addToast('error', `Errore durante il salvataggio: ${outcome.message}`);
+            addToast('error', `Errore durante il salvataggio: ${outcome.message}`, outcome);
             return false;
           }
           controller.markSaved(savePath, contentHash, revision);
@@ -115,7 +115,7 @@ export function useWorkbookSave({
         addToast('success', `Mappa salvata (${validation.resourceRefs} risorse registrate)`);
         return true;
       } catch (err: any) {
-        addToast('error', `Errore durante il salvataggio: ${err.message}`);
+        addToast('error', `Errore durante il salvataggio: ${err.message}`, err);
         return false;
       } finally {
         savingRef.current = false;
@@ -162,7 +162,7 @@ export function useWorkbookSave({
         addToast('success', 'Mappa salvata su Nextcloud');
         return true;
       } catch (err: unknown) {
-        addToast('error', `Errore durante il salvataggio: ${err instanceof Error ? err.message : String(err)}`);
+        addToast('error', `Errore durante il salvataggio: ${err instanceof Error ? err.message : String(err)}`, err);
         return false;
       } finally {
         savingRef.current = false;

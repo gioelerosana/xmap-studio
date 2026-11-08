@@ -66,7 +66,7 @@ export function useWorkbookFiles({
           addToast('success', `Aperto: ${res.name}`);
         });
       } catch (err: any) {
-        addToast('error', `Errore apertura file: ${err.message || String(err)}`);
+        addToast('error', `Errore apertura file: ${err.message || String(err)}`, err);
       }
     },
     [controller, addToast, requestWorkbookReplacement, adoptWorkbook]
@@ -93,7 +93,7 @@ export function useWorkbookFiles({
         addToast('success', `Mappa aperta: ${res.name}`);
       });
     } catch (err: any) {
-      addToast('error', `Errore apertura file: ${err.message || String(err)}`);
+      addToast('error', `Errore apertura file: ${err.message || String(err)}`, err);
     }
   }, [controller, isElectron, addToast, requestWorkbookReplacement, adoptWorkbook]);
 
@@ -108,7 +108,7 @@ export function useWorkbookFiles({
           addToast('success', `Mappa aperta da Nextcloud: ${entry.name}`);
         });
       } catch (err: unknown) {
-        addToast('error', `Errore apertura da Nextcloud: ${err instanceof Error ? err.message : String(err)}`);
+        addToast('error', `Errore apertura da Nextcloud: ${err instanceof Error ? err.message : String(err)}`, err);
       }
     },
     [nextcloudAccount, controller, addToast, requestWorkbookReplacement, adoptWorkbook]
@@ -125,7 +125,7 @@ export function useWorkbookFiles({
         addToast('info', 'Mappa demo caricata');
       });
     } catch (err: any) {
-      addToast('error', `Impossibile caricare la demo: ${err.message}`);
+      addToast('error', `Impossibile caricare la demo: ${err.message}`, err);
     }
   };
 
@@ -172,7 +172,7 @@ export function useWorkbookFiles({
       adoptWorkbook(dto);
       addToast('success', `Aperto ${file.name}`);
     } catch (err: unknown) {
-      addToast('error', `Impossibile aprire ${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+      addToast('error', `Impossibile aprire ${file.name}: ${err instanceof Error ? err.message : String(err)}`, err);
     }
   };
 
@@ -192,7 +192,7 @@ export function useWorkbookFiles({
     try {
       await replace?.();
     } catch (err: any) {
-      addToast('error', `Impossibile aprire la mappa: ${err.message || String(err)}`);
+      addToast('error', `Impossibile aprire la mappa: ${err.message || String(err)}`, err);
     }
   };
 
@@ -222,7 +222,7 @@ export function useWorkbookFiles({
       addToast('success', `Aperto: ${file.name}`);
       if (files.length > 1) addToast('info', 'Più file ricevuti: aperto solo il primo');
     }).catch((err: unknown) => {
-      addToast('error', `Impossibile aprire ${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+      addToast('error', `Impossibile aprire ${file.name}: ${err instanceof Error ? err.message : String(err)}`, err);
     });
   };
   useEffect(() => subscribeIncomingFiles((files) => openIncomingRef.current(files)), []);

@@ -78,9 +78,16 @@ function rasterizeBrowserCanvas(
       }, 'image/png');
     };
 
-    img.onerror = (e) => {
+    // L'evento `error` di <img> non dice il motivo (di solito un SVG non valido come XML):
+    // il messaggio resta leggibile e l'inizio dell'SVG va nei `details`, per il log di debug.
+    img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new XmapError(CODE_RENDERER, `Caricamento SVG fallito per rasterizzazione: ${e}`));
+      reject(
+        new XmapError(CODE_RENDERER, 'Il browser non è riuscito a leggere la formula come immagine SVG.', {
+          svgLength: svg.length,
+          svgStart: svg.slice(0, 500),
+        })
+      );
     };
 
     img.src = url;
