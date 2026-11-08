@@ -48,7 +48,7 @@ export function useTopicClipboard({
   setEditing,
   insertImage,
 }: TopicClipboardOptions) {
-  const { selectSingle } = selection;
+  const { selectSingle, exitSelectionMode } = selection;
   const inMemoryClipboard = useRef<string | null>(null);
 
   const handleCopyTopic = useCallback(
@@ -59,13 +59,14 @@ export function useTopicClipboard({
         const payload = controller.copyTopic(id);
         inMemoryClipboard.current = payload;
         navigator.clipboard?.writeText(payload).catch(() => {});
+        exitSelectionMode();
         addToast('info', 'Blocco copiato');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         addToast('error', `Impossibile copiare il blocco: ${msg}`, err);
       }
     },
-    [controller, selectedTopic, addToast]
+    [controller, selectedTopic, addToast, exitSelectionMode]
   );
 
   const handleCutTopic = useCallback(
@@ -84,6 +85,7 @@ export function useTopicClipboard({
         const next = currentLayout ? selectionAfterDelete(currentLayout, id) : undefined;
         controller.removeTopic(id);
         selectSingle(next);
+        exitSelectionMode();
         setEditing(null);
         refreshState();
         addToast('info', 'Blocco tagliato');
@@ -92,7 +94,7 @@ export function useTopicClipboard({
         addToast('error', `Impossibile tagliare il blocco: ${msg}`, err);
       }
     },
-    [controller, selectedTopic, allTopics, currentLayout, refreshState, addToast, selectSingle, setEditing]
+    [controller, selectedTopic, allTopics, currentLayout, refreshState, addToast, selectSingle, exitSelectionMode, setEditing]
   );
 
   const handleDuplicateTopic = useCallback(
@@ -102,6 +104,7 @@ export function useTopicClipboard({
       try {
         const { newId } = controller.duplicateTopic(id);
         selectSingle(newId);
+        exitSelectionMode();
         refreshState();
         addToast('success', 'Blocco duplicato');
       } catch (err: unknown) {
@@ -109,7 +112,7 @@ export function useTopicClipboard({
         addToast('error', `Impossibile duplicare il blocco: ${msg}`, err);
       }
     },
-    [controller, selectedTopic, refreshState, addToast, selectSingle]
+    [controller, selectedTopic, refreshState, addToast, selectSingle, exitSelectionMode]
   );
 
   const handlePasteTopic = useCallback(
@@ -145,6 +148,7 @@ export function useTopicClipboard({
         try {
           const { newId } = controller.pasteTopic(targetId, text);
           selectSingle(newId);
+          exitSelectionMode();
           refreshState();
           addToast('success', 'Blocco incollato');
           return;
@@ -160,6 +164,7 @@ export function useTopicClipboard({
         try {
           const { newId } = controller.addTopic(targetId, clean);
           selectSingle(newId);
+          exitSelectionMode();
           refreshState();
           addToast('success', 'Nuovo blocco creato dal testo');
         } catch (err: unknown) {
@@ -168,7 +173,7 @@ export function useTopicClipboard({
         }
       }
     },
-    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, insertImage]
+    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, exitSelectionMode, insertImage]
   );
 
   return {

@@ -6,10 +6,12 @@ interface RelationshipsOptions {
   controller: AppController;
   refreshState: () => void;
   addToast: AddToast;
+  /** Chiamata dopo aver creato una relazione (chiude la modalità selezione). */
+  onDone?: () => void;
 }
 
 /** Relazioni tra blocchi: modalità di collegamento (clic sul secondo blocco) e punti di controllo. */
-export function useRelationships({ controller, refreshState, addToast }: RelationshipsOptions) {
+export function useRelationships({ controller, refreshState, addToast, onDone }: RelationshipsOptions) {
   const [connectingTopicId, setConnectingTopicId] = useState<string | null>(null);
 
   const handleConnectRelationshipTarget = useCallback(
@@ -23,6 +25,7 @@ export function useRelationships({ controller, refreshState, addToast }: Relatio
       try {
         controller.addTopicRelationship(connectingTopicId, targetTopicId);
         refreshState();
+        onDone?.();
         addToast('success', 'Relazione creata');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -30,7 +33,7 @@ export function useRelationships({ controller, refreshState, addToast }: Relatio
       }
       setConnectingTopicId(null);
     },
-    [connectingTopicId, controller, refreshState, addToast]
+    [connectingTopicId, controller, refreshState, addToast, onDone]
   );
 
   const handleRelationshipControlPoint = useCallback(

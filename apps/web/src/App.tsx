@@ -67,7 +67,7 @@ export const App: React.FC = () => {
   const cycleTheme = useCallback(() => updateSettings({ theme: nextTheme(settings.theme) }), [settings.theme, updateSettings]);
 
   const selection = useSelection();
-  const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
+  const { selectedTopicId, selectedTopicIds, selectSingle, exitSelectionMode } = selection;
   const { toasts, addToast, removeToast } = useToasts();
   const updateStatus = useUpdateStatus();
   // Versione già annunciata con un toast in questa sessione: il toast non si ripete a ogni controllo.
@@ -115,8 +115,9 @@ export const App: React.FC = () => {
       setActiveSheetIndex(0);
       setDocumentKey((k) => k + 1);
       selectSingle(undefined);
+      exitSelectionMode();
     },
-    [selectSingle]
+    [selectSingle, exitSelectionMode]
   );
 
   // Cambio di foglio: la selezione torna vuota. La vista si riadatta da sola (viewKey cambia con l'indice, la radice con il foglio).
@@ -274,9 +275,20 @@ export const App: React.FC = () => {
     setConnectingTopicId,
     handleConnectRelationshipTarget,
     handleRelationshipControlPoint,
-  } = useRelationships({ controller, refreshState, addToast });
+  } = useRelationships({ controller, refreshState, addToast, onDone: exitSelectionMode });
 
-  const topicActions = useTopicActions({ controller, refreshState, addToast });
+  // Cornice, sommario e relazione dalla barra chiudono la modalità selezione come le altre operazioni sui blocchi;
+  // la formattazione no, così si possono applicare più stili di seguito.
+  const baseTopicActions = useTopicActions({ controller, refreshState, addToast });
+  const topicActions = useMemo<typeof baseTopicActions>(
+    () => ({
+      ...baseTopicActions,
+      addBoundary: (id) => { baseTopicActions.addBoundary(id); exitSelectionMode(); },
+      addSummary: (id) => { baseTopicActions.addSummary(id); exitSelectionMode(); },
+      addRelationship: (fromId, toId, title) => { baseTopicActions.addRelationship(fromId, toId, title); exitSelectionMode(); },
+    }),
+    [baseTopicActions, exitSelectionMode]
+  );
 
   const sheetActions = useSheetActions({ controller, refreshState, addToast, activeSheetIndex, selectSheet });
 

@@ -41,7 +41,7 @@ export function useClipboardEvents({
   handleCutTopic,
   suspended,
 }: ClipboardEventsOptions) {
-  const { selectSingle } = selection;
+  const { selectSingle, exitSelectionMode } = selection;
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -80,6 +80,7 @@ export function useClipboardEvents({
         try {
           const { newId } = controller.pasteTopic(targetParentId, text);
           selectSingle(newId);
+          exitSelectionMode();
           refreshState();
           addToast('success', 'Blocco incollato');
         } catch (err: unknown) {
@@ -96,6 +97,7 @@ export function useClipboardEvents({
         try {
           const { newId } = controller.addTopic(selectedTopic.id, clean);
           selectSingle(newId);
+          exitSelectionMode();
           refreshState();
           addToast('success', 'Nuovo blocco creato dal testo');
         } catch (err: unknown) {
@@ -172,5 +174,5 @@ export function useClipboardEvents({
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, inMemoryClipboard, suspended]);
+  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, exitSelectionMode, inMemoryClipboard, suspended]);
 }
