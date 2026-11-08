@@ -420,15 +420,17 @@ Modello: una PR = un problema = un commit logico su `main`, unita in fretta.
 
 - **Un task, una PR.** Se il task ne contiene due indipendenti, sono due branch
   e due PR.
-- **Draft finché si itera.** Apri la PR come bozza (`gh pr create --draft`) se
-  l'utente deve ancora guardare l'anteprima e chiedere ritocchi. Cloudflare
-  Workers Builds compila ogni branch e ogni PR come Worker Preview e il suo bot
-  tiene nella PR un commento con l'URL del branch (sempre l'ultimo commit) e
-  quello del singolo deploy ([`docs/DEPLOY.md`](docs/DEPLOY.md) §"Anteprime
-  delle PR"). Per provare dal telefono resta `pnpm dev:tailnet`.
-- **Pronta e unita lo stesso giorno.** Quando l'utente è soddisfatto la PR esce
-  dalla bozza (`gh pr ready`) e la unisce lui. Una PR ancora aperta dopo 2–3
-  giorni è troppo grossa: va spezzata.
+- **Pronta da subito.** La PR si apre già pronta (`gh pr create` senza
+  `--draft`), anche se l'utente deve ancora guardare l'anteprima e chiedere
+  ritocchi. Si apre in bozza solo per un motivo concreto (lavoro incompleto,
+  verifica rimasta a metà, dubbio da sciogliere con l'utente), e il motivo va
+  scritto nel riepilogo finale. Cloudflare Workers Builds compila ogni branch e
+  ogni PR come Worker Preview e il suo bot tiene nella PR un commento con l'URL
+  del branch (sempre l'ultimo commit) e quello del singolo deploy
+  ([`docs/DEPLOY.md`](docs/DEPLOY.md) §"Anteprime delle PR"). Per provare dal
+  telefono resta `pnpm dev:tailnet`.
+- **Unita lo stesso giorno.** Quando l'utente è soddisfatto la unisce lui. Una
+  PR ancora aperta dopo 2–3 giorni è troppo grossa: va spezzata.
 - **Le correzioni dopo il feedback vanno nella stessa PR** (altri commit sullo
   stesso branch, o un `gh pr edit` se cambia il titolo), non in una PR nuova.
 - **Ramo di integrazione di lunga durata** solo per riscritture non spezzabili
