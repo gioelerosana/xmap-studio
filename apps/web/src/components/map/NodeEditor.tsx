@@ -587,6 +587,7 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
       role="textbox"
       aria-multiline="true"
       aria-label="Titolo del blocco"
+      data-node-editor=""
       spellCheck={false}
       suppressContentEditableWarning
       className={cn(
@@ -604,6 +605,17 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
           (e.ctrlKey || e.metaKey) &&
           !e.altKey &&
           e.key.toLowerCase() === 's' &&
+          !e.nativeEvent.isComposing
+        ) {
+          return;
+        }
+        // Ctrl/Cmd+Maiusc+L (editor LaTeX) passa all'app allo stesso modo: useMapShortcuts
+        // toglie il focus all'editor (il blur conferma il testo) e apre l'editor della formula.
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          e.shiftKey &&
+          !e.altKey &&
+          e.key.toLowerCase() === 'l' &&
           !e.nativeEvent.isComposing
         ) {
           return;
