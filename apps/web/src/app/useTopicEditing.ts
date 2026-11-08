@@ -36,7 +36,7 @@ export function useTopicEditing({
   setEditing,
   openLatex,
 }: TopicEditingOptions) {
-  const { selectedTopicId, selectedTopicIds, selectSingle } = selection;
+  const { selectedTopicId, selectedTopicIds, selectSingle, exitSelectionMode } = selection;
 
   // Nuovo blocco da tastiera o dalla mappa: si seleziona ed entra subito in editing in place.
   const createTopic = useCallback(
@@ -47,13 +47,14 @@ export function useTopicEditing({
             ? controller.addTopic(anchorId, 'Nuovo blocco')
             : controller.addSiblingTopic(anchorId, 'Nuovo blocco', kind);
         selectSingle(newId);
+        exitSelectionMode();
         setEditing({ id: newId, mode: 'all', isNew: true });
         refreshState();
       } catch (err: any) {
         addToast('error', err.message, err);
       }
     },
-    [controller, refreshState, addToast, selectSingle, setEditing]
+    [controller, refreshState, addToast, selectSingle, exitSelectionMode, setEditing]
   );
 
   const handleAddChild = useCallback(
@@ -61,12 +62,13 @@ export function useTopicEditing({
       try {
         const { newId } = controller.addTopic(parentId, 'Nuovo blocco');
         selectSingle(newId);
+        exitSelectionMode();
         refreshState();
       } catch (err: any) {
         addToast('error', err.message, err);
       }
     },
-    [controller, refreshState, addToast, selectSingle]
+    [controller, refreshState, addToast, selectSingle, exitSelectionMode]
   );
 
   // Piega/apre nel modello: la vista deriva lo stato dal DTO, quindi va aggiornata dopo il comando.
@@ -87,13 +89,14 @@ export function useTopicEditing({
     (id: string, targetId: string, placement: DropPlacement) => {
       try {
         controller.moveTopic(id, targetId, placement);
+        exitSelectionMode();
         refreshState();
         addToast('success', 'Blocco spostato');
       } catch (err: any) {
         addToast('error', `Spostamento non riuscito: ${err.message}`, err);
       }
     },
-    [controller, refreshState, addToast]
+    [controller, refreshState, addToast, exitSelectionMode]
   );
 
   const handleResizeTopicWidth = useCallback(
@@ -138,6 +141,7 @@ export function useTopicEditing({
       const next = currentLayout ? selectionAfterDelete(currentLayout, selectedTopic.id) : undefined;
       controller.removeTopic(selectedTopic.id);
       selectSingle(next);
+      exitSelectionMode();
       setEditing(null);
       refreshState();
       addToast('info', 'Blocco eliminato — Ctrl+Z per annullare');
@@ -152,6 +156,7 @@ export function useTopicEditing({
       const { childIds } = controller.removeTopicKeepChildren(topicId);
       const next = childIds[0] ?? fallback;
       selectSingle(next);
+      exitSelectionMode();
       setEditing(null);
       refreshState();
       addToast('info', 'Blocco rimosso, figli ricollegati — Ctrl+Z per annullare');
@@ -177,13 +182,14 @@ export function useTopicEditing({
     try {
       const { summaryTopicId } = controller.addTopicSummary(range.parentId, range.start, range.end, 'Sommario');
       selectSingle(summaryTopicId);
+      exitSelectionMode();
       setEditing({ id: summaryTopicId, mode: 'all', isNew: true });
       refreshState();
       addToast('success', 'Sommario aggiunto');
     } catch (err: any) {
       addToast('error', err.message || 'Impossibile creare il sommario.', err);
     }
-  }, [selectedTopicIds, selectedTopicId, controller, refreshState, addToast, selectSingle, setEditing]);
+  }, [selectedTopicIds, selectedTopicId, controller, refreshState, addToast, selectSingle, exitSelectionMode, setEditing]);
 
   // Undo/redo: la selezione resta se il blocco esiste ancora, altrimenti risale al genitore.
   const doUndoRedo = useCallback(

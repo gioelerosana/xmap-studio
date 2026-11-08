@@ -20,6 +20,11 @@ export interface SelectionState {
    */
   selectionMode: boolean;
   setSelectionMode: Dispatch<SetStateAction<boolean>>;
+  /**
+   * Chiude la modalità selezione: la chiamano le operazioni sulla selezione (copia, sommario,
+   * eliminazione, nuovi blocchi, …) a lavoro fatto, così si torna da soli alla modalità normale.
+   */
+  exitSelectionMode: () => void;
 }
 
 export function useSelection(): SelectionState {
@@ -28,6 +33,7 @@ export function useSelection(): SelectionState {
   const [selectionMode, setSelectionMode] = useState(false);
   const selectionModeRef = useRef(selectionMode);
   selectionModeRef.current = selectionMode;
+  const exitSelectionMode = useCallback(() => setSelectionMode(false), []);
   // La selezione multipla contiene sempre la primaria: ogni altro cambio di
   // `selectedTopicId` (nuovo blocco, undo, immagine incollata…) la riporta a singola.
   useEffect(() => {
@@ -92,5 +98,6 @@ export function useSelection(): SelectionState {
     onSelectTopic,
     selectionMode,
     setSelectionMode,
+    exitSelectionMode,
   };
 }

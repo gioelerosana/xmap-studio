@@ -30,7 +30,7 @@ export function useImageInsert({
   addToast,
   selection,
 }: ImageInsertOptions) {
-  const { selectedTopicIds, setSelectedTopicId, selectSingle } = selection;
+  const { selectedTopicIds, setSelectedTopicId, selectSingle, exitSelectionMode } = selection;
 
   const insertImage = useCallback(
     async (file: Blob, source: ImageInsertSource) => {
@@ -55,6 +55,7 @@ export function useImageInsert({
             size
           );
           selectSingle(summaryTopicId);
+          exitSelectionMode();
           refreshState();
           addToast('success', source === 'paste' ? 'Immagine incollata come sommario' : 'Immagine aggiunta come sommario');
           return;
@@ -67,6 +68,7 @@ export function useImageInsert({
 
         const { newId } = controller.addImageTopic(targetParentId, image.bytes, image.mimeType, size);
         setSelectedTopicId(newId);
+        exitSelectionMode();
         refreshState();
         addToast(
           'success',
@@ -86,6 +88,7 @@ export function useImageInsert({
       addToast,
       setSelectedTopicId,
       selectSingle,
+      exitSelectionMode,
     ]
   );
 
