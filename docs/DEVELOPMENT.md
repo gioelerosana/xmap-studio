@@ -84,7 +84,7 @@ Mostra:
   terminati.
 
 Tutto resta in memoria (1000 voci nel renderer, 500 nel main) e si perde alla
-chiusura: niente disco, niente rete. «Copia rapporto» e «Scarica .txt» producono
+chiusura: niente disco, niente rete. «Copia rapporto» e «Salva .txt» producono
 il testo da allegare a una segnalazione.
 
 ## Convenzioni
