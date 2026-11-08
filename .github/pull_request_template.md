@@ -1,6 +1,7 @@
 <!--
-Una PR = un problema = un commit logico su `main`. Se la descrizione ha bisogno
-di due paragrafi di "e inoltre", spezza la PR. Titolo in Conventional Commits,
+Una chat = una PR, aperta pronta al merge (non in bozza). Le iterazioni nella
+stessa chat aggiornano questa PR, anche su argomenti diversi: in quel caso la
+descrizione elenca ogni cambiamento. Titolo in Conventional Commits,
 tipo in inglese e descrizione in italiano che dice l'effetto per l'utente:
 `fix(save): evita backup duplicati nello stesso secondo`.
 Il merge non rilascia nulla: la release la lancia l'utente a mano.

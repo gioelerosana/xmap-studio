@@ -204,12 +204,14 @@ Ogni task si chiude **sempre** così, senza aspettare che l'utente lo chieda:
 2. committa **tutte** le modifiche del working tree (Conventional Commits, vedi
    §"Git e GitHub"), divise in più commit se toccano argomenti distinti;
 3. `git push -u origin <branch>`;
-4. **apri la PR** con `gh pr create --base main --title "<titolo>" --body-file
-   <file>` (mai `--fill`), compilando le sezioni di
-   [`.github/pull_request_template.md`](.github/pull_request_template.md). Se il
-   task descrive una PR già esistente (o `gh pr view` ne trova una per il
-   branch), il push la aggiorna: modifica titolo e descrizione con
-   `gh pr edit` invece di aprirne un'altra;
+4. **apri la PR, pronta al merge**, con `gh pr create --base main --title
+   "<titolo>" --body-file <file>` (mai `--fill`, mai `--draft`), compilando le
+   sezioni di [`.github/pull_request_template.md`](.github/pull_request_template.md).
+   **Se nella stessa chat c'è già una PR aperta, non se ne apre un'altra**: le
+   nuove modifiche, anche su un argomento diverso, vanno in quella (stesso
+   branch, push, e `gh pr edit` per aggiornare titolo e descrizione). Lo stesso
+   vale se il task descrive una PR esistente o `gh pr view` ne trova una per il
+   branch;
 5. nel riepilogo finale all'utente scrivi **URL della PR, titolo e branch**,
    il tipo (`fix`/`feat`/…) usato e, se non lo ha indicato l'utente, perché lo
    hai scelto (§"Versioni, tag e titolo dei PR").
@@ -416,21 +418,25 @@ gh pr create --base main --title "feat(map): …" --body "…"
 
 ## Flusso delle PR
 
-Modello: una PR = un problema = un commit logico su `main`, unita in fretta.
+Modello: una chat = una PR, pronta al merge e unita in fretta.
 
-- **Un task, una PR.** Se il task ne contiene due indipendenti, sono due branch
-  e due PR.
-- **Draft finché si itera.** Apri la PR come bozza (`gh pr create --draft`) se
-  l'utente deve ancora guardare l'anteprima e chiedere ritocchi. Cloudflare
-  Workers Builds compila ogni branch e ogni PR come Worker Preview e il suo bot
-  tiene nella PR un commento con l'URL del branch (sempre l'ultimo commit) e
-  quello del singolo deploy ([`docs/DEPLOY.md`](docs/DEPLOY.md) §"Anteprime
-  delle PR"). Per provare dal telefono resta `pnpm dev:tailnet`.
-- **Pronta e unita lo stesso giorno.** Quando l'utente è soddisfatto la PR esce
-  dalla bozza (`gh pr ready`) e la unisce lui. Una PR ancora aperta dopo 2–3
-  giorni è troppo grossa: va spezzata.
-- **Le correzioni dopo il feedback vanno nella stessa PR** (altri commit sullo
-  stesso branch, o un `gh pr edit` se cambia il titolo), non in una PR nuova.
+- **Una chat, una PR.** La prima PR di una chat si apre a fine task; da lì in
+  poi, finché l'utente itera nella stessa chat, ogni modifica (correzioni,
+  ritocchi, richieste nuove) va in **quella** PR: altri commit sullo stesso
+  branch e `gh pr edit` per titolo e descrizione. Mai una seconda PR nella stessa
+  chat. Una chat nuova autorizza una PR nuova.
+- **Sempre pronta al merge.** La PR si apre già pronta (`gh pr create` senza
+  `--draft`) e resta tale dopo ogni push: lavoro concluso, build e test verdi,
+  descrizione aggiornata, così l'utente può unirla subito. La bozza è
+  un'eccezione, solo per un motivo concreto (lavoro incompleto, verifica
+  rimasta a metà, dubbio da sciogliere con l'utente), e il motivo va scritto
+  nel riepilogo finale. Cloudflare Workers Builds compila ogni branch e
+  ogni PR come Worker Preview e il suo bot tiene nella PR un commento con l'URL
+  del branch (sempre l'ultimo commit) e quello del singolo deploy
+  ([`docs/DEPLOY.md`](docs/DEPLOY.md) §"Anteprime delle PR"). Per provare dal
+  telefono resta `pnpm dev:tailnet`.
+- **Unita lo stesso giorno.** Quando l'utente è soddisfatto la unisce lui. Una
+  PR ancora aperta dopo 2–3 giorni è troppo grossa: va spezzata.
 - **Ramo di integrazione di lunga durata** solo per riscritture non spezzabili
   in passi che lascino `main` funzionante; in quel caso va riallineato spesso a
   `main` (`git fetch && git rebase origin/main` o merge) per non accumulare
