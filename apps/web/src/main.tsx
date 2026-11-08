@@ -5,8 +5,10 @@ import { App } from './App';
 import { installTextMeasurer } from './textMeasure';
 import { preloadMathJax } from './mathReady';
 import { installIncomingFiles } from './app/incomingFiles';
+import { installDebugLog } from './debugLog';
 import './index.css';
 
+installDebugLog();
 installTextMeasurer();
 installIncomingFiles();
 
