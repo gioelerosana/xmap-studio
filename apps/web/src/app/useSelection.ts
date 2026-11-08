@@ -7,10 +7,16 @@ export interface SelectionState {
   setSelectedTopicIds: Dispatch<SetStateAction<string[]>>;
   /** Selezione singola (o vuota) con primaria e lista allineate. */
   selectSingle: (id: string | undefined) => void;
+  /**
+   * Sostituisce la selezione con `ids` (selezione ad area): la primaria resta la stessa se è
+   * ancora selezionata, altrimenti diventa il primo blocco dell'elenco.
+   */
+  selectMany: (ids: string[]) => void;
   onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
   /**
    * Modalità selezione (pulsante della barra, pensato per il touch dove non ci sono Maiusc/Ctrl):
-   * ogni tap su un blocco lo aggiunge o lo toglie dalla selezione, come Ctrl+clic.
+   * ogni tap su un blocco lo aggiunge o lo toglie dalla selezione, come Ctrl+clic, e trascinando
+   * sullo sfondo si disegna un'area che seleziona i blocchi che tocca.
    */
   selectionMode: boolean;
   setSelectionMode: Dispatch<SetStateAction<boolean>>;
@@ -33,6 +39,11 @@ export function useSelection(): SelectionState {
   const selectSingle = useCallback((id: string | undefined) => {
     setSelectedTopicId(id);
     setSelectedTopicIds(id ? [id] : []);
+  }, []);
+
+  const selectMany = useCallback((ids: string[]) => {
+    setSelectedTopicIds(ids);
+    setSelectedTopicId((prev) => (prev !== undefined && ids.includes(prev) ? prev : ids[0]));
   }, []);
 
   const onSelectTopic = useCallback(
@@ -77,6 +88,7 @@ export function useSelection(): SelectionState {
     setSelectedTopicId,
     setSelectedTopicIds,
     selectSingle,
+    selectMany,
     onSelectTopic,
     selectionMode,
     setSelectionMode,

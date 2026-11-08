@@ -53,9 +53,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onToggleSelectionMode,
 }) => {
   const compact = useMediaQuery(COMPACT_QUERY);
-  // Senza Maiusc/Ctrl (touch, mobile) la selezione multipla passa da un pulsante dedicato.
-  const coarse = useMediaQuery('(pointer: coarse)');
-  const showSelectionMode = compact || coarse || selectionMode;
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { barRef, dock, dragging, dragOffset, dragPreview, dragProps } = useToolbarPosition(!compact);
   useTextStyleShortcuts({ topic, isEditingText, actions });
@@ -98,19 +95,21 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
         )}
       >
         <ToolbarOrientationContext.Provider value={vertical ? 'vertical' : 'horizontal'}>
-          {showSelectionMode && (
-            <>
-              <ToolbarButton
-                label={selectionMode ? 'Esci dalla selezione multipla' : 'Seleziona più blocchi'}
-                active={selectionMode}
-                onClick={onToggleSelectionMode}
-                className={selectionMode ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : undefined}
-              >
-                <SquareDashedMousePointer className="size-4" />
-              </ToolbarButton>
-              <ToolbarSeparator />
-            </>
-          )}
+          {/* Selezione multipla: tap/clic aggiunge o toglie un blocco, trascinando sullo sfondo si
+              seleziona un'area (come in un file manager). Col mouse l'area si disegna anche con Maiusc+trascina. */}
+          <ToolbarButton
+            label={
+              selectionMode
+                ? 'Esci dalla selezione multipla'
+                : 'Seleziona più blocchi (trascina sullo sfondo per selezionare un’area)'
+            }
+            active={selectionMode}
+            onClick={onToggleSelectionMode}
+            className={selectionMode ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : undefined}
+          >
+            <SquareDashedMousePointer className="size-4" />
+          </ToolbarButton>
+          <ToolbarSeparator />
           <TextStyleControls topic={topic} isEditingText={isEditingText} actions={actions} />
 
           <ToolbarSeparator />

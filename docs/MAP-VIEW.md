@@ -104,6 +104,13 @@ Principi:
   (`fitToView`, rieseguito al ridimensionamento) animati.
 - Click sul nodo → selezione sincronizzata con l'albero laterale e l'ispettore;
   click sull'indicatore → collapse/expand.
+- **Selezione ad area** (`useMapGestures`, `topicsInRect`): in modalità selezione
+  (pulsante della barra, `selectionMode`) un dito o il mouse sullo sfondo, oltre
+  `TAP_SLOP_PX`, disegnano un rettangolo invece di fare pan; col mouse vale anche
+  `Maiusc`+trascina. Si selezionano dal vivo i blocchi che il rettangolo tocca anche
+  in parte (`onSelectTopics`); con `Maiusc`/`Ctrl` si aggiungono alla selezione di
+  partenza. Ai bordi la vista scorre come nel drag & drop; Esc o un secondo dito
+  annullano e ripristinano la selezione di partenza.
 - Cache degli SVG delle formule per stringa LaTeX; fallback al testo LaTeX se il
   render fallisce.
 - **Drag & drop dei blocchi** (`map/dragTarget.ts`, funzioni pure): col mouse

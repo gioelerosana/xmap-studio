@@ -37,6 +37,7 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedTopicId,
   selectedTopicIds,
   onSelectTopic,
+  onSelectTopics,
   onClearSelection,
   selectionMode,
   onOpenLatex,
@@ -80,6 +81,8 @@ export const MapView: React.FC<MapViewProps> = ({
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [dragOverlay, setDragOverlay] = useState<DragOverlay | null>(null);
+  // Rettangolo della selezione ad area: posizionato dai gesti direttamente nel DOM.
+  const marqueeRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<Layout | null>(layout);
   layoutRef.current = layout;
   const dragIndex = useMemo(() => (layout ? buildDragIndex(layout) : null), [layout]);
@@ -94,6 +97,7 @@ export const MapView: React.FC<MapViewProps> = ({
   // Callback in un ref: il contenuto memoizzato non si ricostruisce se il genitore le ricrea.
   const handlersValue: MapHandlers = {
     onSelectTopic,
+    onSelectTopics,
     selectionMode,
     onOpenLatex,
     onAddChild,
@@ -142,6 +146,7 @@ export const MapView: React.FC<MapViewProps> = ({
     setContextMenu,
     setSelectedRelationshipId,
     setDragOverlay,
+    marqueeRef,
   });
 
   const selectedNode = useMemo(() => {
@@ -300,7 +305,7 @@ export const MapView: React.FC<MapViewProps> = ({
       className={cn(
         'relative flex-1 h-full w-full overflow-clip bg-(--map-canvas) select-none touch-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] cursor-grab active:cursor-grabbing transition-colors duration-150',
         dragOverlay && 'cursor-grabbing!',
-        isConnectingRelationship && 'cursor-crosshair!'
+        (isConnectingRelationship || selectionMode) && 'cursor-crosshair!'
       )}
       onClick={(e) => {
         // Click o tap sullo sfondo: deseleziona relazione e blocchi (con Maiusc/Ctrl o in modalità selezione la selezione resta).
@@ -460,6 +465,12 @@ export const MapView: React.FC<MapViewProps> = ({
           <TopicDragOverlay dragOverlay={dragOverlay} layout={layout} darkMode={darkMode} />
         </g>
       </svg>
+
+      <div
+        ref={marqueeRef}
+        aria-hidden
+        className="pointer-events-none absolute left-0 top-0 z-10 hidden rounded-xs border border-primary bg-primary/10"
+      />
 
       {contextMenu && (
         <ContextMenu
