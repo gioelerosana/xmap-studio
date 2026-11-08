@@ -188,6 +188,10 @@ spostarsi · `Ctrl+B`/`Ctrl+I`/`Ctrl+U` grassetto, corsivo, sottolineato (sulla 
 se stai scrivendo nel blocco) · `Ctrl+Maiusc+L` editor della formula · `Esc` deseleziona.
 La barra flottante sul blocco compare solo su touch. I blocchi liberi si trascinano dove vuoi.
 Su touch un blocco si sposta solo se è già selezionato (tocco breve, poi trascina); trascinando un blocco non selezionato si sposta la mappa.
+Selezione multipla: `Maiusc`/`Ctrl`+clic aggiunge o toglie un blocco; `Maiusc`+trascina sullo
+sfondo disegna un'area che aggiunge i blocchi che tocca. Il pulsante **Seleziona più blocchi** (primo
+della barra flottante) attiva la modalità selezione: clic o tap alternano un blocco e trascinando
+sullo sfondo si seleziona un'area, come in un file manager (su touch la mappa si sposta con due dita).
 
 Nell'albero a sinistra puoi **cercare**, filtrare per tipo (**Testo/Formule/
 Immagini**) e **trascinare un blocco** su un altro: rilasciando al centro diventa

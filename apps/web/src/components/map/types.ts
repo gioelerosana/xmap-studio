@@ -41,9 +41,14 @@ export interface MapViewProps {
    * aggiunge o toglie il blocco alla selezione multipla.
    */
   onSelectTopic: (topicId: string, modifiers?: { shiftKey?: boolean; ctrlKey?: boolean }) => void;
+  /** Selezione ad area (trascinando sullo sfondo): sostituisce la selezione con questi blocchi. */
+  onSelectTopics?: (topicIds: string[]) => void;
   /** Clic o tap sullo sfondo della mappa: svuota la selezione. */
   onClearSelection?: () => void;
-  /** Modalità selezione attiva: il tap su un blocco lo aggiunge o lo toglie, il doppio tap non avvia l'editing. */
+  /**
+   * Modalità selezione attiva: il tap su un blocco lo aggiunge o lo toglie, il doppio tap non avvia
+   * l'editing e trascinando sullo sfondo si seleziona un'area invece di spostare la vista.
+   */
   selectionMode?: boolean;
   /** Apre l'editor LaTeX centrato sul blocco (formule; anche per trasformare un testo in formula). */
   onOpenLatex: (topicId: string) => void;
@@ -102,6 +107,7 @@ export interface ContextMenuState {
 export type MapHandlers = Pick<
   MapViewProps,
   | 'onSelectTopic'
+  | 'onSelectTopics'
   | 'selectionMode'
   | 'onOpenLatex'
   | 'onAddChild'

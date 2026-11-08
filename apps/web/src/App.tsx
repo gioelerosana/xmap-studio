@@ -482,6 +482,7 @@ export const App: React.FC = () => {
                 selectedTopicId={selectedTopicId}
                 selectedTopicIds={selectedTopicIds}
                 onSelectTopic={selection.onSelectTopic}
+                onSelectTopics={selection.selectMany}
                 selectionMode={selection.selectionMode}
                 onClearSelection={() => selectSingle(undefined)}
                 onAddSummary={handleCreateSummary}

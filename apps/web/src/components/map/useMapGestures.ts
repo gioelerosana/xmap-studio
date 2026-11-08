@@ -37,15 +37,26 @@ export interface MapGestureUi {
   setContextMenu: (menu: ContextMenuState | null) => void;
   setSelectedRelationshipId: (id: string | undefined) => void;
   setDragOverlay: (overlay: DragOverlay | null) => void;
+  /** Rettangolo della selezione ad area (coordinate del contenitore, nascosto a riposo). */
+  marqueeRef: { readonly current: HTMLDivElement | null };
+}
+
+/** Blocchi che il rettangolo (coordinate mondo) tocca anche solo in parte, nell'ordine del layout. */
+export function topicsInRect(layout: Layout, a: Point, b: Point): string[] {
+  const x0 = Math.min(a.x, b.x);
+  const x1 = Math.max(a.x, b.x);
+  const y0 = Math.min(a.y, b.y);
+  const y1 = Math.max(a.y, b.y);
+  return layout.nodes.filter((n) => n.x < x1 && n.x + n.w > x0 && n.y < y1 && n.y + n.h > y0).map((n) => n.id);
 }
 
 /**
  * Gesti sulla mappa: rotella e pinch del trackpad, pan e pinch con inerzia, tap e doppio tap,
- * pressione lunga e trascinamento dei blocchi.
+ * pressione lunga, trascinamento dei blocchi e selezione ad area.
  */
 export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
   const { containerRef, svgRef, viewRef, motionRef, frameRef, syncTimerRef, cancelMotion, animateTo, applyView, scheduleApply, scheduleSync, toWorld } = viewport;
-  const { hasContent, layoutRef, dragIndexRef, handlers, editingRef, selectedTopicIdRef, selectedTopicIdsRef, setContextMenu, setSelectedRelationshipId, setDragOverlay } = ui;
+  const { hasContent, layoutRef, dragIndexRef, handlers, editingRef, selectedTopicIdRef, selectedTopicIdsRef, setContextMenu, setSelectedRelationshipId, setDragOverlay, marqueeRef } = ui;
   const gestureCleanupRef = useRef<(() => void) | null>(null);
 
   // Listener nativo non passivo: React registra `wheel` come passivo, e senza
@@ -102,7 +113,9 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
     if (!container) return;
 
     const pointers = new Map<number, { x: number; y: number }>();
-    let mode: 'none' | 'pan' | 'pinch' | 'nodepress' | 'drag' = 'none';
+    // `marqueepress`: pressione sullo sfondo che diventa selezione ad area oltre la soglia.
+    let mode: 'none' | 'pan' | 'pinch' | 'nodepress' | 'drag' | 'marqueepress' | 'marquee' = 'none';
+    let marqueeAdditive = false;
     let pointerType = 'mouse';
     let start = { x: 0, y: 0 };
     let last = { x: 0, y: 0 };
@@ -131,6 +144,17 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       floating?: { delta: Point };
     }
     let drag: ActiveDrag | null = null;
+    // Selezione ad area: angolo di partenza in coordinate mondo (segue pan e scorrimento ai bordi),
+    // selezione di partenza (unita al rettangolo con Maiusc/Ctrl, ripristinata se si annulla).
+    interface ActiveMarquee {
+      origin: Point;
+      ptr: { x: number; y: number };
+      base: string[];
+      additive: boolean;
+      raf: number;
+      lastSig: string;
+    }
+    let marquee: ActiveMarquee | null = null;
 
     const local = (x: number, y: number) => {
       const rect = container.getBoundingClientRect();
@@ -241,6 +265,82 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       d.raf = requestAnimationFrame(dragTick);
     };
 
+    // Ad ogni frame: scorrimento ai bordi, rettangolo a schermo e blocchi selezionati.
+    const marqueeTick = () => {
+      const m = marquee;
+      if (!m) return;
+      const rect = container.getBoundingClientRect();
+      const edge = (dist: number) => DRAG_EDGE_SPEED * Math.min(Math.max((DRAG_EDGE_ZONE - dist) / DRAG_EDGE_ZONE, 0), 1);
+      const dx = edge(m.ptr.x - rect.left) - edge(rect.right - m.ptr.x);
+      const dy = edge(m.ptr.y - rect.top) - edge(rect.bottom - m.ptr.y);
+      if (dx !== 0 || dy !== 0) {
+        const v = viewRef.current;
+        viewRef.current = { ...v, x: v.x + dx, y: v.y + dy };
+        applyView();
+        scheduleSync();
+      }
+      const v = viewRef.current;
+      const end = toWorld(m.ptr.x, m.ptr.y);
+      const el = marqueeRef.current;
+      if (el) {
+        const ax = v.x + m.origin.x * v.k;
+        const ay = v.y + m.origin.y * v.k;
+        const bx = v.x + end.x * v.k;
+        const by = v.y + end.y * v.k;
+        el.style.display = 'block';
+        el.style.transform = `translate(${Math.min(ax, bx)}px, ${Math.min(ay, by)}px)`;
+        el.style.width = `${Math.abs(bx - ax)}px`;
+        el.style.height = `${Math.abs(by - ay)}px`;
+      }
+      const l = layoutRef.current;
+      if (l) {
+        const hits = topicsInRect(l, m.origin, end);
+        const ids = m.additive ? [...m.base, ...hits.filter((id) => !m.base.includes(id))] : hits;
+        const sig = ids.join('\n');
+        if (sig !== m.lastSig) {
+          m.lastSig = sig;
+          handlers.current.onSelectTopics?.(ids);
+        }
+      }
+      m.raf = requestAnimationFrame(marqueeTick);
+    };
+
+    const onMarqueeKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Esc annulla l'area senza togliere anche la selezione (vedi useGlobalShortcuts).
+      e.preventDefault();
+      e.stopPropagation();
+      finishMarquee(false);
+      mode = 'none';
+      pointers.clear();
+      cleanup();
+    };
+
+    const finishMarquee = (commit: boolean) => {
+      const m = marquee;
+      if (!m) return;
+      marquee = null;
+      cancelAnimationFrame(m.raf);
+      window.removeEventListener('keydown', onMarqueeKey, true);
+      if (marqueeRef.current) marqueeRef.current.style.display = '';
+      if (!commit && m.lastSig !== m.base.join('\n')) handlers.current.onSelectTopics?.(m.base);
+    };
+
+    const beginMarquee = (p: { x: number; y: number }, additive: boolean) => {
+      window.clearTimeout(longPressTimer);
+      setContextMenu(null);
+      setSelectedRelationshipId(undefined);
+      cancelMotion();
+      mode = 'marquee';
+      moved = true;
+      const current = selectedTopicIdsRef.current ?? [];
+      const primary = selectedTopicIdRef.current;
+      const base = current.length > 0 ? current : primary ? [primary] : [];
+      marquee = { origin: toWorld(start.x, start.y), ptr: { ...p }, base, additive, raf: 0, lastSig: base.join('\n') };
+      window.addEventListener('keydown', onMarqueeKey, true);
+      marqueeTick();
+    };
+
     const onDragKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') finishDrag(false);
     };
@@ -299,6 +399,8 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       setContextMenu(null);
       window.clearTimeout(longPressTimer);
       pressedNode = -1;
+      // Il secondo dito trasforma il gesto in pinch: l'area iniziata col primo si annulla.
+      finishMarquee(false);
       const [a, b] = [...pointers.values()];
       const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
       pinch = { dist: Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1), mx: mid.x, my: mid.y, view: { ...viewRef.current } };
@@ -354,6 +456,16 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
         if (drag) drag.ptr = { x: e.clientX, y: e.clientY };
         return;
       }
+      if (mode === 'marquee') {
+        if (marquee) marquee.ptr = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      if (mode === 'marqueepress') {
+        const slopPress = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < slopPress) return;
+        beginMarquee({ x: e.clientX, y: e.clientY }, marqueeAdditive);
+        return;
+      }
       if (mode === 'nodepress') {
         const slopPress = pointerType === 'mouse' ? TAP_SLOP_PX.mouse : TAP_SLOP_PX.touch;
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < slopPress) return;
@@ -398,6 +510,15 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
         finishDrag(e.type === 'pointerup');
         mode = 'none';
         pressedNode = -1;
+        cleanup();
+        suppressClickUntil = performance.now() + 400;
+        return;
+      }
+      if (mode === 'marquee') {
+        if (marquee) marquee.ptr = { x: e.clientX, y: e.clientY };
+        finishMarquee(e.type === 'pointerup');
+        mode = 'none';
+        pointers.clear();
         cleanup();
         suppressClickUntil = performance.now() + 400;
         return;
@@ -449,10 +570,10 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
           nodeIdx = i;
         }
       }
+      const onBackground = target === container || target.tagName === 'svg' || target.id === 'map-bg';
       if (e.pointerType === 'mouse') {
         // Col mouse il pan parte dallo sfondo; su un blocco trascinabile parte il drag
         // oltre la soglia, altrimenti restano click e doppio click.
-        const onBackground = target === container || target.tagName === 'svg' || target.id === 'map-bg';
         if (e.button !== 0 || (!onBackground && nodeIdx < 0) || pointers.size > 0) return;
       }
       if (pointers.size >= 2) return;
@@ -481,6 +602,15 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 2) {
         beginPinch();
+      } else if (
+        onBackground &&
+        (handlers.current.selectionMode || (e.pointerType === 'mouse' && e.shiftKey)) &&
+        handlers.current.onSelectTopics
+      ) {
+        // Selezione ad area: in modalità selezione (un dito o il mouse) o con Maiusc+trascina.
+        // Maiusc/Ctrl aggiungono l'area alla selezione esistente, come in un file manager.
+        mode = 'marqueepress';
+        marqueeAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
       } else if (nodeIdx >= 0) {
         mode = 'nodepress';
         pressedNode = nodeIdx;
@@ -542,7 +672,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
       if (handlers.current.isConnectingRelationship) return;
-      if (mode === 'drag') return;
+      if (mode === 'drag' || mode === 'marquee') return;
 
       const target = e.target as Element;
       const nodeEl = target.closest?.('[data-node-id]');
@@ -617,6 +747,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
     return () => {
       cleanup();
       finishDrag(false);
+      finishMarquee(false);
       container.removeEventListener('contextmenu', onContextMenu);
       container.removeEventListener('pointerdown', onDown);
       container.removeEventListener('click', onMouseCapture, true);
