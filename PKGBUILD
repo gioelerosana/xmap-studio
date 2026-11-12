@@ -1,7 +1,7 @@
 # Pacchetto Arch Linux di sviluppo per XMap Studio (VCS: git).
 # Costruito dall'ultimo commit di `main`, dal repository che contiene questo file.
 #
-#   cd packaging/arch && makepkg -si
+#   makepkg -si      (dalla root del repository, dove sta questo file)
 #
 # Niente clone né download del repository: a ogni build si aggiorna `main` del
 # clone locale da origin (fetch + fast-forward, senza cambiare il branch in
@@ -57,9 +57,9 @@ depends=("$_electron")
 # pnpm serve nel PATH (anche installato fuori da pacman).
 makedepends=('git' 'nodejs')
 options=('!strip' '!debug')
-source=('xmap-studio.sh'
-        'org.joel.xmap_studio.desktop')
-sha256sums=('SKIP' 'SKIP')
+# Nessun `source`: makepkg cerca i file di source solo per nome accanto a questo
+# PKGBUILD, quindi launcher e .desktop (in packaging/arch/) si leggono dal clone
+# con $_XMAP_GIT_REPO.
 
 prepare() {
   # Copia esatta del commit di main, senza la cartella .git.
@@ -90,9 +90,9 @@ package() {
   rm -f "$app/apps/desktop/node_modules/.modules.yaml"
   cp -a apps/web/dist "$app/apps/web/dist"
 
-  sed "s/@ELECTRON@/$_electron/" "$srcdir/xmap-studio.sh" > xmap-studio.launcher
+  sed "s/@ELECTRON@/$_electron/" "$_XMAP_GIT_REPO/packaging/arch/xmap-studio.sh" > xmap-studio.launcher
   install -Dm755 xmap-studio.launcher "$pkgdir/usr/bin/$_pkgname"
-  install -Dm644 "$srcdir/org.joel.xmap_studio.desktop" \
+  install -Dm644 "$_XMAP_GIT_REPO/packaging/arch/org.joel.xmap_studio.desktop" \
     "$pkgdir/usr/share/applications/org.joel.xmap_studio.desktop"
   install -Dm644 assets/org.joel.xmap_studio.xml \
     "$pkgdir/usr/share/mime/packages/org.joel.xmap_studio.xml"

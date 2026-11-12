@@ -28,7 +28,11 @@ apps/desktop/release/
 # worktree dei sotto-agenti (lavoro parallelo)
 .claude/worktrees/
 
-# Build di makepkg
+# Build di makepkg: il PKGBUILD -git sta nella root e crea qui src/, pkg/ e il pacchetto
+/src/
+/pkg/
+/*.pkg.tar.*
+# Vecchia posizione del PKGBUILD (packaging/arch/): ignorata per le cartelle rimaste
 packaging/arch/src/
 packaging/arch/pkg/
 packaging/arch/xmap-studio/
