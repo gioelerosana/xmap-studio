@@ -99,17 +99,21 @@ function makeTarget(
   idx: DragIndex,
   sourceIndex: number,
   targetIndex: number,
-  placement: DropPlacement
+  placement: DropPlacement,
+  excluded: Set<number>,
+  moved: number[]
 ): DropTarget | null {
   const nodes = layout.nodes;
+  // Con un solo blocco si scartano i rilasci che lo lascerebbero dov'è; con un gruppo no.
+  const single = moved.length === 1 ? moved[0] : -1;
   const target = nodes[targetIndex];
   const source = nodes[sourceIndex];
   if (placement === 'into') {
     if (!canBeTargetInto(layout, idx, targetIndex)) return null;
-    const kids = idx.children[targetIndex].filter((c) => c !== sourceIndex);
+    const kids = idx.children[targetIndex].filter((c) => !excluded.has(c));
     // Già ultimo figlio del bersaglio: lo spostamento non cambierebbe nulla.
     const all = idx.children[targetIndex];
-    if (all[all.length - 1] === sourceIndex) return null;
+    if (single >= 0 && all[all.length - 1] === single) return null;
     const last = kids.length > 0 ? nodes[kids[kids.length - 1]] : undefined;
     const below = target.childrenBelow;
     const toLeft = target.side === 'left';
@@ -138,10 +142,10 @@ function makeTarget(
   const pos = all.indexOf(targetIndex);
   if (pos < 0) return null;
   // Il blocco è già dove verrebbe inserito.
-  if (placement === 'before' && all[pos - 1] === sourceIndex) return null;
-  if (placement === 'after' && all[pos + 1] === sourceIndex) return null;
+  if (single >= 0 && placement === 'before' && all[pos - 1] === single) return null;
+  if (single >= 0 && placement === 'after' && all[pos + 1] === single) return null;
 
-  const sibs = all.filter((c) => c !== sourceIndex);
+  const sibs = all.filter((c) => !excluded.has(c));
   const spos = sibs.indexOf(targetIndex);
   const neighbour = placement === 'before' ? nodes[sibs[spos - 1]] : nodes[sibs[spos + 1]];
   const y =
@@ -163,7 +167,8 @@ function makeTarget(
 
 /**
  * Bersaglio di rilascio per un blocco trascinato, dato il puntatore in coordinate mondo.
- * `excluded` è il sotto-albero trascinato (sé stesso e i discendenti): mai bersaglio.
+ * `excluded` è il sotto-albero trascinato (sé stesso e i discendenti; con una selezione multipla
+ * l'unione dei sotto-alberi): mai bersaglio.
  *
  * - sopra un blocco: fascia alta/bassa nella metà sinistra → before/after, altrimenti into;
  * - tra due fratelli → before sul secondo;
@@ -175,7 +180,9 @@ export function computeDropTarget(
   idx: DragIndex,
   sourceIndex: number,
   p: Point,
-  excluded: Set<number>
+  excluded: Set<number>,
+  /** Blocchi trascinati (radici dei sotto-alberi); più di uno per una selezione multipla. */
+  moved: number[] = [sourceIndex]
 ): DropTarget | null {
   const nodes = layout.nodes;
   const source = nodes[sourceIndex];
@@ -199,10 +206,10 @@ export function computeDropTarget(
     // Il lato dei figli è quello verso cui il blocco si aggancia: la metà opposta dà before/after.
     const siblingHalf = n.side === 'left' ? p.x >= n.x + n.w / 2 : p.x < n.x + n.w / 2;
     if (canBeSibling(layout, idx, hit) && siblingHalf) {
-      if (p.y < n.y + band) return makeTarget(layout, idx, sourceIndex, hit, 'before');
-      if (p.y > n.y + n.h - band) return makeTarget(layout, idx, sourceIndex, hit, 'after');
+      if (p.y < n.y + band) return makeTarget(layout, idx, sourceIndex, hit, 'before', excluded, moved);
+      if (p.y > n.y + n.h - band) return makeTarget(layout, idx, sourceIndex, hit, 'after', excluded, moved);
     }
-    return makeTarget(layout, idx, sourceIndex, hit, 'into');
+    return makeTarget(layout, idx, sourceIndex, hit, 'into', excluded, moved);
   }
 
   // Spazio vuoto tra due fratelli consecutivi della stessa colonna; mai tra i figli del
@@ -215,7 +222,7 @@ export function computeDropTarget(
       const left = Math.min(a.x, b.x) - DROP_PAD;
       const right = Math.max(a.x + a.w, b.x + b.w) + DROP_PAD;
       if (p.x >= left && p.x <= right && p.y > a.y + a.h && p.y < b.y) {
-        return makeTarget(layout, idx, sourceIndex, sibs[k + 1], 'before');
+        return makeTarget(layout, idx, sourceIndex, sibs[k + 1], 'before', excluded, moved);
       }
     }
   }
@@ -243,5 +250,5 @@ export function computeDropTarget(
     }
   }
   if (best < 0 || excluded.has(best)) return null;
-  return makeTarget(layout, idx, sourceIndex, best, 'into');
+  return makeTarget(layout, idx, sourceIndex, best, 'into', excluded, moved);
 }

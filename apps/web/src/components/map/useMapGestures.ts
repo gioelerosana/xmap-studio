@@ -134,6 +134,8 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
     let longPressTimer = 0;
     interface ActiveDrag {
       src: number;
+      /** Blocchi spostati dal rilascio: `src` e, se faceva parte della selezione multipla, gli altri selezionati. */
+      moved: number[];
       excluded: Set<number>;
       ids: string[];
       grab: Point;
@@ -199,7 +201,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       const l = layoutRef.current;
       const idx = dragIndexRef.current;
       if (!l || !idx) return null;
-      return computeDropTarget(l, idx, d.src, toWorld(d.ptr.x, d.ptr.y), d.excluded);
+      return computeDropTarget(l, idx, d.src, toWorld(d.ptr.x, d.ptr.y), d.excluded, d.moved);
     };
 
     // Anteprima di un topic libero: sposta i blocchi del sotto-albero e i loro connettori.
@@ -243,7 +245,7 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       const sig = `${ghost.x.toFixed(1)},${ghost.y.toFixed(1)}|${drop?.targetId}:${drop?.placement}`;
       if (sig === d.lastSig) return;
       d.lastSig = sig;
-      setDragOverlay({ sourceId: l.nodes[d.src].id, ghost, drop });
+      setDragOverlay({ sourceId: l.nodes[d.src].id, ghost, drop, count: d.moved.length });
     };
 
     // Ad ogni frame: scorrimento automatico vicino ai bordi e aggiornamento di fantasma/bersaglio.
@@ -368,7 +370,31 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       setDim(d.ids, false);
       setDragOverlay(null);
       const drop = commit ? dropAt(d) : null;
-      if (drop && l) handlers.current.onMoveTopic?.(l.nodes[d.src].id, drop.targetId, drop.placement);
+      if (!drop || !l) return;
+      if (d.moved.length > 1 && handlers.current.onMoveTopics) {
+        handlers.current.onMoveTopics(d.moved.map((i) => l.nodes[i].id), drop.targetId, drop.placement);
+      } else {
+        handlers.current.onMoveTopic?.(l.nodes[d.src].id, drop.targetId, drop.placement);
+      }
+    };
+
+    // Trascinando un blocco della selezione multipla si spostano tutti i selezionati che si possono
+    // trascinare; chi ha un antenato selezionato lo segue già col suo sotto-albero.
+    const draggedGroup = (l: Layout, src: number): number[] => {
+      const selected = selectedTopicIdsRef.current ?? [];
+      const idx = dragIndexRef.current;
+      if (selected.length < 2 || !idx || !selected.includes(l.nodes[src].id)) return [src];
+      const picked = new Set<number>();
+      for (const id of selected) {
+        const i = idx.byId.get(id);
+        if (i !== undefined && l.nodes[i].sheetIndex === l.nodes[src].sheetIndex && isDraggable(l, idx, i)) picked.add(i);
+      }
+      picked.add(src);
+      const roots = [...picked].filter((i) => {
+        for (let a = idx.parent[i]; a !== -1 && a !== undefined; a = idx.parent[a]) if (picked.has(a)) return false;
+        return true;
+      });
+      return roots.sort((a, b) => a - b);
     };
 
     const beginDrag = () => {
@@ -380,12 +406,15 @@ export function useMapGestures(viewport: Viewport, ui: MapGestureUi) {
       const src = pressedNode;
       const n = l.nodes[src];
       const wp = toWorld(p.x, p.y);
-      const excluded = subtreeOf(l, src);
+      const floating = Boolean(n.floating && n.floatOrigin && handlers.current.onMoveFloatingTopic);
+      const movedNodes = floating ? [src] : draggedGroup(l, src);
+      const excluded = new Set<number>();
+      for (const i of movedNodes) for (const j of subtreeOf(l, i)) excluded.add(j);
       const ids = [...excluded].map((i) => l.nodes[i].id);
       mode = 'drag';
       moved = true;
-      drag = { src, excluded, ids, grab: { x: wp.x - n.x, y: wp.y - n.y }, ptr: { ...p }, raf: 0, lastSig: '' };
-      if (n.floating && n.floatOrigin && handlers.current.onMoveFloatingTopic) {
+      drag = { src, moved: movedNodes, excluded, ids, grab: { x: wp.x - n.x, y: wp.y - n.y }, ptr: { ...p }, raf: 0, lastSig: '' };
+      if (floating) {
         drag.floating = { delta: { x: 0, y: 0 } };
       } else {
         setDim(ids, true);

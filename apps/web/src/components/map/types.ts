@@ -8,6 +8,8 @@ export interface DragOverlay {
   sourceId: string;
   ghost: Point;
   drop: DropTarget | null;
+  /** Blocchi trascinati insieme (selezione multipla); il fantasma mostra il numero se più di uno. */
+  count?: number;
 }
 
 /** Editing in place del titolo di un blocco, governato dal genitore. */
@@ -81,6 +83,8 @@ export interface MapViewProps {
   onStructureChange: (structure: MapStructure) => void;
   /** Rilascio di un blocco trascinato sulla mappa; stessa firma di `onMove` dell'albero. */
   onMoveTopic?: (topicId: string, targetId: string, placement: DropPlacement) => void;
+  /** Rilascio di più blocchi selezionati trascinati insieme sullo stesso bersaglio. */
+  onMoveTopics?: (topicIds: string[], targetId: string, placement: DropPlacement) => void;
   /** Rilascio di un topic libero (detached): `position` è il suo centro relativo al centro della radice. */
   onMoveFloatingTopic?: (topicId: string, position: Point) => void;
   /** Punti di controllo di una relazione trascinati (`null` = ripristina, `undefined` = invariato). */
@@ -116,6 +120,7 @@ export type MapHandlers = Pick<
   | 'onRemoveTopicKeepChildren'
   | 'onToggleCollapse'
   | 'onMoveTopic'
+  | 'onMoveTopics'
   | 'onMoveFloatingTopic'
   | 'onRelationshipControlPointsChange'
   | 'onStartEdit'

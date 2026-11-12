@@ -99,6 +99,20 @@ export function useTopicEditing({
     [controller, refreshState, addToast, exitSelectionMode]
   );
 
+  const handleMoveMany = useCallback(
+    (ids: string[], targetId: string, placement: DropPlacement) => {
+      try {
+        controller.moveTopics(ids, targetId, placement);
+        exitSelectionMode();
+        refreshState();
+        addToast('success', `${ids.length} blocchi spostati`);
+      } catch (err: any) {
+        addToast('error', `Spostamento non riuscito: ${err.message}`, err);
+      }
+    },
+    [controller, refreshState, addToast, exitSelectionMode]
+  );
+
   const handleResizeTopicWidth = useCallback(
     (id: string, width: number | null) => {
       try {
@@ -247,6 +261,7 @@ export function useTopicEditing({
     handleAddChild,
     handleToggleCollapse,
     handleMove,
+    handleMoveMany,
     handleResizeTopicWidth,
     handleResizeTopicImage,
     handleMoveFloating,

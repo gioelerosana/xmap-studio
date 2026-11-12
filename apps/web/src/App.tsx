@@ -247,6 +247,7 @@ export const App: React.FC = () => {
     handleAddChild,
     handleToggleCollapse,
     handleMove,
+    handleMoveMany,
     handleResizeTopicWidth,
     handleResizeTopicImage,
     handleMoveFloating,
@@ -516,6 +517,7 @@ export const App: React.FC = () => {
                 structure={mapStructure}
                 onStructureChange={setMapStructure}
                 onMoveTopic={handleMove}
+                onMoveTopics={handleMoveMany}
                 onMoveFloatingTopic={handleMoveFloating}
                 onRelationshipControlPointsChange={handleRelationshipControlPoint}
                 onResizeTopicWidth={handleResizeTopicWidth}

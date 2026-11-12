@@ -95,6 +95,20 @@ export function TopicDragOverlay({
             </span>
           </div>
         </foreignObject>
+        {(dragOverlay.count ?? 1) > 1 && (
+          <g transform={`translate(${src.w}, 0)`}>
+            <circle r={11} fill="var(--primary)" />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={11}
+              fontWeight={600}
+              fill="var(--primary-foreground)"
+            >
+              {dragOverlay.count}
+            </text>
+          </g>
+        )}
       </g>
     </g>
   );
