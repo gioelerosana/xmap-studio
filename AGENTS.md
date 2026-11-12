@@ -312,11 +312,12 @@ xmap-studio/
 │   ├── pages.yml                 # pubblica site/ su GitHub Pages
 │   └── mirror.yml                # copia di `main` su GitLab (mirror)
 ├── LICENSE                       # MIT
+├── PKGBUILD                      # pacchetto Arch `-git` di sviluppo: `makepkg -si` dalla root
 ├── README.md                     # presentazione per l'utente (breve)
 ├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata
 ├── docs/                         # documentazione tecnica
-├── packaging/arch/               # PKGBUILD `-git`, `aur/` (xmap-studio-bin su AUR), build-tarball.sh, aur-publish.sh
+├── packaging/arch/               # launcher e .desktop del `-git`, `aur/` (xmap-studio-bin su AUR), build-tarball.sh, aur-publish.sh
 ├── site/                       # sito di presentazione (GitHub Pages, xmap-studio.jshep.xyz)
 ├── scripts/                      # strumenti di repo (release-version.mjs, check-release-version.mjs)
 ├── packages/
