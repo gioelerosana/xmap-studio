@@ -250,8 +250,9 @@ delle impostazioni e un toast quando c'è una versione nuova.
 Su AUR c'è **`xmap-studio-bin`**: scarica il tarball precompilato della GitHub
 Release e lo installa, senza compilare nulla sulla macchina dell'utente. Lo
 pubblica il job `aur` a ogni release; a mano si usa
-`packaging/arch/aur-publish.sh`. Per sviluppo resta `packaging/arch/PKGBUILD`
-(`xmap-studio-git`, compila il clone locale). Entrambi usano l'Electron di
+`packaging/arch/aur-publish.sh`. Per sviluppo resta il `PKGBUILD` nella root del
+repository (`xmap-studio-git`, si lancia con `makepkg -si` dalla root e compila il
+clone locale). Entrambi usano l'Electron di
 sistema (`electron44`) e installano l'app in `/usr/lib/xmap-studio`, il comando
 `xmap-studio`, la voce di menu, le icone `hicolor` e il tipo MIME
 `application/xmind`. Dettagli, chiave SSH del CI e regole di `pkgrel` in

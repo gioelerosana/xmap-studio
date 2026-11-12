@@ -5,7 +5,7 @@ Due pacchetti:
 - **`xmap-studio-bin`** su [AUR](https://aur.archlinux.org/packages/xmap-studio-bin):
   quello per gli utenti. **Non compila nulla**: scarica dalla GitHub Release il
   tarball precompilato dal CI e lo installa. Sorgente in `aur/`.
-- **`xmap-studio-git`** (`PKGBUILD` in questa cartella): sviluppo locale,
+- **`xmap-studio-git`** (`PKGBUILD` nella root del repository): sviluppo locale,
   compila l'ultimo commit di `main` del clone in cui si trova.
 
 | File | Ruolo |
@@ -14,7 +14,8 @@ Due pacchetti:
 | `build-tarball.sh` | produce `xmap-studio-<v>-linux-x86_64.tar.gz` (`pnpm dist:arch`) |
 | `aur-publish.sh` | pubblica `aur/` su AUR con i checksum del tarball rilasciato |
 | `bump-pkgver.sh` | allinea/verifica `pkgver` di `aur/PKGBUILD` |
-| `PKGBUILD`, `xmap-studio.sh`, `org.joel.xmap_studio.desktop` | pacchetto `-git` (il `.desktop` finisce anche nel tarball) |
+| `xmap-studio.sh`, `org.joel.xmap_studio.desktop` | launcher e file desktop del pacchetto `-git` (il `.desktop` finisce anche nel tarball) |
+| `../../PKGBUILD` (root del repository) | pacchetto `-git`: si lancia con `makepkg -si` dalla root |
 
 ## Installare
 
@@ -26,7 +27,7 @@ git clone https://aur.archlinux.org/xmap-studio-bin.git && cd xmap-studio-bin &&
 Build di sviluppo dell'ultimo `main`, dal clone locale:
 
 ```bash
-cd packaging/arch && makepkg -si
+makepkg -si      # dalla root del repository, dove sta il PKGBUILD
 ```
 
 Non scarica né clona il repository: usa quello in cui si trova il `PKGBUILD`.
@@ -39,7 +40,9 @@ o il fast-forward non riescono compila il `main` locale, con un avviso.
 La versione installata dice il commit: `pacman -Q xmap-studio-git` →
 `r<numero di commit>.g<hash>` di `main`. Il `PKGBUILD` non viene modificato
 dalla build, quindi i `git pull` restano puliti. La vecchia cache
-`packaging/arch/xmap-studio/` non serve più e si può cancellare.
+`packaging/arch/xmap-studio/` non serve più e si può cancellare; anche le
+cartelle `packaging/arch/src/` e `packaging/arch/pkg/` lasciate dalle build
+fatte prima dello spostamento del `PKGBUILD` in root si possono cancellare.
 
 ## Come arriva una release su AUR
 
@@ -113,7 +116,7 @@ esegue `electron44 /usr/lib/xmap-studio/apps/desktop`.
 
 Quando Arch passa a una nuova major (es. `electron45`):
 
-1. aggiorna `_electron` in `aur/PKGBUILD` e in `PKGBUILD`;
+1. aggiorna `_electron` in `aur/PKGBUILD` e nel `PKGBUILD` della root;
 2. verifica `apps/desktop/src/main.ts` con la nuova major (`makepkg -si` del `-git`);
 3. pubblica: con la prossima release, o subito con `pkgrel` + `aur-publish.sh`.
 
