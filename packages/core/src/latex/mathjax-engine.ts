@@ -171,7 +171,10 @@ export async function createMathJaxConverter(): Promise<MathJaxConvert> {
   RegisterHTMLHandler(adaptor);
   const tex = new TeX({ packages: TEX_PACKAGES });
   // `fontCache: 'local'`: i glifi stanno dentro ogni SVG (`<defs>`), che resta autosufficiente.
-  const svg = new SVG({ fontCache: 'local' });
+  // `linebreaks.inline: false`: MathJax 4 spezza le formule in linea dopo le relazioni
+  // (`<`, `>`, `=`…) in più `<svg>` separati da `<mjx-break>`; qui si tiene un solo SVG,
+  // quindi tutto ciò che segue la prima relazione sparirebbe (es. `$<D, I>$` senza `>`).
+  const svg = new SVG({ fontCache: 'local', linebreaks: { inline: false } });
   svg.addExtension(MathJaxMhchemFontExtension);
   const doc = mathjax.document('', { InputJax: tex, OutputJax: svg });
 

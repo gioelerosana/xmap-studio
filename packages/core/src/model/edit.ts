@@ -751,6 +751,52 @@ export function moveTopic(
   throw new MoveError('not_found', 'Blocco bersaglio non trovato.');
 }
 
+/**
+ * Sposta più blocchi insieme sullo stesso bersaglio, come un unico gesto (selezione multipla
+ * trascinata). I blocchi con un antenato già nell'elenco viaggiano con lui; gli altri mantengono
+ * l'ordine del documento: con `into` diventano gli ultimi figli del bersaglio, con `before`/`after`
+ * si inseriscono in fila accanto a lui. Tutto o niente: se uno spostamento non è valido, `sheets`
+ * resta com'era.
+ */
+export function moveTopics(
+  sheets: Sheet[],
+  ids: string[],
+  targetId: string,
+  placement: MovePlacement
+): void {
+  const wanted = new Set(ids);
+  if (wanted.has(targetId)) {
+    throw new MoveError('cycle', 'Un blocco non può essere spostato dentro sé stesso.');
+  }
+  // Ordine del documento e radici dell'insieme (i discendenti di un blocco scelto lo seguono già).
+  const ordered: string[] = [];
+  const visit = (topic: Topic, coveredByAncestor: boolean): void => {
+    const id = topic.id;
+    const picked = id !== undefined && wanted.has(id);
+    if (picked && !coveredByAncestor) ordered.push(id);
+    const children = topic.children;
+    if (!children) return;
+    for (const list of Object.values(children)) {
+      if (!Array.isArray(list)) continue;
+      for (const child of list as Topic[]) visit(child, coveredByAncestor || picked);
+    }
+  };
+  for (const sheet of sheets) if (sheet.rootTopic) visit(sheet.rootTopic, false);
+  if (ordered.length === 0) {
+    throw new MoveError('not_found', 'Blocco da spostare non trovato.');
+  }
+
+  // Si lavora su una copia: un errore a metà non deve lasciare la mappa spostata a metà.
+  const draft = JSON.parse(JSON.stringify(sheets)) as Sheet[];
+  let anchor = targetId;
+  for (const id of ordered) {
+    moveTopic(draft, id, anchor, placement);
+    // Dopo il primo, ognuno segue il precedente: la fila resta nell'ordine originale.
+    if (placement === 'after') anchor = id;
+  }
+  sheets.splice(0, sheets.length, ...draft);
+}
+
 export function addRelationship(
   sheet: Sheet,
   end1Id: string,

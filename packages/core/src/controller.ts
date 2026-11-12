@@ -37,6 +37,7 @@ import {
   addBoundary,
   MovePlacement,
   moveTopic,
+  moveTopics,
   removeBoundary,
   removeRelationship,
   removeSummary,
@@ -680,6 +681,13 @@ export class AppController {
   public moveTopic(topicId: string, targetId: string, placement: MovePlacement): WorkbookDto {
     const wb = this.ensureWorkbook();
     moveTopic(wb.content, topicId, targetId, placement);
+    return this.commit(wb);
+  }
+
+  /** Sposta più blocchi sullo stesso bersaglio in un unico passo di cronologia undo. */
+  public moveTopics(topicIds: string[], targetId: string, placement: MovePlacement): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    moveTopics(wb.content, topicIds, targetId, placement);
     return this.commit(wb);
   }
 
