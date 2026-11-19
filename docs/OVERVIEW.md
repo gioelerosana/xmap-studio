@@ -45,10 +45,11 @@ packages/core/src/
   markers/       # catalogo marker di XMind
   task/          # extension org.xmind.ui.task (solo chiavi scalari)
   exporters/     # Markdown, OPML, outliner, import
+  review/        # percorso della modalità Ripasso su tutti i fogli (puro)
   state/         # workbook aperto, undo/redo, DTO verso la UI
   controller.ts  # API unica verso la UI
 apps/web/src/
-  components/    # MapView (+ map/: editor, menu contestuale), toolbar/ (barra flottante), latex/ (editor formule), modali
+  components/    # MapView (+ map/: editor, menu contestuale), toolbar/ (barra flottante), latex/ (editor formule), review/ (Ripasso), modali
   adapters/      # dialogo file web / Electron
 apps/desktop/src # main (finestra, IPC, scrittura atomica) + preload
 ```
@@ -179,7 +180,7 @@ Per aprire i `.xmind` dal file manager con la versione desktop, associa il MIME
 
 `Ctrl+O` apri · `Ctrl+S` salva · `Ctrl+Shift+S` salva con nome · `Ctrl+Z` annulla ·
 `Ctrl+Shift+Z`/`Ctrl+Y` ripeti · `Ctrl+Shift+N` aggiungi
-sotto-blocco · `Ctrl+P` stampa / PDF · `Ctrl+,` impostazioni.
+sotto-blocco · `Ctrl+P` stampa / PDF · `Ctrl+,` impostazioni · `F5` ripasso.
 
 Sulla mappa: `Tab` nuovo sotto-blocco · `Invio` nuovo blocco fratello
 (`Maiusc+Invio` prima) · `F2`, `Spazio` o doppio clic per modificare il testo nel
@@ -209,6 +210,19 @@ La formula si scrive in un editor al centro dello schermo con anteprima dal vivo
 suggerimenti dei comandi e tavolozza di simboli. Il menu **⋮** in alto raccoglie
 **Esporta…** (`Ctrl+Maiusc+E`), stampa, import Markdown/OPML, allega
 file, unisci mappa, estrai ramo e informazioni.
+
+**Ripasso** (`F5` o menu **⋮**, `components/review/`): percorre **tutto il file**, foglio dopo
+foglio, un blocco alla volta in ordine di lettura (blocco, poi i suoi figli; dopo l'albero
+principale i blocchi liberi). La mappa resta intera: il riflettore tiene in luce il blocco
+corrente, i suoi figli e la catena fino alla radice e attenua il resto, la camera inquadra il
+passo, la radice di ogni foglio mostra il foglio intero. Briciole in alto, indice per fogli a
+sinistra (foglio dal basso sul telefono), avanzamento in basso. Due modi (`P`): *Presenta*
+mostra tutto, anche i rami chiusi nel file; *Mettiti alla prova* mostra i figli come segnaposto
+«?» finché non li scopri (`Spazio`), poi segni *Lo sapevo* (`1`) o *Da ripassare* (`2`); a fine
+file un riepilogo elenca i blocchi da ripassare. Tasti: `→`/`←` (anche `PagGiù`/`PagSu`) passo
+successivo e precedente, `↑`/`↓` fratello, `Maiusc+→`/`Maiusc+←` foglio, `Home` inizio del
+foglio, `Esc` esce sul blocco raggiunto. Sola lettura: il file non cambia, i segni valgono per
+la sessione. Il percorso è in `packages/core/src/review/` (`buildReviewPath`, `reviewCollapsed`).
 
 **Esporta** (`ExportModal`): un'unica finestra con il formato a sinistra e le opzioni a destra.
 *XMind* (salva con nome; `Ctrl+Maiusc+S` resta valido), *Markdown*, *OPML* e *Testo* (con la scelta di cosa
