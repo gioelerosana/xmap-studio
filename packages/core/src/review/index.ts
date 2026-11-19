@@ -1,4 +1,4 @@
-import type { SheetDto } from '../state/types.js';
+import type { SheetDto, TopicView } from '../state/types.js';
 
 /**
  * Modalità Ripasso: percorso di lettura di tutto il file, foglio dopo foglio.
@@ -51,14 +51,92 @@ export interface ReviewFocus {
  * - nessun topic compare due volte, anche con dati incoerenti (cicli di `parentId`).
  */
 export function buildReviewPath(sheets: readonly SheetDto[]): ReviewPath {
-  void sheets;
-  throw new Error('buildReviewPath: non implementato');
+  const steps: ReviewStep[] = [];
+  const sheetStarts: ReviewPath['sheetStarts'] = [];
+  for (const sheet of sheets) {
+    if (sheet.topics.length === 0) continue;
+    const firstStep = steps.length;
+    appendSheetSteps(sheet, steps);
+    sheetStarts.push({
+      sheetIndex: sheet.index,
+      title: sheet.title,
+      firstStep,
+      stepCount: steps.length - firstStep,
+    });
+  }
+  return { steps, sheetStarts };
+}
+
+/** Accoda al percorso i passi di un foglio non vuoto, nell'ordine descritto in `buildReviewPath`. */
+function appendSheetSteps(sheet: SheetDto, steps: ReviewStep[]): void {
+  const topics = sheet.topics;
+  const firstStep = steps.length;
+  const byId = new Map<string, TopicView>();
+  for (const topic of topics) {
+    if (!byId.has(topic.id)) byId.set(topic.id, topic);
+  }
+
+  // Un topic con `parentId` uguale al proprio id non è figlio di nessuno: il controllo evita
+  // che compaia come figlio di sé stesso.
+  const childrenOf = new Map<string, TopicView[]>();
+  for (const topic of topics) {
+    if (topic.group === 'detached' || !topic.parentId || topic.parentId === topic.id) continue;
+    const siblings = childrenOf.get(topic.parentId) ?? [];
+    siblings.push(topic);
+    childrenOf.set(topic.parentId, siblings);
+  }
+  for (const [parentId, list] of childrenOf) {
+    childrenOf.set(parentId, [
+      ...list.filter((child) => child.group !== 'summary'),
+      ...list.filter((child) => child.group === 'summary'),
+    ]);
+  }
+
+  const visited = new Set<string>();
+
+  // Visita anticipata: il blocco prima, poi i figli. Ogni topic entra in `visited` prima di
+  // calcolare i figli, così i cicli di `parentId` non ripassano sugli antenati.
+  const visit = (topic: TopicView, ancestorIds: string[]): void => {
+    visited.add(topic.id);
+    const kids = (childrenOf.get(topic.id) ?? []).filter((child) => !visited.has(child.id));
+    steps.push({
+      sheetIndex: sheet.index,
+      topicId: topic.id,
+      title: topic.displayTitle || topic.title,
+      ancestorIds,
+      childIds: kids.map((child) => child.id),
+      depth: ancestorIds.length,
+      isSheetStart: steps.length === firstStep,
+    });
+    const childAncestors = [...ancestorIds, topic.id];
+    for (const kid of kids) {
+      if (visited.has(kid.id)) continue;
+      visit(kid, childAncestors);
+    }
+  };
+
+  // Radice principale: primo topic senza genitore e non libero; se non c'è, il primo topic.
+  const main = topics.find((topic) => topic.group !== 'detached' && !topic.parentId) ?? topics[0];
+  visit(main, []);
+
+  const visitRoots = (accept: (topic: TopicView) => boolean): void => {
+    for (const topic of topics) {
+      if (!visited.has(topic.id) && accept(topic)) visit(topic, []);
+    }
+  };
+  // Topic senza genitore (o con genitore assente dal foglio) come alberi a sé, poi i blocchi liberi,
+  // infine i topic rimasti fuori: sono in un ciclo di `parentId` non raggiungibile da una radice.
+  visitRoots((topic) => topic.group !== 'detached' && (!topic.parentId || !byId.has(topic.parentId)));
+  visitRoots((topic) => topic.group === 'detached');
+  visitRoots(() => true);
 }
 
 /** Riflettore del passo: `lit` = passo + antenati + figli, `path` = antenati + passo. */
 export function reviewFocus(step: ReviewStep): ReviewFocus {
-  void step;
-  throw new Error('reviewFocus: non implementato');
+  return {
+    lit: new Set([step.topicId, ...step.ancestorIds, ...step.childIds]),
+    path: new Set([...step.ancestorIds, step.topicId]),
+  };
 }
 
 /**
@@ -66,15 +144,20 @@ export function reviewFocus(step: ReviewStep): ReviewFocus {
  * figli e non è in `opened`. I topic senza figli non compaiono mai nel risultato.
  */
 export function reviewCollapsed(sheet: SheetDto, opened: ReadonlySet<string>): Set<string> {
-  void sheet;
-  void opened;
-  throw new Error('reviewCollapsed: non implementato');
+  const parentIds = new Set<string>();
+  for (const topic of sheet.topics) {
+    if (topic.group !== 'detached' && topic.parentId && topic.parentId !== topic.id) {
+      parentIds.add(topic.parentId);
+    }
+  }
+  const collapsed = new Set<string>();
+  for (const topic of sheet.topics) {
+    if (parentIds.has(topic.id) && !opened.has(topic.id)) collapsed.add(topic.id);
+  }
+  return collapsed;
 }
 
 /** Indice del passo per `topicId` nel foglio `sheetIndex`; -1 se non c'è. */
 export function stepIndexOf(path: ReviewPath, sheetIndex: number, topicId: string): number {
-  void path;
-  void sheetIndex;
-  void topicId;
-  throw new Error('stepIndexOf: non implementato');
+  return path.steps.findIndex((step) => step.sheetIndex === sheetIndex && step.topicId === topicId);
 }
