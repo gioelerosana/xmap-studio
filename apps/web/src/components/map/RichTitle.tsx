@@ -8,6 +8,8 @@ import {
   type TextStyle,
   type TitleRun,
 } from '@xmap/core';
+import { SpellText } from '../../spell/SpellText.js';
+import { useSpellContext } from '../../spell/SpellContext.js';
 
 interface InlineSvg {
   svg: string;
@@ -177,17 +179,18 @@ export const RichTitle: React.FC<RichTitleProps> = ({
   textLight,
   fontSizePx = DEFAULT_TITLE_FONT_PX,
 }) => {
+  const spell = useSpellContext();
   if (!runs || runs.length === 0) {
     const segments = splitInlineMath(text);
     if (segments.length === 0) return null;
     if (segments.length === 1 && segments[0].kind === 'text') {
-      return <>{segments[0].value}</>;
+      return <SpellText text={segments[0].value} />;
     }
     return (
       <>
         {segments.map((seg, i) =>
           seg.kind === 'text' ? (
-            <React.Fragment key={i}>{seg.value}</React.Fragment>
+            <SpellText key={i} text={seg.value} />
           ) : (
             <InlineMath
               key={i}
@@ -201,15 +204,31 @@ export const RichTitle: React.FC<RichTitleProps> = ({
     );
   }
 
+  // Il controllo ortografico guarda il titolo intero (le formule contano come spazi):
+  // una parola divisa fra due stili resta una parola sola.
+  const runSegments = runs.map((run) => splitInlineMath(run.text));
+  const offsets: number[][] = [];
+  let plain = '';
+  for (const segments of runSegments) {
+    offsets.push(
+      segments.map((seg) => {
+        const at = plain.length;
+        plain += seg.kind === 'text' ? seg.value : ' ';
+        return at;
+      })
+    );
+  }
+  const spellErrors = spell ? spell.findMisspellings(plain) : [];
+
   return (
     <>
       {runs.map((run, i) => {
         const style = textStyleCss(run, textLight);
-        const segments = splitInlineMath(run.text);
+        const segments = runSegments[i];
         if (segments.length === 1 && segments[0].kind === 'text') {
           return (
             <span key={i} style={style}>
-              {segments[0].value}
+              <SpellText text={segments[0].value} errors={spellErrors} offset={offsets[i][0]} />
             </span>
           );
         }
@@ -217,7 +236,7 @@ export const RichTitle: React.FC<RichTitleProps> = ({
           <span key={i} style={style}>
             {segments.map((seg, j) =>
               seg.kind === 'text' ? (
-                <React.Fragment key={j}>{seg.value}</React.Fragment>
+                <SpellText key={j} text={seg.value} errors={spellErrors} offset={offsets[i][j]} />
               ) : (
                 <InlineMath
                   key={j}

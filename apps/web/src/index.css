@@ -141,6 +141,20 @@ body {
 
 /* Carta: sempre tema chiaro, anche con l'app in tema scuro (stampa e anteprima). */
 #print-root,
+/*
+ * Parola non trovata nei dizionari (`spell/SpellText.tsx`): onda sottile e
+ * attenuata, un segnale da rivedere e non un errore che urla. Rosso fisso,
+ * leggibile sia sui blocchi chiari sia su quelli scuri.
+ */
+.spell-error {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: rgb(229 72 77 / 0.8);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 1px;
+  text-decoration-skip-ink: none;
+}
+
 .print-light {
   color-scheme: light;
   --background: oklch(0.992 0 0);

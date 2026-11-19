@@ -25,6 +25,8 @@ import { useRevealNode } from './map/useRevealNode.js';
 import { useTopicResize } from './map/useTopicResize.js';
 import { useViewport } from './map/useViewport.js';
 import type { ContextMenuState, DragOverlay, MapHandlers, MapViewProps } from './map/types.js';
+import { SpellContext } from '../spell/SpellContext.js';
+import { ignoreWord, misspelledWords, useSpellChecker } from '../spell/spellcheck.js';
 
 export type { MapEditing, MapViewProps } from './map/types.js';
 
@@ -78,6 +80,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const viewport = useViewport(layout);
+  const spell = useSpellChecker();
   const { view, containerRef, svgRef, viewportGroupRef, toolbarRef, editorLayerRef, selectedNodeRef, toWorld, zoomByButton, fitToView, fitAnimated } = viewport;
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -170,7 +173,9 @@ export const MapView: React.FC<MapViewProps> = ({
   const menuContext = { handlers, canPaste, canAddSummary };
   const buildNodeMenuItems = (nodeId: string) => {
     const node = layout?.nodes.find((n) => n.id === nodeId);
-    return node ? nodeMenuItems(node, menuContext) : [];
+    if (!node) return [];
+    const title = node.titleRuns?.map((run) => run.text).join('') || node.displayTitle || node.title || '';
+    return nodeMenuItems(node, { ...menuContext, misspelled: misspelledWords(spell, title), onIgnoreWord: ignoreWord });
   };
   const buildBackgroundMenuItems = () => backgroundMenuItems(menuContext, fitToView);
 
@@ -302,6 +307,7 @@ export const MapView: React.FC<MapViewProps> = ({
   }
 
   return (
+    <SpellContext.Provider value={spell}>
     <div
       ref={containerRef}
       className={cn(
@@ -492,5 +498,6 @@ export const MapView: React.FC<MapViewProps> = ({
         />
       )}
     </div>
+    </SpellContext.Provider>
   );
 };

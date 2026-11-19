@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bug, Cloud, FileLock2, Info, Keyboard, Network, Palette, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Bug, Cloud, FileLock2, Info, Keyboard, Network, Palette, RefreshCw, SpellCheck, X } from 'lucide-react';
 import {
   Button,
   IconButton,
@@ -11,12 +11,14 @@ import {
   cn,
 } from '@xmap/ui-kit';
 import {
+  SPELL_LANGUAGES,
   UI_SCALE_MAX,
   UI_SCALE_MIN,
   UI_SCALE_PRESETS,
   clampUiScale,
   type MapStructureSetting,
   type Settings,
+  type SpellLanguage,
   type ThemePreference,
 } from '../settings.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from '../appInfo.js';
@@ -54,6 +56,8 @@ const STRUCTURE_ITEMS: { id: MapStructureSetting; label: string }[] = [
 
 const UI_SCALE_ITEMS = UI_SCALE_PRESETS.map((value) => ({ id: String(value), label: `${value}%` }));
 
+const SPELL_LANGUAGE_LABELS: Record<SpellLanguage, string> = { it: 'Italiano', en: 'English' };
+
 /** Ogni riga: keys sono i singoli tasti mostrati con `Kbd`. */
 const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', 'S'], action: 'Salva' },
@@ -75,7 +79,7 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 
-type SectionId = 'appearance' | 'map' | 'files' | 'cloud' | 'shortcuts' | 'updates' | 'about' | 'debug';
+type SectionId = 'appearance' | 'map' | 'spelling' | 'files' | 'cloud' | 'shortcuts' | 'updates' | 'about' | 'debug';
 
 export type SettingsSectionId = SectionId;
 
@@ -101,6 +105,7 @@ const SECTIONS: {
 }[] = [
   { id: 'appearance', label: 'Aspetto', icon: <Palette className="size-4" /> },
   { id: 'map', label: 'Mappa', icon: <Network className="size-4" /> },
+  { id: 'spelling', label: 'Ortografia', icon: <SpellCheck className="size-4" /> },
   { id: 'files', label: 'File e sicurezza', icon: <FileLock2 className="size-4" /> },
   { id: 'cloud', label: 'Nextcloud', icon: <Cloud className="size-4" />, webOnly: true },
   { id: 'shortcuts', label: 'Scorciatoie', icon: <Keyboard className="size-4" /> },
@@ -347,6 +352,86 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
                   onChange={(mapStructure) => onUpdate({ mapStructure })}
                 />
               </SettingRow>
+            </SettingsSection>
+          )}
+
+          {active === 'spelling' && (
+            <SettingsSection title="Ortografia">
+              <SettingRow
+                label="Segnala errori di ortografia"
+                hint="Sottolinea le parole che non sono nei dizionari. È solo un segnale a schermo: il testo non viene mai cambiato e la sottolineatura non finisce né nel file né nelle esportazioni."
+              >
+                <Switch
+                  aria-label="Segnala errori di ortografia"
+                  checked={settings.spellcheck}
+                  onCheckedChange={(spellcheck) => onUpdate({ spellcheck })}
+                />
+              </SettingRow>
+              <SettingRow label="Dizionari" hint="Una parola è corretta se lo è in almeno una lingua.">
+                <div className="flex flex-wrap gap-2">
+                  {SPELL_LANGUAGES.map((lang) => {
+                    const enabled = settings.spellLanguages.includes(lang);
+                    return (
+                      <Button
+                        key={lang}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        active={enabled}
+                        aria-pressed={enabled}
+                        disabled={!settings.spellcheck}
+                        onClick={() => {
+                          // Almeno un dizionario resta attivo: senza, nessuna parola sarebbe mai accettata.
+                          if (enabled && settings.spellLanguages.length === 1) return;
+                          onUpdate({
+                            spellLanguages: SPELL_LANGUAGES.filter((item) =>
+                              item === lang ? !enabled : settings.spellLanguages.includes(item),
+                            ),
+                          });
+                        }}
+                      >
+                        {SPELL_LANGUAGE_LABELS[lang]}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </SettingRow>
+              <div className="flex flex-col gap-2 py-2.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <div className="text-sm">Parole ignorate</div>
+                  {settings.spellIgnored.length > 0 ? (
+                    <div className="text-2xs text-muted-foreground tabular-nums">
+                      {settings.spellIgnored.length} {settings.spellIgnored.length === 1 ? 'parola' : 'parole'}
+                    </div>
+                  ) : null}
+                </div>
+                {settings.spellIgnored.length === 0 ? (
+                  <p className="text-2xs text-muted-foreground">
+                    Nessuna parola ignorata. Per ignorarne una, fai clic destro sul blocco che la contiene e scegli «Ignora».
+                  </p>
+                ) : (
+                  <ul className="flex min-w-0 flex-wrap gap-1.5">
+                    {settings.spellIgnored.map((word) => (
+                      <li
+                        key={word}
+                        className="inline-flex max-w-full items-center gap-0.5 rounded-control border bg-secondary py-0.5 pl-2 pr-0.5 text-sm text-secondary-foreground"
+                      >
+                        <span className="min-w-0 break-words">{word}</span>
+                        <IconButton
+                          label={`Togli «${word}» dalle parole ignorate`}
+                          size="xs"
+                          variant="ghost"
+                          onClick={() =>
+                            onUpdate({ spellIgnored: settings.spellIgnored.filter((item) => item !== word) })
+                          }
+                        >
+                          <X className="size-3.5" />
+                        </IconButton>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </SettingsSection>
           )}
 

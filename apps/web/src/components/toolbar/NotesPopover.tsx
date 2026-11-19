@@ -7,6 +7,42 @@ import type { TopicActions } from '../../app/useTopicActions.js';
 import { chipClass } from './classes.js';
 import { POPOVER_PANEL_CLASS, PopoverGroupLabel, useCommitDraft } from './popover-fields.js';
 import { ToolbarButton, ToolbarPopover } from './primitives.js';
+import { ignoreWord, misspelledWords, useSpellChecker } from '../../spell/spellcheck.js';
+
+/** Parole da rivedere mostrate sotto le note; le altre si contano soltanto. */
+const MAX_NOTE_SPELL_WORDS = 8;
+
+/**
+ * Parole delle note non trovate nei dizionari. Il campo di testo non può
+ * sottolinearle, così si elencano qui: un clic le aggiunge a quelle ignorate.
+ */
+const NotesSpelling: React.FC<{ text: string }> = ({ text }) => {
+  const spell = useSpellChecker();
+  const words = misspelledWords(spell, text);
+  if (words.length === 0) return null;
+  const extra = words.length - MAX_NOTE_SPELL_WORDS;
+  return (
+    <div className="flex flex-col gap-1">
+      <PopoverGroupLabel>Da rivedere</PopoverGroupLabel>
+      <div role="group" aria-label="Parole da rivedere nelle note" className="flex flex-wrap gap-1">
+        {words.slice(0, MAX_NOTE_SPELL_WORDS).map((word) => (
+          <button
+            key={word}
+            type="button"
+            title={`Ignora «${word}»: non verrà più segnalata`}
+            aria-label={`Ignora «${word}»`}
+            onClick={() => ignoreWord(word)}
+            className={cn(chipClass(false), 'spell-error px-1.5 py-0.5')}
+          >
+            {word}
+          </button>
+        ))}
+        {extra > 0 && <span className="self-center text-2xs text-muted-foreground">e altre {extra}</span>}
+      </div>
+      <div className="text-2xs text-muted-foreground">Tocca una parola per ignorarla.</div>
+    </div>
+  );
+};
 
 export interface NotesPopoverProps {
   /** `null` = nessun blocco selezionato: il trigger si mostra disattivato. */
@@ -46,6 +82,7 @@ const NotesPanel: React.FC<{ topic: TopicView; actions: TopicActions; close: () 
           }
         }}
       />
+      <NotesSpelling text={draft} />
       <div className="flex flex-col gap-1">
         <PopoverGroupLabel>Visualizzazione in XMind</PopoverGroupLabel>
         <div role="group" aria-label="Visualizzazione delle note" className="flex gap-1">

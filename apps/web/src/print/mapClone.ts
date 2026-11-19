@@ -116,7 +116,10 @@ export function getPrintableMapClone(): PrintableClone | null {
   // 3. Aree di aggancio invisibili delle relazioni: inutili su carta
   clone.querySelectorAll('path[stroke="transparent"]').forEach((el) => el.remove());
 
-  // 4. Ripristina cursore normale
+  // 4. Sottolineature del controllo ortografico: segnale a schermo, non parte della mappa
+  clone.querySelectorAll('[data-spell]').forEach((el) => el.replaceWith(...Array.from(el.childNodes)));
+
+  // 5. Ripristina cursore normale
   clone.querySelectorAll<SVGElement | HTMLElement>('[style*="cursor"]').forEach((el) => {
     el.style.cursor = 'default';
   });
