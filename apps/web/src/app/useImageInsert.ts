@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { AppController, TopicView } from '@xmap/core';
+import type { AppController, Point, TopicView } from '@xmap/core';
 import type { SelectionState } from './useSelection.js';
 import type { AddToast } from './useToasts.js';
 import { readImageBlob } from './readImageBlob.js';
@@ -92,5 +92,42 @@ export function useImageInsert({
     ]
   );
 
-  return { insertImage };
+  /**
+   * Immagine libera (blocco `detached` con la sola immagine) nel punto della mappa: da `file`
+   * se c'è (trascinata sullo sfondo), altrimenti dal selettore di file.
+   */
+  const insertFloatingImage = useCallback(
+    (rootId: string, position: Point, file?: Blob) => {
+      const insert = async (blob: Blob) => {
+        try {
+          const image: DecodedImage = await readImageBlob(blob);
+          const size = { width: image.width, height: image.height };
+          const { newId } = controller.addFloatingImageTopic(rootId, position, image.bytes, image.mimeType, size);
+          selectSingle(newId);
+          exitSelectionMode();
+          refreshState();
+          addToast('success', 'Immagine libera aggiunta: collegala con «Collega con freccia…»');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addToast('error', `Impossibile aggiungere l'immagine: ${msg}`, err);
+        }
+      };
+      if (file) {
+        void insert(file);
+        return;
+      }
+      // Il selettore si apre nello stesso gesto del clic sul menu, come richiedono i browser.
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.addEventListener('change', () => {
+        const chosen = input.files?.[0];
+        if (chosen) void insert(chosen);
+      });
+      input.click();
+    },
+    [controller, refreshState, addToast, selectSingle, exitSelectionMode]
+  );
+
+  return { insertImage, insertFloatingImage };
 }

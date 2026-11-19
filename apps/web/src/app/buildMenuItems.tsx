@@ -17,6 +17,7 @@ import {
   Maximize2,
   CloudDownload,
   CloudUpload,
+  Presentation,
 } from 'lucide-react';
 import type { HeaderLayout } from './useAdaptiveHeader.js';
 import type { ThemePreference } from '../settings.js';
@@ -44,6 +45,7 @@ export interface MenuActions {
   onPrint: () => void;
   onEditTheme: () => void;
   onZen: () => void;
+  onReview: () => void;
   onImport: () => void;
   onAttach: () => void;
   onMerge: () => void;
@@ -93,6 +95,7 @@ export function buildMenuItems(ctx: MenuContext, actions: MenuActions): MenuItem
   return [
     ...overflowItems,
     { id: 'export', label: 'Esporta…', icon: <FileDown className="size-4" />, shortcut: 'Ctrl+Shift+E', separatorBefore: overflowItems.length > 0, onSelect: actions.onExport },
+    { id: 'review', label: 'Ripasso', icon: <Presentation className="size-4" />, shortcut: 'F5', onSelect: actions.onReview },
     { id: 'zen', label: 'Modalità Zen', icon: <Maximize2 className="size-4" />, shortcut: 'Ctrl+Alt+Z', onSelect: actions.onZen },
     { id: 'print', label: 'Stampa…', icon: <Printer className="size-4" />, shortcut: 'Ctrl+P', onSelect: actions.onPrint },
     { id: 'sheet-theme', label: 'Tema del foglio…', icon: <Palette className="size-4" />, onSelect: actions.onEditTheme },

@@ -1,4 +1,4 @@
-import type { LayoutNode } from '@xmap/core';
+import type { LayoutNode, Point } from '@xmap/core';
 import type { MenuItem } from '@xmap/ui-kit';
 import {
   Braces,
@@ -8,12 +8,14 @@ import {
   CornerDownLeft,
   Edit3,
   Eraser,
+  ImagePlus,
   ListTree,
   Maximize2,
   Network,
   Scissors,
   Sigma,
   SpellCheck,
+  SquarePlus,
   Trash2,
 } from 'lucide-react';
 import type { MapHandlers } from './types.js';
@@ -37,6 +39,8 @@ export function nodeMenuItems(
   { handlers, canPaste, canAddSummary, misspelled = [], onIgnoreWord }: MenuContext
 ): MenuItem[] {
   const isRoot = node.depth === 0;
+  // I blocchi liberi non hanno fratelli: si affiancano solo trascinandoli.
+  const noSiblings = isRoot || Boolean(node.floating);
   const isText = node.kind === 'text';
 
   const spellItems: MenuItem[] = onIgnoreWord
@@ -63,7 +67,7 @@ export function nodeMenuItems(
       label: 'Aggiungi blocco fratello',
       shortcut: 'Invio',
       icon: <ListTree className="size-4" />,
-      disabled: isRoot,
+      disabled: noSiblings,
       onSelect: () => handlers.current.onAddSibling?.(node.id, 'after'),
     },
     {
@@ -71,7 +75,7 @@ export function nodeMenuItems(
       label: 'Aggiungi fratello prima',
       shortcut: 'Maiusc+Invio',
       icon: <ListTree className="size-4" />,
-      disabled: isRoot,
+      disabled: noSiblings,
       onSelect: () => handlers.current.onAddSibling?.(node.id, 'before'),
     },
     {
@@ -165,12 +169,34 @@ export function nodeMenuItems(
   return items;
 }
 
-/** Voci del menu contestuale dello sfondo; `onFit` adatta la mappa alla finestra. */
-export function backgroundMenuItems({ handlers, canPaste }: MenuContext, onFit: () => void): MenuItem[] {
+/**
+ * Voci del menu contestuale dello sfondo; `onFit` adatta la mappa alla finestra. `anchor` è il punto
+ * cliccato (radice del foglio e posizione relativa al suo centro), dove nascono blocchi e immagini liberi.
+ */
+export function backgroundMenuItems(
+  { handlers, canPaste }: MenuContext,
+  onFit: () => void,
+  anchor: { rootId: string; position: Point } | null
+): MenuItem[] {
   return [
+    {
+      id: 'bg-floating-topic',
+      label: 'Blocco libero qui',
+      icon: <SquarePlus className="size-4" />,
+      disabled: !anchor || !handlers.current.onAddFloatingTopic,
+      onSelect: () => anchor && handlers.current.onAddFloatingTopic?.(anchor.rootId, anchor.position),
+    },
+    {
+      id: 'bg-floating-image',
+      label: 'Immagine libera qui…',
+      icon: <ImagePlus className="size-4" />,
+      disabled: !anchor || !handlers.current.onAddFloatingImage,
+      onSelect: () => anchor && handlers.current.onAddFloatingImage?.(anchor.rootId, anchor.position),
+    },
     {
       id: 'bg-paste',
       label: 'Incolla',
+      separatorBefore: true,
       shortcut: 'Ctrl+V',
       icon: <ClipboardPaste className="size-4" />,
       disabled: !canPaste,

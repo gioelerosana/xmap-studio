@@ -33,6 +33,9 @@ import { useMapKeyboard } from './app/useMapKeyboard.js';
 import { useGlobalShortcuts } from './app/useGlobalShortcuts.js';
 import { buildMenuItems } from './app/buildMenuItems.js';
 import { AppHeader } from './app/AppHeader.js';
+import { flushInPlaceEdit } from './app/flushInPlaceEdit.js';
+import { isDialogOpen } from './app/dialogOpen.js';
+import { TEXT_FIELD } from './app/constants.js';
 import { NextcloudBrowserModal } from './components/NextcloudBrowserModal.js';
 import { nextcloudAvailable, useNextcloudAccount, type NextcloudFileRef } from './adapters/nextcloud.js';
 import {
@@ -40,6 +43,7 @@ import {
   LazyImportModal,
   LazyLatexEditorModal,
   LazyPrintModal,
+  LazyReviewMode,
   LazySettingsPage,
   LazyThemeEditorModal,
   preloadPanels,
@@ -53,6 +57,7 @@ const ThemeEditorModal = LazyThemeEditorModal.Component;
 const ImportModal = LazyImportModal.Component;
 const SettingsPage = LazySettingsPage.Component;
 const LatexEditorModal = LazyLatexEditorModal.Component;
+const ReviewMode = LazyReviewMode.Component;
 
 export const App: React.FC = () => {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI);
@@ -96,6 +101,8 @@ export const App: React.FC = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Modalità Zen: solo la mappa, senza header, barra flottante, controlli di navigazione e schede dei fogli. Non persiste.
   const [zenMode, setZenMode] = useState(false);
+  // Modalità Ripasso: schermata a tutto schermo in sola lettura su tutti i fogli. Non persiste.
+  const [reviewOpen, setReviewOpen] = useState(false);
   // In Zen l'header si smonta: al ritorno va osservato il nuovo elemento.
   const { headerRef, layout: headerLayout } = useAdaptiveHeader(Boolean(workbook), !zenMode);
   const [editing, setEditing] = useState<MapEditing | null>(null);
@@ -244,6 +251,7 @@ export const App: React.FC = () => {
 
   const {
     createTopic,
+    createFloatingTopic,
     handleAddChild,
     handleToggleCollapse,
     handleMove,
@@ -293,7 +301,7 @@ export const App: React.FC = () => {
 
   const sheetActions = useSheetActions({ controller, refreshState, addToast, activeSheetIndex, selectSheet });
 
-  const { insertImage } = useImageInsert({
+  const { insertImage, insertFloatingImage } = useImageInsert({
     controller,
     selectedTopic,
     allTopics,
@@ -359,6 +367,7 @@ export const App: React.FC = () => {
     !replacePrompt &&
     !closePrompt &&
     !busy &&
+    !reviewOpen &&
     !installPrompt.open;
 
   useMapKeyboard({
@@ -395,6 +404,36 @@ export const App: React.FC = () => {
 
   const zen = zenMode && Boolean(workbook);
 
+  // Ingresso nel ripasso: un titolo in modifica si conferma prima, così il ripasso mostra il testo nuovo.
+  const openReview = useCallback(() => {
+    if (!workbook) return;
+    void flushInPlaceEdit().then(() => {
+      setEditing(null);
+      setReviewOpen(true);
+    });
+  }, [workbook]);
+  // All'uscita l'editor torna sul foglio e sul blocco dove il ripasso era arrivato.
+  const closeReview = useCallback(
+    (sheetIndex: number, topicId: string | undefined) => {
+      setReviewOpen(false);
+      if (sheetIndex !== activeSheetIndex) setActiveSheetIndex(sheetIndex);
+      selectSingle(topicId);
+    },
+    [activeSheetIndex, selectSingle]
+  );
+  // F5 (come le presentazioni) apre il ripasso; fuori da campi di testo e dialoghi.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F5' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (!workbook || reviewOpen || settingsOpen || editing || isDialogOpen()) return;
+      if ((e.target as Element | null)?.closest?.(TEXT_FIELD)) return;
+      e.preventDefault();
+      openReview();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [workbook, reviewOpen, settingsOpen, editing, openReview]);
+
   const resolveResource = useCallback((src: string) => controller.resourceBytes(src), [controller]);
 
   const menuItems = buildMenuItems(
@@ -411,6 +450,7 @@ export const App: React.FC = () => {
       onPrint: () => setPrintModalOpen(true),
       onEditTheme: () => setThemeModalOpen(true),
       onZen: () => setZenMode(true),
+      onReview: openReview,
       onImport: () => setImportModalOpen(true),
       onAttach: handleAttach,
       onMerge: handleMerge,
@@ -519,6 +559,8 @@ export const App: React.FC = () => {
                 onMoveTopic={handleMove}
                 onMoveTopics={handleMoveMany}
                 onMoveFloatingTopic={handleMoveFloating}
+                onAddFloatingTopic={createFloatingTopic}
+                onAddFloatingImage={insertFloatingImage}
                 onRelationshipControlPointsChange={handleRelationshipControlPoint}
                 onResizeTopicWidth={handleResizeTopicWidth}
                 onResizeTopicImage={handleResizeTopicImage}
@@ -584,6 +626,17 @@ export const App: React.FC = () => {
       </main>
 
       <Suspense fallback={null}>
+        {reviewOpen && workbook && (
+          <ReviewMode
+            sheets={workbook.sheets}
+            startSheetIndex={activeSheetIndex}
+            startTopicId={selectedTopicId}
+            structure={mapStructure}
+            darkMode={darkMode}
+            resourceResolver={resolveResource}
+            onExit={closeReview}
+          />
+        )}
         {latexMounted && (
           <LatexEditorModal
             // Rimontato a ogni apertura: la bozza riparte dalla formula del blocco.
