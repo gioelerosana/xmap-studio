@@ -11,6 +11,9 @@ import { useCallback, useEffect, useLayoutEffect, useSyncExternalStore } from 'r
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type MapStructureSetting = 'tree' | 'logic' | 'map';
+/** Lingue dei dizionari inclusi (`public/dictionaries/<lingua>.aff|.dic`). */
+export type SpellLanguage = 'it' | 'en';
+export const SPELL_LANGUAGES: readonly SpellLanguage[] = ['it', 'en'];
 
 export interface Settings {
   /** Sistema segue `prefers-color-scheme`; chiaro/scuro sono espliciti. */
@@ -23,6 +26,12 @@ export interface Settings {
   uiScale: number;
   /** Menu Debug nelle impostazioni: si sblocca toccando 7 volte la versione in Informazioni. */
   developerMode: boolean;
+  /** Sottolinea le parole che non sono in nessun dizionario attivo (solo a schermo, mai nel file). */
+  spellcheck: boolean;
+  /** Dizionari attivi: una parola è corretta se lo è in almeno uno. */
+  spellLanguages: SpellLanguage[];
+  /** Parole che l'utente ha scelto di ignorare, in minuscolo (`normalizeIgnoredWord`). */
+  spellIgnored: string[];
 }
 
 export const UI_SCALE_MIN = 50;
@@ -49,6 +58,9 @@ export function defaultSettings(): Settings {
     reduceMotion: systemPrefers(REDUCE_MOTION_QUERY),
     uiScale: 100,
     developerMode: false,
+    spellcheck: true,
+    spellLanguages: ['it', 'en'],
+    spellIgnored: [],
   };
 }
 
@@ -75,6 +87,13 @@ export function sanitizeSettings(value: unknown, base: Settings): Settings {
     reduceMotion: typeof record.reduceMotion === 'boolean' ? record.reduceMotion : base.reduceMotion,
     uiScale: clampUiScale(record.uiScale) ?? base.uiScale,
     developerMode: typeof record.developerMode === 'boolean' ? record.developerMode : base.developerMode,
+    spellcheck: typeof record.spellcheck === 'boolean' ? record.spellcheck : base.spellcheck,
+    spellLanguages: Array.isArray(record.spellLanguages)
+      ? SPELL_LANGUAGES.filter((lang) => (record.spellLanguages as unknown[]).includes(lang))
+      : base.spellLanguages,
+    spellIgnored: Array.isArray(record.spellIgnored)
+      ? [...new Set(record.spellIgnored.filter((w): w is string => typeof w === 'string' && w.trim() !== ''))]
+      : base.spellIgnored,
   };
 }
 
@@ -118,6 +137,9 @@ function getSettings(): Settings {
   return current;
 }
 
+/** Preferenze correnti fuori da React (per chi scrive un campo partendo dal valore attuale). */
+export const getSettingsSnapshot = getSettings;
+
 function emit(): void {
   for (const listener of listeners) listener();
 }
@@ -153,8 +175,9 @@ export function updateSettings(patch: Partial<Settings>): void {
   writeSettings({ ...getSettings(), ...patch });
 }
 
+/** Torna ai default, ma tiene le parole ignorate: sono dati scritti dall'utente, non preferenze. */
 export function resetSettings(): void {
-  writeSettings(defaultSettings());
+  writeSettings({ ...defaultSettings(), spellIgnored: getSettings().spellIgnored });
 }
 
 /*

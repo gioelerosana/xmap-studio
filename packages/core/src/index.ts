@@ -13,4 +13,5 @@ export * from './controller.js';
 export * from './print/index.js';
 export * from './update/index.js';
 export * from './cloud/index.js';
+export * from './spell/index.js';
 export * from './review/index.js';

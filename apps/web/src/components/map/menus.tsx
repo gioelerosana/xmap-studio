@@ -14,6 +14,7 @@ import {
   Network,
   Scissors,
   Sigma,
+  SpellCheck,
   SquarePlus,
   Trash2,
 } from 'lucide-react';
@@ -24,20 +25,40 @@ export interface MenuContext {
   handlers: { readonly current: MapHandlers };
   canPaste: boolean;
   canAddSummary: boolean;
+  /** Parole del titolo non trovate nei dizionari: il menu propone di ignorarle. */
+  misspelled?: readonly string[];
+  onIgnoreWord?: (word: string) => void;
 }
 
+/** Oltre questo numero di parole il menu diventerebbe un elenco: si rivede il resto dopo. */
+const MAX_SPELL_ITEMS = 3;
+
 /** Voci del menu contestuale di un blocco. */
-export function nodeMenuItems(node: LayoutNode, { handlers, canPaste, canAddSummary }: MenuContext): MenuItem[] {
+export function nodeMenuItems(
+  node: LayoutNode,
+  { handlers, canPaste, canAddSummary, misspelled = [], onIgnoreWord }: MenuContext
+): MenuItem[] {
   const isRoot = node.depth === 0;
   // I blocchi liberi non hanno fratelli: si affiancano solo trascinandoli.
   const noSiblings = isRoot || Boolean(node.floating);
   const isText = node.kind === 'text';
 
+  const spellItems: MenuItem[] = onIgnoreWord
+    ? misspelled.slice(0, MAX_SPELL_ITEMS).map((word) => ({
+        id: `spell-ignore-${word}`,
+        label: `Ignora «${word}»`,
+        icon: <SpellCheck className="size-4" />,
+        onSelect: () => onIgnoreWord(word),
+      }))
+    : [];
+
   const items: MenuItem[] = [
+    ...spellItems,
     {
       id: 'add-child',
       label: 'Aggiungi sotto-blocco',
       shortcut: 'Tab',
+      separatorBefore: spellItems.length > 0,
       icon: <CornerDownLeft className="size-4" />,
       onSelect: () => handlers.current.onAddChild?.(node.id),
     },
