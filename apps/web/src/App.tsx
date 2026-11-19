@@ -244,6 +244,7 @@ export const App: React.FC = () => {
 
   const {
     createTopic,
+    createFloatingTopic,
     handleAddChild,
     handleToggleCollapse,
     handleMove,
@@ -293,7 +294,7 @@ export const App: React.FC = () => {
 
   const sheetActions = useSheetActions({ controller, refreshState, addToast, activeSheetIndex, selectSheet });
 
-  const { insertImage } = useImageInsert({
+  const { insertImage, insertFloatingImage } = useImageInsert({
     controller,
     selectedTopic,
     allTopics,
@@ -519,6 +520,8 @@ export const App: React.FC = () => {
                 onMoveTopic={handleMove}
                 onMoveTopics={handleMoveMany}
                 onMoveFloatingTopic={handleMoveFloating}
+                onAddFloatingTopic={createFloatingTopic}
+                onAddFloatingImage={insertFloatingImage}
                 onRelationshipControlPointsChange={handleRelationshipControlPoint}
                 onResizeTopicWidth={handleResizeTopicWidth}
                 onResizeTopicImage={handleResizeTopicImage}

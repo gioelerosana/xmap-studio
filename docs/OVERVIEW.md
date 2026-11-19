@@ -187,6 +187,10 @@ blocco (o inizia a scrivere) · `Canc` elimina (si annulla con `Ctrl+Z`) · frec
 spostarsi · `Ctrl+B`/`Ctrl+I`/`Ctrl+U` grassetto, corsivo, sottolineato (sulla selezione
 se stai scrivendo nel blocco) · `Ctrl+Maiusc+L` editor della formula · `Esc` deseleziona.
 La barra flottante sul blocco compare solo su touch. I blocchi liberi si trascinano dove vuoi.
+Clic destro (o pressione lunga su touch) sullo sfondo crea nel punto scelto un **blocco libero** o
+un'**immagine libera**; un'immagine trascinata da file sullo sfondo vuoto diventa anch'essa
+un'immagine libera. Si collegano agli altri blocchi con **Collega con freccia…** (relazioni).
+Nel file sono blocchi `detached` della radice con `position`, come in XMind.
 Su touch un blocco si sposta solo se è già selezionato (tocco breve, poi trascina); trascinando un blocco non selezionato si sposta la mappa.
 Selezione multipla: `Maiusc`/`Ctrl`+clic aggiunge o toglie un blocco; `Maiusc`+trascina sullo
 sfondo disegna un'area che aggiunge i blocchi che tocca. Il pulsante **Seleziona più blocchi** (primo

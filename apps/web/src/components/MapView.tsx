@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { titleBaseFontPx, type BoundaryFrame, type Layout, type LayoutNode, type TitleRun } from '@xmap/core';
+import { titleBaseFontPx, type BoundaryFrame, type Layout, type LayoutNode, type Point, type TitleRun } from '@xmap/core';
 import { Braces, CornerDownLeft, Edit3, Network, Plus, Trash2 } from 'lucide-react';
 import { Button, IconButton, Separator, cn } from '@xmap/ui-kit';
 import { BoundaryLayer } from './map/BoundaryLayer.js';
@@ -54,6 +54,8 @@ export const MapView: React.FC<MapViewProps> = ({
   onMoveTopic,
   onMoveTopics,
   onMoveFloatingTopic,
+  onAddFloatingTopic,
+  onAddFloatingImage,
   onRelationshipControlPointsChange,
   onResizeTopicWidth,
   onResizeTopicImage,
@@ -109,6 +111,8 @@ export const MapView: React.FC<MapViewProps> = ({
     onMoveTopic,
     onMoveTopics,
     onMoveFloatingTopic,
+    onAddFloatingTopic,
+    onAddFloatingImage,
     onRelationshipControlPointsChange,
     onStartEdit,
     onAddSummary,
@@ -172,7 +176,26 @@ export const MapView: React.FC<MapViewProps> = ({
     const node = layout?.nodes.find((n) => n.id === nodeId);
     return node ? nodeMenuItems(node, menuContext) : [];
   };
-  const buildBackgroundMenuItems = () => backgroundMenuItems(menuContext, fitToView);
+  // Punto dello sfondo (coordinate client) → radice più vicina e posizione relativa al suo centro,
+  // nella stessa convenzione di `position` dei blocchi liberi.
+  const floatAnchorAt = useCallback(
+    (clientX: number, clientY: number): { rootId: string; position: Point } | null => {
+      const l = layoutRef.current;
+      if (!l) return null;
+      const wp = toWorld(clientX, clientY);
+      let best: { rootId: string; position: Point; dist: number } | null = null;
+      for (const n of l.nodes) {
+        if (n.depth !== 0 || n.floating) continue;
+        const position = { x: wp.x - (n.x + n.w / 2), y: wp.y - (n.y + n.h / 2) };
+        const dist = Math.hypot(position.x, position.y);
+        if (!best || dist < best.dist) best = { rootId: n.id, position, dist };
+      }
+      return best && { rootId: best.rootId, position: best.position };
+    },
+    [toWorld]
+  );
+  const buildBackgroundMenuItems = (x: number, y: number) =>
+    backgroundMenuItems(menuContext, fitToView, floatAnchorAt(x, y));
 
   const resourceUrls = useMemo(() => buildResourceUrls(layout, resourceResolver), [layout, resourceResolver]);
   // Le formule in caricamento (glifi non ancora arrivati) si disegnano alla nuova versione di MathJax.
@@ -316,6 +339,17 @@ export const MapView: React.FC<MapViewProps> = ({
         setSelectedRelationshipId(undefined);
         if (isConnectingRelationship || selectionMode || e.shiftKey || e.ctrlKey || e.metaKey) return;
         onClearSelection?.();
+      }}
+      onDrop={(e) => {
+        // Immagine rilasciata sullo sfondo: diventa un'immagine libera in quel punto. Su un blocco
+        // decide il gestore globale (`useClipboardEvents`), che vede `defaultPrevented` solo qui.
+        if (!onAddFloatingImage || e.defaultPrevented) return;
+        if ((e.target as Element).closest?.('[data-node-id]')) return;
+        const file = Array.from(e.dataTransfer?.files ?? []).find((f) => f.type.startsWith('image/'));
+        const anchor = file && floatAnchorAt(e.clientX, e.clientY);
+        if (!file || !anchor) return;
+        e.preventDefault();
+        onAddFloatingImage(anchor.rootId, anchor.position, file);
       }}
     >
       {/* Controlli di vista e zoom (nascosti in modalità Zen): flottanti in basso a destra; sotto `sm`
@@ -481,7 +515,7 @@ export const MapView: React.FC<MapViewProps> = ({
           items={
             contextMenu.target.type === 'node'
               ? buildNodeMenuItems(contextMenu.target.topicId)
-              : buildBackgroundMenuItems()
+              : buildBackgroundMenuItems(contextMenu.x, contextMenu.y)
           }
           onClose={() => setContextMenu(null)}
           ariaLabel={
