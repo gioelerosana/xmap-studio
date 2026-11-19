@@ -57,6 +57,22 @@ export function useTopicEditing({
     [controller, refreshState, addToast, selectSingle, exitSelectionMode, setEditing]
   );
 
+  /** Blocco libero nel punto scelto sulla mappa: nasce selezionato e in editing, come gli altri. */
+  const createFloatingTopic = useCallback(
+    (rootId: string, position: Point) => {
+      try {
+        const { newId } = controller.addFloatingTopic(rootId, position, 'Blocco libero');
+        selectSingle(newId);
+        exitSelectionMode();
+        setEditing({ id: newId, mode: 'all', isNew: true });
+        refreshState();
+      } catch (err: any) {
+        addToast('error', err.message, err);
+      }
+    },
+    [controller, refreshState, addToast, selectSingle, exitSelectionMode, setEditing]
+  );
+
   const handleAddChild = useCallback(
     (parentId: string) => {
       try {
@@ -258,6 +274,7 @@ export function useTopicEditing({
 
   return {
     createTopic,
+    createFloatingTopic,
     handleAddChild,
     handleToggleCollapse,
     handleMove,

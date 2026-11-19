@@ -2,6 +2,7 @@ import {
   AddImageTopicOptions,
   addImageChild,
   computeImageResourceName,
+  createImageTopic,
   setTopicImage,
 } from './model/image.js';
 import {
@@ -30,6 +31,8 @@ import {
 } from './model/clone.js';
 import {
   addChild,
+  addFloatingChild,
+  appendFloatingChild,
   insertSibling,
   insertSiblingTopic,
   addRelationship,
@@ -952,6 +955,53 @@ export class AppController {
     const { newId } = addImageChild(parent, resourceName, size, opts);
     setTopicFolded(parent, false);
     return { dto: this.commitCreation(wb, newId), newId };
+  }
+
+  /** Radice del foglio che contiene `topicId`: è lì che vivono i blocchi liberi. */
+  private requireSheetRootOf(wb: OpenWorkbook, topicId: string): Topic {
+    const root = wb.content[sheetIndexOf(wb.content, topicId)]?.rootTopic;
+    if (!root) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic ${topicId} non trovato`);
+    return root;
+  }
+
+  /**
+   * Crea un blocco libero (gruppo `detached` della radice) sul foglio di `anchorTopicId`.
+   * `position` è il centro del blocco relativo al centro della radice, come in XMind.
+   */
+  public addFloatingTopic(
+    anchorTopicId: string,
+    position: { x: number; y: number },
+    title: string
+  ): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const root = this.requireSheetRootOf(wb, anchorTopicId);
+    const newId = addFloatingChild(root, title, position);
+    return { dto: this.commitCreation(wb, newId), newId };
+  }
+
+  /**
+   * Crea un'immagine libera sul foglio di `anchorTopicId`: un blocco libero con la sola immagine,
+   * collegabile agli altri con le relazioni. Un solo passo di undo, risorsa registrata nel manifest.
+   */
+  public addFloatingImageTopic(
+    anchorTopicId: string,
+    position: { x: number; y: number },
+    bytes: Uint8Array,
+    mimeType: string,
+    size: { width: number; height: number },
+    opts?: AddImageTopicOptions
+  ): { dto: WorkbookDto; newId: string } {
+    const wb = this.ensureWorkbook();
+    const root = this.requireSheetRootOf(wb, anchorTopicId);
+    if (bytes.length === 0) throw new XmapError(CODE_INVALID_INPUT, "L'immagine è vuota.");
+    // Posizione validata prima di toccare l'archivio: se è invalida nulla cambia.
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+      throw new XmapError(CODE_INVALID_INPUT, 'Posizione non valida.');
+    }
+    const resourceName = this.storeImageResource(wb, bytes, mimeType);
+    const topic = createImageTopic(resourceName, size, opts);
+    appendFloatingChild(root, topic, position);
+    return { dto: this.commitCreation(wb, topic.id), newId: topic.id };
   }
 
   /**

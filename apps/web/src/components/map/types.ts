@@ -87,6 +87,13 @@ export interface MapViewProps {
   onMoveTopics?: (topicIds: string[], targetId: string, placement: DropPlacement) => void;
   /** Rilascio di un topic libero (detached): `position` è il suo centro relativo al centro della radice. */
   onMoveFloatingTopic?: (topicId: string, position: Point) => void;
+  /**
+   * Nuovo blocco libero di testo nel punto scelto sullo sfondo. `rootId` è la radice del foglio,
+   * `position` il centro del blocco relativo al centro della radice (come `onMoveFloatingTopic`).
+   */
+  onAddFloatingTopic?: (rootId: string, position: Point) => void;
+  /** Nuova immagine libera nel punto scelto: da `file` (trascinata sullo sfondo) o, senza, dal selettore. */
+  onAddFloatingImage?: (rootId: string, position: Point, file?: File) => void;
   /** Punti di controllo di una relazione trascinati (`null` = ripristina, `undefined` = invariato). */
   onRelationshipControlPointsChange?: (relationshipId: string, points: ControlPointsPatch) => void;
   /** Larghezza custom modificata tramite maniglia. */
@@ -122,6 +129,8 @@ export type MapHandlers = Pick<
   | 'onMoveTopic'
   | 'onMoveTopics'
   | 'onMoveFloatingTopic'
+  | 'onAddFloatingTopic'
+  | 'onAddFloatingImage'
   | 'onRelationshipControlPointsChange'
   | 'onStartEdit'
   | 'onAddSummary'
