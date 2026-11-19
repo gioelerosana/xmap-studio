@@ -269,6 +269,24 @@ nativo con il LaTeX corretto.
 6. **Inchiostro delle equazioni**: il PNG salvato resta nero (compatibilità con il
    tema chiaro di XMind); in tema scuro la vista mappa lo tinta solo a schermo.
 
+7. **Controllo ortografico solo a schermo** (`packages/core/src/spell/`,
+   `apps/web/src/spell/`): dizionari Hunspell italiano e inglese in
+   `apps/web/public/dictionaries/`, caricati a pezzi solo se il controllo è
+   attivo. Non si espandono le forme (l'italiano ne avrebbe milioni): si tolgono
+   prefissi e suffissi dalla parola e si cerca la radice, come fa Hunspell.
+   Una parola è corretta se lo è in almeno una lingua attiva. Si sottolineano i
+   titoli dei blocchi; le parole delle note si elencano nel loro pannello. Si
+   saltano formule, link, sigle, nomi con maiuscole interne e parole con cifre.
+   Niente suggerimenti di correzione: è un segnale da rivedere, non un
+   correttore. Le parole ignorate (clic destro sul blocco → «Ignora») stanno
+   nelle impostazioni locali, valgono per tutte le mappe e sopravvivono a
+   «Ripristina impostazioni»; si tolgono da Impostazioni → Ortografia. La
+   sottolineatura non entra mai nel file né nelle esportazioni (`data-spell`,
+   tolto da `print/mapClone.ts`). Licenze dei dizionari: italiano GPL-3.0
+   (`LICENSE-it.txt`, dal pacchetto `dictionary-it`), inglese MIT/BSD
+   (`LICENSE-en.txt`, da `dictionary-en`); sono file di dati distribuiti
+   accanto all'app, non codice collegato.
+
 ## 8. Limiti noti
 
 - Solo formato moderno (`content.json`); il legacy XMind 8 (`content.xml`) non è

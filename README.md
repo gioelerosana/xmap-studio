@@ -84,4 +84,6 @@ in [`AGENTS.md`](AGENTS.md).
 
 ## Licenza
 
-[MIT](LICENSE)
+[MIT](LICENSE). I dizionari del controllo ortografico in
+`apps/web/public/dictionaries/` hanno le loro licenze: italiano GPL-3.0,
+inglese MIT/BSD (file `LICENSE-*.txt` accanto ai dizionari).
