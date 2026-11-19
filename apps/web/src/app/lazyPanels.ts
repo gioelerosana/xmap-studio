@@ -28,9 +28,11 @@ export const LazyLatexEditorModal = lazyNamed(() =>
   import('../components/latex/LatexEditorModal.js').then((m) => m.LatexEditorModal)
 );
 
+export const LazyReviewMode = lazyNamed(() => import('../components/review/ReviewMode.js').then((m) => m.ReviewMode));
+
 /** Precarica tutte le finestre quando il browser è libero: alla prima apertura sono già pronte. */
 export function preloadPanels(): void {
-  const all = [LazyExportModal, LazyPrintModal, LazyThemeEditorModal, LazyImportModal, LazySettingsPage, LazyLatexEditorModal];
+  const all = [LazyExportModal, LazyPrintModal, LazyThemeEditorModal, LazyImportModal, LazySettingsPage, LazyLatexEditorModal, LazyReviewMode];
   const run = () => {
     for (const panel of all) panel.preload().catch((err: unknown) => console.warn('Pannello non precaricato:', err));
   };
