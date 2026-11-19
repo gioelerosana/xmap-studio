@@ -13,6 +13,28 @@ export interface AddImageTopicOptions {
 }
 
 /**
+ * Crea il blocco immagine (titolo vuoto, come in XMind) senza agganciarlo a un genitore:
+ * il chiamante decide se è un figlio `attached` o un blocco libero.
+ */
+export function createImageTopic(
+  resourceNameOrSrc: string,
+  size: ImageDimensions,
+  opts?: AddImageTopicOptions
+): Topic & { id: string } {
+  const scaled = scaleImageSize(size, opts?.maxDimension ?? 400);
+  const src = resourceNameOrSrc.startsWith('xap:') ? resourceNameOrSrc : `xap:${resourceNameOrSrc}`;
+  return {
+    id: newTopicId(),
+    title: opts?.title ?? '',
+    image: {
+      src,
+      width: scaled.width,
+      height: scaled.height,
+    },
+  };
+}
+
+/**
  * Deduce l'estensione del file a partire dal tipo MIME o dai magic bytes del contenuto.
  * Supporta i formati immagine comuni (.png, .jpg, .gif, .webp, .svg, .bmp, .ico, .tiff, .avif).
  */
@@ -122,19 +144,7 @@ export function addImageChild(
   size: ImageDimensions,
   opts?: AddImageTopicOptions
 ): { newId: string; topic: Topic } {
-  const id = newTopicId();
-  const scaled = scaleImageSize(size, opts?.maxDimension ?? 400);
-  const src = resourceNameOrSrc.startsWith('xap:') ? resourceNameOrSrc : `xap:${resourceNameOrSrc}`;
-
-  const child: Topic = {
-    id,
-    title: opts?.title ?? '',
-    image: {
-      src,
-      width: scaled.width,
-      height: scaled.height,
-    },
-  };
+  const child = createImageTopic(resourceNameOrSrc, size, opts);
 
   if (!parent.children) {
     parent.children = {};
@@ -144,7 +154,7 @@ export function addImageChild(
   }
   parent.children.attached.push(child);
 
-  return { newId: id, topic: child };
+  return { newId: child.id, topic: child };
 }
 
 /**

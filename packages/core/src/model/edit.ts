@@ -56,6 +56,28 @@ export function addChild(parent: Topic, title: string): string {
   return id;
 }
 
+/**
+ * Aggiunge `child` ai blocchi liberi (`children.detached`) di `root`, con `position` = centro del
+ * blocco relativo al centro della radice (come in XMind). In XMind i blocchi liberi stanno sotto
+ * la radice del foglio: è lì che li si aggiunge.
+ */
+export function appendFloatingChild(root: Topic, child: Topic, position: { x: number; y: number }): void {
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Posizione non valida.');
+  }
+  child['position'] = { x: Math.round(position.x), y: Math.round(position.y) };
+  if (!root.children) root.children = {};
+  if (!root.children.detached) root.children.detached = [];
+  root.children.detached.push(child);
+}
+
+/** Crea un blocco libero di testo sotto `root` nella posizione data; restituisce il suo id. */
+export function addFloatingChild(root: Topic, title: string, position: { x: number; y: number }): string {
+  const id = newTopicId();
+  appendFloatingChild(root, { id, title }, position);
+  return id;
+}
+
 /** Aggiorna i range numerici di bordi e sommari dopo l'inserimento di un figlio `attached` in `index`. */
 function shiftRangesOnInsert(parent: Topic, index: number): void {
   const shift = (range: string | undefined): string | undefined => {
