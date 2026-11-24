@@ -86,6 +86,45 @@ Il bridge non tocca file e non ha stato: apre una connessione per chiamata, cos�
 chiudere e riaprire l'app non richiede di riavviare il client. Su stdout passano
 solo messaggi del protocollo.
 
+## Secondo trasporto: Hermes Desktop (WebSocket)
+
+Per un agente che non gira sulla stessa macchina (un gateway Hermes remoto) c'è
+un secondo trasporto per le stesse richieste: un WebSocket su `127.0.0.1`, che
+usa il plugin "xmap-studio" di Hermes Desktop sul computer dell'utente
+(`integrations/hermes/`). È spento di default: si accende in
+Impostazioni › Hermes, che mostra porta, token di accoppiamento e stato.
+
+```text
+gateway Hermes (remoto) ──evento / ctx.rest── Hermes Desktop: plugin xmap-studio ──ws://127.0.0.1:47615── hermes-link.ts (main) ── dispatchAgentRequest ── finestra
+```
+
+- `packages/core/src/agent/link.ts`: messaggi (`AgentLinkRequest` /
+  `AgentLinkResponse`, operazioni `maps`, `call`, `catalog`) e catalogo degli
+  strumenti (`agentCatalog()`: nomi, descrizioni, schemi e istruzioni), così il
+  plugin non ne tiene una copia.
+- `packages/core/src/node/ws-frame.ts` e `agent-link.ts`: WebSocket minimo
+  (RFC 6455, solo testo, senza dipendenze) e server del collegamento, testati in
+  `tests/ws-frame.test.ts` e `tests/agent-link.test.ts`.
+- `apps/desktop/src/hermes-link.ts`: preferenze in `userData/hermes-link.json`
+  (permessi `0600`), avvio e arresto del server, stato per la UI. La porta è
+  47615; `XMAP_HERMES_PORT` la sostituisce (sviluppo).
+- `apps/desktop/src/mcp-host.ts`: `dispatchAgentRequest` è il punto comune ai
+  due trasporti.
+
+Protocollo: il primo messaggio è `{"type":"auth","token":"…"}`, a cui l'app
+risponde `{"type":"auth","ok":true,"app":"xmap-studio","protocol":1,…}`; poi
+`{"id":1,"op":"catalog"}`, `{"id":2,"op":"call","tool":"read_map","args":{}}`,
+`{"id":3,"op":"maps"}`, con risposte `{"id":…,"ok":true,"text":…}` (o
+`"catalog"`) oppure `{"id":…,"ok":false,"error":…}`.
+
+Controlli, in ordine: solo `127.0.0.1`; header `Host` di loopback (contro il DNS
+rebinding); `Origin` uguale a `file://`, l'origine del renderer di Hermes Desktop
+impacchettato (verificata con lo spike `integrations/hermes/xmap-ping`); token
+nel primo messaggio entro 5 s, confrontato a tempo costante. L'Origin tiene fuori
+i siti web ma non le pagine locali: la protezione vera è il token. Limiti:
+messaggi fino a 4 MiB, 16 richieste in corso per client, 8 client, 130 s per
+richiesta; il server manda un ping ogni 30 s e chiude chi non risponde.
+
 ## Prova manuale
 
 ```bash

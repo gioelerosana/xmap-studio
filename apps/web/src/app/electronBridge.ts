@@ -50,6 +50,19 @@ export type McpMapInfo = { fileName: string; path: string | null; dirty: boolean
 export type McpRendererReply =
   | { requestId: number; ok: true; text: string; info?: McpMapInfo | null }
   | { requestId: number; ok: false; error: string };
+/** Stato del collegamento con Hermes Desktop; ricalca `HermesLinkStatus` di apps/desktop/src/hermes-link.ts. */
+export type HermesLinkStatus = {
+  enabled: boolean;
+  /** Porta su 127.0.0.1 da inserire nel plugin di Hermes. */
+  port: number;
+  /** Token di accoppiamento; `null` finché il collegamento non è mai stato acceso. */
+  token: string | null;
+  /** `off`: spento; `listening`: in ascolto; `error`: non è partito (vedi `error`). */
+  state: 'off' | 'listening' | 'error';
+  /** Plugin di Hermes collegati e autenticati in questo momento. */
+  clients: number;
+  error: string | null;
+};
 /** Strumento interno: descrive la mappa della finestra per `list_maps`. */
 export const MCP_DESCRIBE = '__describe';
 
@@ -104,6 +117,11 @@ declare global {
       /** Collegamento con Claude; assente nelle shell desktop più vecchie. */
       onMcpRequest?: (callback: (request: McpRendererRequest) => void) => () => void;
       respondMcp?: (reply: McpRendererReply) => void;
+      /** Collegamento con Hermes Desktop; assente nelle shell desktop più vecchie. */
+      getHermesLink?: () => Promise<HermesLinkStatus>;
+      setHermesLinkEnabled?: (enabled: boolean) => Promise<HermesLinkStatus>;
+      regenerateHermesLinkToken?: () => Promise<HermesLinkStatus>;
+      onHermesLinkStatus?: (callback: (status: HermesLinkStatus) => void) => () => void;
     };
   }
 }

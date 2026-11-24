@@ -35,7 +35,7 @@ const JSONRPC_INVALID_REQUEST = -32600;
 const JSONRPC_METHOD_NOT_FOUND = -32601;
 const JSONRPC_INVALID_PARAMS = -32602;
 
-const INSTRUCTIONS =
+export const MCP_INSTRUCTIONS =
   'Questi strumenti lavorano sulla mappa mentale aperta in questo momento in XMap Studio, accanto all\'utente. ' +
   'Leggi prima la mappa con read_map: dà gli id dei blocchi e la selezione dell\'utente. ' +
   'Ogni modifica compare subito nell\'app e si annulla con Ctrl+Z; niente viene scritto su disco finché non si salva ' +
@@ -80,7 +80,7 @@ export function createMcpServer(options: McpServerOptions): (message: unknown) =
           protocolVersion,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: options.name, title: 'XMap Studio', version: options.version },
-          instructions: INSTRUCTIONS,
+          instructions: MCP_INSTRUCTIONS,
         });
       }
       case 'ping':

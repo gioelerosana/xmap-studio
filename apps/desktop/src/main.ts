@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { cancelRestartRequest, registerUpdater, relaunchIfRequested } from './updater.js';
 import { registerDebugLog } from './debug-log.js';
 import { startMcpHost } from './mcp-host.js';
+import { registerHermesLink } from './hermes-link.js';
 import { runMcpBridge } from './mcp-bridge.js';
 import type { PrintToPdfOptions } from './preload.js';
 
@@ -278,6 +279,7 @@ if (!MCP_MODE) {
   registerDebugLog();
   registerUpdater();
   startMcpHost();
+  registerHermesLink();
 }
 ipcMain.handle('app:getInitialFile', (event) => {
   const id = event.sender.id;

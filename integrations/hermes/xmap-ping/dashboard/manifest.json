@@ -1,0 +1,8 @@
+{
+  "name": "xmap-ping",
+  "label": "xmap-ping",
+  "description": "Spike del ponte XMap Studio: solo backend, nessuna scheda nella dashboard.",
+  "version": "0.1.0",
+  "tab": { "path": "/xmap-ping", "hidden": true },
+  "api": "plugin_api.py"
+}

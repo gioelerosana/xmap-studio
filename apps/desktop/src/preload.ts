@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import type { DesktopDebugInfo } from './debug-log.js';
 import type { McpRendererReply, McpRendererRequest } from './mcp-host.js';
+import type { HermesLinkStatus } from './hermes-link.js';
 
 /** Esito di un salvataggio sotto guardia (vedi `guardedSave` in @xmap/core/node). */
 export type SaveOutcome =
@@ -121,6 +122,11 @@ export interface ElectronAPI {
   /** Richieste di Claude (server MCP) per la mappa di questa finestra (vedi `mcp-host.ts`). */
   onMcpRequest: (callback: (request: McpRendererRequest) => void) => () => void;
   respondMcp: (reply: McpRendererReply) => void;
+  /** Collegamento con Hermes Desktop (WebSocket su 127.0.0.1, vedi `hermes-link.ts`). */
+  getHermesLink: () => Promise<HermesLinkStatus>;
+  setHermesLinkEnabled: (enabled: boolean) => Promise<HermesLinkStatus>;
+  regenerateHermesLinkToken: () => Promise<HermesLinkStatus>;
+  onHermesLinkStatus: (callback: (status: HermesLinkStatus) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -178,6 +184,14 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('mcp:request', handler);
   },
   respondMcp: (reply) => ipcRenderer.send('mcp:response', reply),
+  getHermesLink: () => ipcRenderer.invoke('hermesLink:get'),
+  setHermesLinkEnabled: (enabled) => ipcRenderer.invoke('hermesLink:setEnabled', enabled),
+  regenerateHermesLinkToken: () => ipcRenderer.invoke('hermesLink:regenerateToken'),
+  onHermesLinkStatus: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, status: HermesLinkStatus) => callback(status);
+    ipcRenderer.on('hermesLink:status', handler);
+    return () => ipcRenderer.removeListener('hermesLink:status', handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
