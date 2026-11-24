@@ -22,7 +22,8 @@ packages/core — AppController (unico accesso al workbook)
      ├── layout/      geometria pura per la vista mappa
      ├── task/        provider org.xmind.ui.task
      ├── update/      confronto versioni e client zsync (piano dei blocchi da scaricare)
-     └── markers/     catalogo marker XMind
+     ├── markers/     catalogo marker XMind
+     └── agent/       strumenti per Claude (MCP) sul controller
      ▼
 packages/ui-kit — componenti React condivisi
 ```
@@ -87,6 +88,13 @@ Il browser non può ispezionare i processi del sistema. Se è disponibile un
 sovrascriverlo; in assenza di handle produce un download. Con un account
 Nextcloud collegato la mappa si apre e si salva sul server, con l'ETag al posto
 dell'hash ([`NEXTCLOUD.md`](NEXTCLOUD.md)).
+
+## Collegamento con Claude (MCP)
+
+Nel desktop un server MCP su stdio (`xmap-studio --mcp`) gira le chiamate di
+Claude, su un socket locale, al main process e da lì alla finestra della mappa,
+dove gli strumenti di `agent/` lavorano sullo stesso `AppController` della UI.
+Dettagli in [`MCP.md`](MCP.md).
 
 ## Operazioni e UI
 

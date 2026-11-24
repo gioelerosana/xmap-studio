@@ -70,6 +70,13 @@ Su Arch Linux, da [AUR](https://aur.archlinux.org/packages/xmap-studio-bin)
 yay -S xmap-studio-bin
 ```
 
+### Claude accanto alla mappa
+
+Sul desktop puoi far lavorare Claude (Claude Desktop, Claude Code) sulla mappa che
+hai aperto: la legge, aggiunge e modifica blocchi e formule, e tu vedi ogni
+modifica subito e la annulli con Ctrl+Z. Basta aggiungere `xmap-studio --mcp`
+come server MCP nel client di Claude. Dettagli in [`docs/MCP.md`](docs/MCP.md).
+
 ## Sviluppo
 
 ```bash
