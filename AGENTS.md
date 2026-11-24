@@ -310,12 +310,14 @@ xmap-studio/
 │   ├── pr-title.yml              # controllo del formato del titolo dei PR
 │   ├── release.yml               # build e GitHub Release di un tag vYY.MAJOR.MINOR
 │   ├── pages.yml                 # pubblica site/ su GitHub Pages
-│   └── mirror.yml                # copia di `main` su GitLab (mirror)
+│   ├── mirror.yml                # copia di `main` su GitLab (mirror)
+│   └── hermes-connector.yml      # copia di integrations/hermes/xmap-studio nel repo xmap-studio-hermes-connector
 ├── LICENSE                       # MIT
 ├── PKGBUILD                      # pacchetto Arch `-git` di sviluppo: `makepkg -si` dalla root
 ├── README.md                     # presentazione per l'utente (breve)
 ├── assets/                       # icona e metadati desktop
 ├── demo/                         # mappa di prova con equazione applicata
+├── integrations/hermes/          # plugin di Hermes Agent (xmap-studio) e spike xmap-ping
 ├── docs/                         # documentazione tecnica
 ├── packaging/arch/               # launcher e .desktop del `-git`, `aur/` (xmap-studio-bin su AUR), build-tarball.sh, aur-publish.sh
 ├── site/                       # sito di presentazione (GitHub Pages, xmap-studio.jshep.xyz)
