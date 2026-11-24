@@ -15,3 +15,4 @@ export * from './update/index.js';
 export * from './cloud/index.js';
 export * from './spell/index.js';
 export * from './review/index.js';
+export * from './agent/index.js';

@@ -14,6 +14,10 @@
       "import": "./dist/node/index.js",
       "types": "./dist/node/index.d.ts"
     },
+    "./agent": {
+      "import": "./dist/agent/index.js",
+      "types": "./dist/agent/index.d.ts"
+    },
     "./update": {
       "import": "./dist/update/index.js",
       "types": "./dist/update/index.d.ts"

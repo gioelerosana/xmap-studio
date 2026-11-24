@@ -101,6 +101,8 @@ import {
   RelationshipShape,
   SaveResultDto,
   TitleRun,
+  TopicPatch,
+  TopicTreeSpec,
   WorkbookDto,
 } from './state/types.js';
 import { cloneSheets, OpenWorkbook } from './state/workbook.js';
@@ -507,10 +509,7 @@ export class AppController {
   public toggleTopicMarker(topicId: string, markerId: string): WorkbookDto {
     return this.editTopic(topicId, (topic) => {
       const id = markerId.trim();
-      // Id marker: solo lettere ASCII, cifre, "_" e "-". Accetta "star_1", rifiuta "star 1".
-      if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
-        throw new XmapError(CODE_INVALID_INPUT, 'Id marker non valido.');
-      }
+      validateMarkerId(id);
       const alreadyPresent = topic.markers?.some((marker) => marker.markerId === id) ?? false;
       if (!alreadyPresent && !isMarkerKnown(id)) {
         throw new XmapError(CODE_INVALID_INPUT, `Marker sconosciuto: ${id}`);
@@ -531,6 +530,60 @@ export class AppController {
     // Il figlio nuovo deve vedersi: un ramo chiuso si apre nello stesso passo di undo.
     setTopicFolded(parent, false);
     return { dto: this.commitCreation(wb, newId), newId };
+  }
+
+  /**
+   * Aggiunge sotto `parentId` uno o più sottoalberi di blocchi (titolo, note,
+   * etichette, marker) in un unico passo di cronologia. Restituisce gli id dei
+   * blocchi creati, in ordine di visita (prima il padre, poi i figli).
+   * Tutto è verificato prima di toccare la mappa: un marker sconosciuto non lascia
+   * la mappa a metà.
+   */
+  public addTopicTree(parentId: string, nodes: TopicTreeSpec[]): { dto: WorkbookDto; ids: string[] } {
+    const wb = this.ensureWorkbook();
+    const parent = this.requireParentTopic(wb, parentId);
+    if (nodes.length === 0) throw new XmapError(CODE_INVALID_INPUT, 'Nessun blocco da aggiungere.');
+    nodes.forEach(validateTopicTreeSpec);
+
+    const ids: string[] = [];
+    const build = (target: Topic, specs: TopicTreeSpec[]) => {
+      for (const spec of specs) {
+        const id = addChild(target, spec.title);
+        ids.push(id);
+        const child = target.children?.attached?.find((t) => t.id === id);
+        if (!child) continue;
+        if (spec.notes) setNotes(child, spec.notes);
+        if (spec.labels) setLabels(child, spec.labels);
+        spec.markers?.forEach((marker) => toggleMarker(child, marker.trim()));
+        if (spec.children?.length) build(child, spec.children);
+      }
+    };
+    build(parent, nodes);
+    setTopicFolded(parent, false);
+    return { dto: this.commit(wb), ids };
+  }
+
+  /**
+   * Modifica più proprietà di un blocco in un unico passo di cronologia. I campi
+   * assenti restano com'erano; `null` o stringa vuota tolgono note, link e colore.
+   */
+  public updateTopic(topicId: string, patch: TopicPatch): WorkbookDto {
+    return this.editTopic(topicId, (topic) => {
+      const add = (patch.addMarkers ?? []).map((m) => m.trim());
+      const remove = new Set((patch.removeMarkers ?? []).map((m) => m.trim()));
+      for (const marker of add) {
+        validateMarkerId(marker);
+        if (!isMarkerKnown(marker)) throw new XmapError(CODE_INVALID_INPUT, `Marker sconosciuto: ${marker}`);
+      }
+      if (patch.title !== undefined) setTitle(topic, patch.title);
+      if (patch.notes !== undefined) setNotes(topic, patch.notes ?? '');
+      if (patch.labels !== undefined) setLabels(topic, patch.labels);
+      if (patch.href !== undefined) setHref(topic, patch.href);
+      if (patch.color !== undefined) setFillColor(topic, patch.color || null);
+      const present = () => new Set((topic.markers ?? []).map((m) => m.markerId));
+      for (const marker of remove) if (present().has(marker)) toggleMarker(topic, marker);
+      for (const marker of add) if (!present().has(marker)) toggleMarker(topic, marker);
+    });
   }
 
   /**
@@ -1403,6 +1456,26 @@ function encodeAssets(store: Map<string, Uint8Array>, names: Iterable<string>): 
       return bytes ? [[name, bytesToBase64(bytes)] as const] : [];
     })
   );
+}
+
+/** Id marker: solo lettere ASCII, cifre, "_" e "-". Accetta "star_1", rifiuta "star 1". */
+function validateMarkerId(id: string): void {
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new XmapError(CODE_INVALID_INPUT, 'Id marker non valido.');
+  }
+}
+
+/** Verifica un sottoalbero da creare con `addTopicTree` prima di toccare la mappa. */
+function validateTopicTreeSpec(spec: TopicTreeSpec): void {
+  if (!spec || typeof spec.title !== 'string') {
+    throw new XmapError(CODE_INVALID_INPUT, 'Ogni blocco da aggiungere deve avere un titolo.');
+  }
+  for (const marker of spec.markers ?? []) {
+    const id = marker.trim();
+    validateMarkerId(id);
+    if (!isMarkerKnown(id)) throw new XmapError(CODE_INVALID_INPUT, `Marker sconosciuto: ${id}`);
+  }
+  spec.children?.forEach(validateTopicTreeSpec);
 }
 
 /** Ultimo segmento di un percorso, con "/" e "\" come separatori. */
