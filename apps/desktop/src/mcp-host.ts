@@ -6,6 +6,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import { logMain } from './debug-log.js';
+import type { AgentLinkRequest, AgentLinkResponse } from '@xmap/core/agent';
 import { HostRequest, HostResponse, lineReader, mcpSocketPath } from './mcp-socket.js';
 
 /** Mappa aperta in una finestra, come la descrive il renderer. */
@@ -124,9 +125,34 @@ function handleConnection(socket: net.Socket): void {
 }
 
 async function handleRequest(request: HostRequest): Promise<HostResponse> {
+  const response = await dispatchAgentRequest(request);
+  // Il socket di `xmap-studio --mcp` non conosce il catalogo: il bridge ha già gli strumenti dal core.
+  return 'catalog' in response ? { id: request.id, ok: false, error: 'operazione sconosciuta.' } : response;
+}
+
+/**
+ * Esegue una richiesta di un agente, da qualunque trasporto arrivi (socket di
+ * `--mcp` o WebSocket di Hermes): è l'unico punto in cui le richieste diventano
+ * chiamate alla finestra.
+ */
+export async function dispatchAgentRequest(request: AgentLinkRequest): Promise<AgentLinkResponse> {
   if (request.op === 'maps') return { id: request.id, ok: true, text: await describeMaps() };
-  const window = targetWindow(request.map);
-  const result = await askRenderer(window, request.tool, request.args, CALL_TIMEOUT_MS);
+  if (request.op === 'catalog') {
+    const { agentCatalog } = await import('@xmap/core/agent');
+    return { id: request.id, ok: true, catalog: agentCatalog() };
+  }
+  if (request.tool === 'list_maps') return { id: request.id, ok: true, text: await describeMaps() };
+  // Il bridge di `--mcp` toglie già `map` dagli argomenti; chi usa il catalogo così com'è lo lascia lì.
+  const { map: argMap, ...args } = request.args;
+  let map = request.map;
+  if (map === undefined && argMap !== undefined) {
+    if (typeof argMap !== 'number' || !Number.isInteger(argMap)) {
+      return { id: request.id, ok: false, error: 'map deve essere il numero di una mappa elencata da list_maps.' };
+    }
+    map = argMap;
+  }
+  const window = targetWindow(map);
+  const result = await askRenderer(window, request.tool, args, CALL_TIMEOUT_MS);
   return result.ok ? { id: request.id, ok: true, text: result.text } : { id: request.id, ok: false, error: result.error };
 }
 
