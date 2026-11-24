@@ -26,6 +26,9 @@ interface AffixRule {
   cross: boolean;
 }
 
+/** Insieme di flag vuoto, condiviso da tutte le radici senza flag. */
+const NO_FLAGS: readonly string[] = Object.freeze([]);
+
 /** Converte una condizione Hunspell in espressione regolare ancorata. */
 function conditionRegExp(cond: string, kind: 'PFX' | 'SFX'): RegExp | null {
   if (cond === '.' || cond === '') return null;
@@ -56,7 +59,7 @@ function conditionRegExp(cond: string, kind: 'PFX' | 'SFX'): RegExp | null {
 
 export class HunspellDictionary {
   private flagMode: FlagMode = 'char';
-  private aliases: string[][] = [];
+  private aliases: Array<readonly string[]> = [];
   private needAffix: string | null = null;
   private forbidden: string | null = null;
   private onlyInCompound: string | null = null;
@@ -68,8 +71,15 @@ export class HunspellDictionary {
   private contSuffixFlags = new Set<string>();
   private maxSuffixLen = 0;
   private maxPrefixLen = 0;
-  /** Radici: parola → insiemi di flag (una voce per omonimo). */
-  private roots = new Map<string, Array<readonly string[]>>();
+  /**
+   * Radici: parola → insieme di flag del primo omonimo. Il caso comune (una sola
+   * voce) non alloca alcun contenitore in più.
+   */
+  private roots = new Map<string, readonly string[]>();
+  /** Omonimi successivi al primo: parola → insiemi di flag aggiuntivi (di solito assenti). */
+  private extraRoots = new Map<string, Array<readonly string[]>>();
+  /** Insiemi di flag già letti, per condividere la stessa istanza tra le radici con flag uguali. */
+  private flagCache = new Map<string, readonly string[]>();
 
   /** Interpreta il file .aff; le radici si aggiungono poi con `addDicLines`. */
   static fromAff(aff: string): HunspellDictionary {
@@ -91,10 +101,10 @@ export class HunspellDictionary {
     return this.roots.size;
   }
 
-  private parseFlags(raw: string, useAliases = true): string[] {
-    if (raw === '') return [];
+  private parseFlags(raw: string, useAliases = true): readonly string[] {
+    if (raw === '') return NO_FLAGS;
     if (useAliases && this.aliases.length > 0 && /^\d+$/.test(raw)) {
-      return this.aliases[Number(raw) - 1] ?? [];
+      return this.aliases[Number(raw) - 1] ?? NO_FLAGS;
     }
     switch (this.flagMode) {
       case 'long': {
@@ -107,6 +117,20 @@ export class HunspellDictionary {
       default:
         return Array.from(raw);
     }
+  }
+
+  /**
+   * Restituisce l'insieme di flag di una riga del .dic, condiviso (e congelato) quando
+   * lo stesso testo di flag compare più volte. Va usato solo dopo `parseAff`, quando
+   * `flagMode` e gli alias sono definitivi.
+   */
+  private internFlags(raw: string): readonly string[] {
+    if (raw === '') return NO_FLAGS;
+    const cached = this.flagCache.get(raw);
+    if (cached !== undefined) return cached;
+    const flags = Object.freeze(this.parseFlags(raw));
+    this.flagCache.set(raw, flags);
+    return flags;
   }
 
   private parseAff(aff: string): void {
@@ -203,11 +227,28 @@ export class HunspellDictionary {
       }
       const word = (slash === -1 ? entry : entry.slice(0, slash)).replace(/\\\//g, '/');
       if (word === '') continue;
-      const flags = slash === -1 ? [] : this.parseFlags(entry.slice(slash + 1));
-      const list = this.roots.get(word);
-      if (list) list.push(flags);
-      else this.roots.set(word, [flags]);
+      const flags = slash === -1 ? NO_FLAGS : this.internFlags(entry.slice(slash + 1));
+      if (!this.roots.has(word)) {
+        this.roots.set(word, flags);
+        continue;
+      }
+      const extra = this.extraRoots.get(word);
+      if (extra) extra.push(flags);
+      else this.extraRoots.set(word, [flags]);
     }
+  }
+
+  /**
+   * Vero se almeno un insieme di flag della radice `word` soddisfa `test` (il primo
+   * omonimo, poi gli altri). Un callback invece di un generatore: nel controllo
+   * ortografico questa funzione è nel percorso caldo e il generatore costa tempo.
+   */
+  private someFlagSet(word: string, test: (flags: readonly string[]) => boolean): boolean {
+    const first = this.roots.get(word);
+    if (first === undefined) return false;
+    if (test(first)) return true;
+    const extra = this.extraRoots.get(word);
+    return extra !== undefined && extra.some(test);
   }
 
   private normalize(word: string): string {
@@ -218,11 +259,8 @@ export class HunspellDictionary {
 
   /** La parola (con la grafia esatta) è corretta. Le maiuscole le gestisce `check`. */
   private checkExact(word: string): boolean {
-    const direct = this.roots.get(word);
-    if (direct) {
-      if (direct.some((flags) => this.forbidden !== null && flags.includes(this.forbidden))) return false;
-      if (direct.some((flags) => this.isStandalone(flags))) return true;
-    }
+    if (this.someFlagSet(word, (flags) => this.forbidden !== null && flags.includes(this.forbidden))) return false;
+    if (this.someFlagSet(word, (flags) => this.isStandalone(flags))) return true;
     return this.checkSuffixed(word, null, false) || this.checkPrefixed(word);
   }
 
@@ -235,9 +273,8 @@ export class HunspellDictionary {
   }
 
   private rootHas(stem: string, needed: readonly string[]): boolean {
-    const list = this.roots.get(stem);
-    if (!list) return false;
-    return list.some(
+    return this.someFlagSet(
+      stem,
       (flags) =>
         needed.every((f) => flags.includes(f)) &&
         !(this.forbidden !== null && flags.includes(this.forbidden)) &&
