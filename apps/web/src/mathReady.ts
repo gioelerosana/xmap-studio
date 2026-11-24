@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from 'react';
-import { getMathJaxVersion, isMathJaxReady, loadMathJax, onMathJaxReady } from '@xmap/core';
+import { getMathJaxVersion, isMathJaxReady, loadMathJax, onMathJaxReady, type WorkbookDto } from '@xmap/core';
 
 /**
  * true quando il motore MathJax è caricato. Resta true anche quando arrivano
- * glifi nuovi: per quelli serve `useMathJaxVersion`. Il motore arriva con un import
- * dinamico (`preloadMathJax`): finché manca, mappa e titoli mostrano le formule come
- * sorgente, poi si ridisegnano da soli.
+ * glifi nuovi: per quelli serve `useMathJaxVersion`. Il motore si carica su richiesta
+ * (`preloadMathJax` o alla prima formula disegnata): finché manca, mappa e titoli
+ * mostrano le formule come sorgente, poi si ridisegnano da soli.
  */
 export function useMathJaxReady(): boolean {
   return useSyncExternalStore(onMathJaxReady, isMathJaxReady, isMathJaxReady);
@@ -23,11 +23,30 @@ export function useMathJaxVersion(): number {
 const IDLE_TIMEOUT_MS = 1500;
 const FALLBACK_DELAY_MS = 200;
 
+/** Vero dopo la prima pianificazione: le chiamate successive non fanno nulla. */
+let preloadScheduled = false;
+
+/** Il foglio contiene formule (LaTeX, `$...$` nei titoli o nelle relazioni): serve MathJax. */
+export function workbookUsesMath(workbook: WorkbookDto): boolean {
+  for (const sheet of workbook.sheets) {
+    for (const topic of sheet.topics) {
+      if (topic.kind === 'equation' || topic.latex !== undefined || topic.title.includes('$')) return true;
+    }
+    for (const rel of sheet.relationships) {
+      if (rel.title.includes('$')) return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Avvia il caricamento di MathJax quando il browser è libero, dopo il primo disegno:
- * l'avvio non aspetta il motore, che di solito è pronto prima che serva una formula.
+ * Avvia il caricamento di MathJax quando il browser è libero. Il motore non si carica
+ * all'avvio: lo chiede `App` solo quando il foglio usa formule (vedi `workbookUsesMath`).
+ * Idempotente: pianifica il caricamento una sola volta, e non fa nulla se il motore è già pronto.
  */
 export function preloadMathJax(): void {
+  if (preloadScheduled || isMathJaxReady()) return;
+  preloadScheduled = true;
   const start = async (): Promise<void> => {
     try {
       await loadMathJax();
