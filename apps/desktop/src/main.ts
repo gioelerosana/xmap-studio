@@ -5,6 +5,8 @@ import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { cancelRestartRequest, registerUpdater, relaunchIfRequested } from './updater.js';
 import { registerDebugLog } from './debug-log.js';
+import { startMcpHost } from './mcp-host.js';
+import { runMcpBridge } from './mcp-bridge.js';
 import type { PrintToPdfOptions } from './preload.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
@@ -54,9 +56,20 @@ function findXmindFiles(args: string[]): string[] {
     .map((arg) => path.resolve(arg));
 }
 
+/**
+ * `xmap-studio --mcp`: niente finestre, solo il server MCP su stdio che Claude
+ * avvia per lavorare sulle mappe aperte nell'istanza normale dell'app
+ * (`mcp-bridge.ts`). Non prende il blocco di istanza singola, altrimenti
+ * passerebbe gli argomenti all'app aperta e uscirebbe.
+ */
+const MCP_MODE = process.argv.includes('--mcp');
+
 // Ogni workbook ha una finestra e uno stato React indipendenti.
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
+const gotTheLock = MCP_MODE || app.requestSingleInstanceLock();
+if (MCP_MODE) {
+  app.dock?.hide();
+  runMcpBridge({ version: app.getVersion(), onEnd: () => app.exit(0) });
+} else if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_, commandLine) => {
@@ -261,8 +274,11 @@ async function readFileForRenderer(filePath: string) {
 }
 
 // IPC handlers
-registerDebugLog();
-registerUpdater();
+if (!MCP_MODE) {
+  registerDebugLog();
+  registerUpdater();
+  startMcpHost();
+}
 ipcMain.handle('app:getInitialFile', (event) => {
   const id = event.sender.id;
   const filePath = initialFiles.get(id) ?? null;

@@ -136,6 +136,35 @@ export interface WorkbookDto {
   xmindRunning: string[];
 }
 
+/** Sottoalbero da creare con `AppController.addTopicTree`. */
+export interface TopicTreeSpec {
+  title: string;
+  /** Note in testo semplice. */
+  notes?: string;
+  labels?: string[];
+  /** Id del catalogo marker (es. `priority-1`, `task-done`). */
+  markers?: string[];
+  children?: TopicTreeSpec[];
+}
+
+/**
+ * Modifiche a un blocco per `AppController.updateTopic`, applicate in un solo
+ * passo di cronologia. Campo assente = invariato.
+ */
+export interface TopicPatch {
+  title?: string;
+  /** Testo semplice; `null` o `''` tolgono le note. */
+  notes?: string | null;
+  /** Sostituisce l'elenco delle etichette; `[]` le toglie. */
+  labels?: string[];
+  /** URL o `#id` di un blocco; `null` o `''` tolgono il link. */
+  href?: string | null;
+  /** Riempimento CSS (`#RRGGBB`); `null` o `''` lo tolgono. */
+  color?: string | null;
+  addMarkers?: string[];
+  removeMarkers?: string[];
+}
+
 export interface BatchSpec {
   topicId: string;
   latex: string;
