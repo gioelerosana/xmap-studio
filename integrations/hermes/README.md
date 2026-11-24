@@ -13,7 +13,7 @@ gateway (server)  tool xmap_*  ──evento del gateway / long-poll──▶  He
 
 | Cartella | Cosa |
 |---|---|
-| `xmap-studio/` | il plugin: metà agente (`__init__.py`, `bus.py`, `dashboard/`) e metà desktop (`desktop/plugin.js`) |
+| `xmap-studio/` | il plugin: metà agente (`__init__.py`, `bus.py`, `dashboard/`) e metà desktop (`desktop/plugin.js`); pubblicato come [`xmap-studio-hermes-connector`](https://github.com/gioelerosana/xmap-studio-hermes-connector) |
 | `xmap-ping/` | lo spike che ha verificato i canali sul gateway remoto (esito nel suo README) |
 
 Funziona con le chat di **Hermes Desktop**. Una richiesta da Telegram o
@@ -22,7 +22,29 @@ Desktop collegati: il tool risponde subito che XMap non è collegato.
 
 ## Installazione
 
-### 1. Server: la metà agente
+### Con il link (consigliato)
+
+In XMap Studio: **Impostazioni › Hermes › Installa in Hermes Desktop**, oppure
+apri questo link con Hermes Desktop avviato:
+
+```
+hermes://plugin/install?repo=gioelerosana/xmap-studio-hermes-connector&enable=1
+```
+
+Hermes Desktop mostra una finestra di conferma e installa le due metà: quella
+agente sul gateway, anche remoto, e quella desktop su questo computer. Poi
+riavvia il gateway (le route del plugin si montano all'avvio) e passa
+all'accoppiamento.
+
+Il repository [`gioelerosana/xmap-studio-hermes-connector`](https://github.com/gioelerosana/xmap-studio-hermes-connector)
+è una copia di `xmap-studio/` con il plugin alla radice, perché il link accetta
+solo un repository intero. Lo aggiorna `.github/workflows/hermes-connector.yml` a
+ogni modifica della cartella su `main` (deploy key nel secret
+`HERMES_CONNECTOR_SSH_KEY`); lì non si scrive a mano.
+
+### A mano
+
+#### 1. Server: la metà agente
 
 La cartella va in `$HERMES_HOME/plugins/xmap-studio/` sulla macchina del
 gateway. Con Hermes in Docker (la home è il volume, es. `/opt/data`):
@@ -43,7 +65,7 @@ xmap-studio`, riavvia il gateway.
 I tool si chiamano `xmap_list_maps`, `xmap_read_map`, … (toolset
 `xmap-studio`) e valgono dalla sessione successiva all'attivazione.
 
-### 2. Portatile: la metà desktop
+#### 2. Portatile: la metà desktop
 
 Con un gateway remoto Hermes Desktop non copia da solo la metà desktop:
 

@@ -126,6 +126,8 @@ export interface ElectronAPI {
   getHermesLink: () => Promise<HermesLinkStatus>;
   setHermesLinkEnabled: (enabled: boolean) => Promise<HermesLinkStatus>;
   regenerateHermesLinkToken: () => Promise<HermesLinkStatus>;
+  /** Apre in Hermes Desktop l'installazione del plugin (link `hermes://`). */
+  openHermesInstaller: () => Promise<{ ok: true } | { ok: false; error: string }>;
   onHermesLinkStatus: (callback: (status: HermesLinkStatus) => void) => () => void;
 }
 
@@ -187,6 +189,7 @@ const api: ElectronAPI = {
   getHermesLink: () => ipcRenderer.invoke('hermesLink:get'),
   setHermesLinkEnabled: (enabled) => ipcRenderer.invoke('hermesLink:setEnabled', enabled),
   regenerateHermesLinkToken: () => ipcRenderer.invoke('hermesLink:regenerateToken'),
+  openHermesInstaller: () => ipcRenderer.invoke('hermesLink:openInstaller'),
   onHermesLinkStatus: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, status: HermesLinkStatus) => callback(status);
     ipcRenderer.on('hermesLink:status', handler);

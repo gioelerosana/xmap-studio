@@ -31,6 +31,7 @@ export function HermesSection() {
   const [revealed, setRevealed] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<Feedback | null>(null);
   const feedbackTimerRef = useRef<number | undefined>(undefined);
+  const [installError, setInstallError] = useState<string | null>(null);
 
   useEffect(() => () => window.clearTimeout(feedbackTimerRef.current), []);
 
@@ -71,6 +72,16 @@ export function HermesSection() {
     );
   };
 
+  const openInstaller = () => {
+    const open = window.electronAPI?.openHermesInstaller;
+    if (!open) return;
+    setInstallError(null);
+    open().then(
+      (result) => setInstallError(result.ok ? null : result.error),
+      (err: unknown) => setInstallError(`Link non aperto: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  };
+
   const regenerate = () => {
     if (!window.confirm(REGENERATE_CONFIRM)) return;
     void regenerateToken();
@@ -83,6 +94,23 @@ export function HermesSection() {
         plugin "xmap-studio" di Hermes Desktop su questo computer. Ascolta solo su questo computer (127.0.0.1) ed è
         spento di default.
       </p>
+      {window.electronAPI?.openHermesInstaller ? (
+        <div className="flex flex-col">
+          <SettingRow
+            label="Plugin XMap Studio per Hermes"
+            hint="Si installa una volta: Hermes Desktop chiede conferma e lo aggiunge al gateway (anche remoto) e a questo computer."
+          >
+            <Button variant="outline" size="sm" onClick={openInstaller}>
+              Installa in Hermes Desktop
+            </Button>
+          </SettingRow>
+          {installError ? (
+            <p role="alert" className="-mt-1 pb-2.5 text-2xs text-destructive">
+              {installError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <SettingRow label="Collega a Hermes">
         <Switch aria-label="Collega a Hermes" checked={status.enabled} onCheckedChange={(on) => void setEnabled(on)} />
       </SettingRow>

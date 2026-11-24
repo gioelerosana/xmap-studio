@@ -91,8 +91,10 @@ solo messaggi del protocollo.
 Per un agente che non gira sulla stessa macchina (un gateway Hermes remoto) c'è
 un secondo trasporto per le stesse richieste: un WebSocket su `127.0.0.1`, che
 usa il plugin "xmap-studio" di Hermes Desktop sul computer dell'utente
-(`integrations/hermes/`). È spento di default: si accende in
-Impostazioni › Hermes, che mostra porta, token di accoppiamento e stato.
+(`integrations/hermes/`, pubblicato come `gioelerosana/xmap-studio-hermes-connector`).
+È spento di default: si accende in Impostazioni › Hermes, che mostra porta,
+token di accoppiamento e stato, e ha il pulsante che installa il plugin in
+Hermes Desktop (link `hermes://plugin/install?repo=…`).
 
 ```text
 gateway Hermes (remoto) ──evento / ctx.rest── Hermes Desktop: plugin xmap-studio ──ws://127.0.0.1:47615── hermes-link.ts (main) ── dispatchAgentRequest ── finestra

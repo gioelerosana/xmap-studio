@@ -3,7 +3,7 @@
 // Lo usa il plugin "xmap-studio" di Hermes Desktop, che inoltra a XMap le chiamate
 // dell'agente (anche di un gateway remoto). Spento di default; il token di
 // accoppiamento e lo stato acceso/spento restano in userData/hermes-link.json.
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import type { AgentLinkServer } from '@xmap/core/node';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -32,6 +32,13 @@ const PORT_ENV = 'XMAP_HERMES_PORT';
  * protezione, l'Origin tiene fuori i siti web.
  */
 const ALLOWED_ORIGINS = ['file://'];
+/**
+ * Link di installazione del plugin: Hermes Desktop lo apre con la sua finestra di
+ * conferma e installa le due metà (gateway e computer). Il repository è una copia
+ * di integrations/hermes/xmap-studio, aggiornata da .github/workflows/hermes-connector.yml.
+ */
+export const HERMES_CONNECTOR_INSTALL_URL =
+  'hermes://plugin/install?repo=gioelerosana/xmap-studio-hermes-connector&enable=1';
 
 type Prefs = { enabled: boolean; token: string | null };
 
@@ -50,6 +57,16 @@ export function registerHermesLink(): void {
     return serialize(() => setEnabled(enabled));
   });
   ipcMain.handle('hermesLink:regenerateToken', () => serialize(regenerateToken));
+  // Solo questo link: il renderer non può far aprire indirizzi arbitrari.
+  ipcMain.handle('hermesLink:openInstaller', async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+    try {
+      await shell.openExternal(HERMES_CONNECTOR_INSTALL_URL);
+      return { ok: true };
+    } catch (error: unknown) {
+      logMain('warn', 'Link di installazione del plugin di Hermes non aperto.', error);
+      return { ok: false, error: 'Hermes Desktop non risponde ai link hermes://: è installato su questo computer?' };
+    }
+  });
   app.on('will-quit', () => {
     void server?.close();
   });
