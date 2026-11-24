@@ -121,6 +121,7 @@ declare global {
       getHermesLink?: () => Promise<HermesLinkStatus>;
       setHermesLinkEnabled?: (enabled: boolean) => Promise<HermesLinkStatus>;
       regenerateHermesLinkToken?: () => Promise<HermesLinkStatus>;
+      openHermesInstaller?: () => Promise<{ ok: true } | { ok: false; error: string }>;
       onHermesLinkStatus?: (callback: (status: HermesLinkStatus) => void) => () => void;
     };
   }
