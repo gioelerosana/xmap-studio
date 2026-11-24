@@ -127,8 +127,10 @@ Il bundle iniziale contiene solo ciò che serve a mostrare l'app; il resto sono
 chunk separati:
 
 - **MathJax** (`latex/mathjax-engine.ts`, circa i 2/3 del codice) si carica con
-  `import()` da `loadMathJax()`. La UI lo precarica a browser libero
-  (`preloadMathJax` in `apps/web/src/mathReady.ts`). `renderLatexToSvg` resta
+  `import()` da `loadMathJax()`. Non si carica all'avvio: la UI lo precarica a
+  browser libero solo quando la mappa aperta contiene formule (`workbookUsesMath` e
+  `preloadMathJax` in `apps/web/src/mathReady.ts`), oppure all'apertura dell'editor
+  LaTeX; una mappa senza formule non paga i suoi ~13 MB di memoria. `renderLatexToSvg` resta
   sincrona: se il motore non c'è ancora lancia `XmapError(CODE_RENDERER)` e ne
   avvia il caricamento. Il layout misura allora la formula come sorgente e,
   all'arrivo del motore (`onMathJaxReady`), svuota la cache delle dimensioni;

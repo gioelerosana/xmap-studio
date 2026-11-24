@@ -194,6 +194,12 @@ export class AppController {
     const name = fileName || (resolvedPath ? fileNameFromPath(resolvedPath) : '') || 'workbook.xmind';
 
     const originalHash = await sha256HexAsync(data instanceof Uint8Array ? data : new Uint8Array(data));
+    // Byte già interpretati o comunque riscritti da `prepareArchiveBytes` (content.json,
+    // manifest.json, thumbnail obsoleta per la Regola 9): tenerli in memoria per tutta
+    // la sessione sarebbe solo un doppione del modello.
+    archive.entries.delete('content.json');
+    archive.entries.delete('manifest.json');
+    archive.entries.delete('Thumbnails/thumbnail.png');
     this.currentWorkbook = new OpenWorkbook(
       resolvedPath,
       name,

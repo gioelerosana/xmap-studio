@@ -9,7 +9,7 @@ import { AppMark } from './components/AppMark.js';
 import { hasPendingUpdate, useUpdateStatus } from './app/useUpdateStatus.js';
 import { SheetTabs } from './components/SheetTabs.js';
 import { useSettings } from './settings.js';
-import { useMathJaxVersion } from './mathReady.js';
+import { preloadMathJax, useMathJaxVersion, workbookUsesMath } from './mathReady.js';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION_LABEL } from './appInfo.js';
 import { UNTITLED_FILE_NAME, sanitizeName } from './app/fileNames.js';
 import { useAdaptiveHeader } from './app/useAdaptiveHeader.js';
@@ -189,8 +189,14 @@ export const App: React.FC = () => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
+  // MathJax si carica solo se il foglio usa formule. Il controllo è lineare e preloadMathJax
+  // è idempotente: rieseguirlo a ogni nuovo `workbook` (anche per un `$` appena scritto) è sicuro.
+  useEffect(() => {
+    if (workbook && workbookUsesMath(workbook)) preloadMathJax();
+  }, [workbook]);
+
   // L'editor misura e mostra la formula in modo sincrono: si apre a MathJax caricato
-  // (di solito lo è già, il precaricamento parte all'avvio).
+  // (il precaricamento parte solo se il foglio contiene formule).
   const openLatex = useCallback(
     (id: string) => {
       selectSingle(id);
