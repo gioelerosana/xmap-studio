@@ -16,3 +16,5 @@ export const nodePlatform: Platform = {
   xmindProcesses,
   resolvePath: (filePath) => path.resolve(filePath),
 };
+export { startAgentLinkServer, tokensMatch, AGENT_LINK_HOST, AGENT_LINK_PROTOCOL } from './agent-link.js';
+export type { AgentLinkServer, AgentLinkServerOptions } from './agent-link.js';
