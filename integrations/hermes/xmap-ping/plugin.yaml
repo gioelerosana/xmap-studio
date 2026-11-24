@@ -1,0 +1,5 @@
+name: xmap-ping
+version: 0.1.0
+description: Spike di verifica del ponte Hermes Desktop ↔ gateway remoto per XMap Studio (non è la feature).
+provides_tools:
+  - xmap_ping
