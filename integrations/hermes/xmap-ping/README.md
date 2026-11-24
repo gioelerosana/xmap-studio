@@ -44,10 +44,14 @@ Trova la home di Hermes nel container (di solito `/root/.hermes` o quella in
 docker exec <container> sh -c 'echo ${HERMES_HOME:-$HOME/.hermes}'
 ```
 
-Copia la cartella del plugin (dal portatile, nella root del repo):
+Porta la cartella sul server (dal portatile, nella root del repo), poi dal
+server copiala nel container:
 
 ```bash
-docker cp integrations/hermes/xmap-ping <container>:<HERMES_HOME>/plugins/xmap-ping
+scp -r integrations/hermes/xmap-ping <server>:/tmp/xmap-ping   # dal portatile
+ssh <server>
+docker cp /tmp/xmap-ping <container>:<HERMES_HOME>/plugins/xmap-ping
+docker exec -u 0 <container> chown -R "$(docker exec <container> id -u):$(docker exec <container> id -g)" <HERMES_HOME>/plugins/xmap-ping
 docker exec <container> hermes plugins doctor xmap-ping
 docker exec <container> hermes plugins enable xmap-ping
 docker restart <container>          # le route di plugin_api.py si montano all'avvio
