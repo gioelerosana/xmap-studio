@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import type { DesktopDebugInfo } from './debug-log.js';
+import type { McpRendererReply, McpRendererRequest } from './mcp-host.js';
 
 /** Esito di un salvataggio sotto guardia (vedi `guardedSave` in @xmap/core/node). */
 export type SaveOutcome =
@@ -62,7 +63,7 @@ export type PrintToPdfOptions = {
   landscape: boolean;
 };
 export type OpenedFile = { path: string; name: string; bytes: Uint8Array };
-export type { DesktopDebugInfo };
+export type { DesktopDebugInfo, McpRendererReply, McpRendererRequest };
 
 export interface ElectronAPI {
   getUpdateStatus: () => Promise<UpdateStatus>;
@@ -117,6 +118,9 @@ export interface ElectronAPI {
   onThemeUpdated: (callback: (dark: boolean) => void) => () => void;
   /** Informazioni di ambiente e log del main process, per Impostazioni › Debug. */
   getDebugInfo: () => Promise<DesktopDebugInfo>;
+  /** Richieste di Claude (server MCP) per la mappa di questa finestra (vedi `mcp-host.ts`). */
+  onMcpRequest: (callback: (request: McpRendererRequest) => void) => () => void;
+  respondMcp: (reply: McpRendererReply) => void;
 }
 
 const api: ElectronAPI = {
@@ -168,6 +172,12 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('theme:updated', handler);
   },
   getDebugInfo: () => ipcRenderer.invoke('debug:getInfo'),
+  onMcpRequest: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, request: McpRendererRequest) => callback(request);
+    ipcRenderer.on('mcp:request', handler);
+    return () => ipcRenderer.removeListener('mcp:request', handler);
+  },
+  respondMcp: (reply) => ipcRenderer.send('mcp:response', reply),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

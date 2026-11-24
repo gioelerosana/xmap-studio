@@ -44,6 +44,15 @@ export type DesktopDebugInfo = {
   error?: string;
 };
 
+/** Richiesta di Claude per la mappa della finestra; ricalca `McpRendererRequest` di apps/desktop/src/mcp-host.ts. */
+export type McpRendererRequest = { requestId: number; tool: string; args: Record<string, unknown> };
+export type McpMapInfo = { fileName: string; path: string | null; dirty: boolean };
+export type McpRendererReply =
+  | { requestId: number; ok: true; text: string; info?: McpMapInfo | null }
+  | { requestId: number; ok: false; error: string };
+/** Strumento interno: descrive la mappa della finestra per `list_maps`. */
+export const MCP_DESCRIBE = '__describe';
+
 declare global {
   interface Window {
     electronAPI?: {
@@ -92,6 +101,9 @@ declare global {
       onThemeUpdated: (callback: (dark: boolean) => void) => () => void;
       /** Assente nelle shell desktop più vecchie. */
       getDebugInfo?: () => Promise<DesktopDebugInfo>;
+      /** Collegamento con Claude; assente nelle shell desktop più vecchie. */
+      onMcpRequest?: (callback: (request: McpRendererRequest) => void) => () => void;
+      respondMcp?: (reply: McpRendererReply) => void;
     };
   }
 }

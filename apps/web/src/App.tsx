@@ -29,6 +29,7 @@ import { useImageInsert } from './app/useImageInsert.js';
 import { useTopicClipboard } from './app/useTopicClipboard.js';
 import { useClipboardEvents } from './app/useClipboardEvents.js';
 import { useDocumentTools } from './app/useDocumentTools.js';
+import { useMcpBridge } from './app/useMcpBridge.js';
 import { useMapKeyboard } from './app/useMapKeyboard.js';
 import { useGlobalShortcuts } from './app/useGlobalShortcuts.js';
 import { buildMenuItems } from './app/buildMenuItems.js';
@@ -348,6 +349,18 @@ export const App: React.FC = () => {
     handleCopyTopic,
     handleCutTopic,
     suspended: settingsOpen,
+  });
+
+  useMcpBridge({
+    controller,
+    activeSheetIndex,
+    selectedTopicIds: selectedTopicIds.length > 0 ? selectedTopicIds : selectedTopicId ? [selectedTopicId] : [],
+    setActiveSheetIndex,
+    selectSingle,
+    refreshState,
+    hasCloudFile: Boolean(cloudFile),
+    writeWorkbook,
+    addToast,
   });
 
   const { handleExportEquation, handleAttach, handleMerge, handleSplit } = useDocumentTools({
