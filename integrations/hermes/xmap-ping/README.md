@@ -133,3 +133,22 @@ Nella barra di stato il chip `xmap-ping N✓ M✗` conta le richieste completate
 - **127.0.0.1 bloccato dal renderer**: il plugin desktop passa dal bridge
   nativo di Desktop o XMap espone il canale su un'origine diversa; da decidere
   con l'errore preciso in mano.
+
+## Esito della prova (2026-11-24)
+
+Gateway `hermes.jshep.xyz` (container Docker, Hermes v0.23.3, processi separati
+`dashboard` e `gateway run`), Hermes Desktop 0.23.4 su Linux, collegato con OAuth.
+
+| Punto | Esito |
+|---|---|
+| desktop → server, `ctx.rest` | ✅ risponde il processo `dashboard` |
+| server → desktop, `broadcast_plugin_event` → `ctx.onEvent` | ✅ reclamata in 46 ms, completata in 103 ms |
+| server → desktop, `ctx.socket` | ❌ mai aperto (OAuth), come da sorgente |
+| desktop → server, RPC `host.request('plugin.xmap-ping.*')` | ❌ `unknown method … not available on this Hermes backend` |
+| fetch / WebSocket verso 127.0.0.1 dal renderer | ✅ entrambi |
+| Origin visto dal server locale | WebSocket `file://`, fetch nessun header |
+| tool chiamato dal modello in una chat di Desktop | ✅ `xmap_ping completed (0.13s)`: gira nel processo `dashboard`, lo stesso delle route |
+| esecuzione doppia | nessuna: un solo claim per richiesta |
+
+Non provato: tool chiamato da Telegram o dall'API server (girano nel processo
+`gateway run`, che non ha Desktop collegati: atteso non funzionante).
