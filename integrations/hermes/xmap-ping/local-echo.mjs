@@ -6,6 +6,7 @@
 //   node local-echo.mjs [porta]      (default 47615)
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 
 const port = Number(process.argv[2]) || 47615
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
@@ -28,6 +29,12 @@ const server = createServer((req, res) => {
   let body = ''
   req.on('data', chunk => { body += chunk })
   req.on('end', () => {
+    if (req.url === '/report' && req.method === 'POST') {
+      // Rapporto del giro automatico del plugin desktop: salvato accanto alla cartella corrente.
+      const file = `xmap-ping-report-${Date.now()}.json`
+      writeFileSync(file, body)
+      console.log(`${stamp()} rapporto salvato in ${file}`)
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true, origin: origin ?? null, method: req.method, url: req.url, body }))
   })

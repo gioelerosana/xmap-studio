@@ -264,5 +264,37 @@ export default {
 
     ctx.register({ id: 'chip', area: STATUSBAR_AREAS.right, order: 140, render: () => jsx(Chip, {}) })
     log(`caricato (${clientId})`)
+
+    // Giro automatico a ogni caricamento: esegue le prove 1–4 e manda il rapporto al
+    // finto XMap (POST /report), che lo salva su file. Così lo spike si legge senza UI.
+    ctx.setTimeout(async () => {
+      await actions.rest()
+      await actions.rpc()
+      await actions.local()
+      await actions.trigger()
+      // Lascia ai canali il tempo di consegnare anche i doppioni, poi la diagnostica.
+      await new Promise(r => ctx.setTimeout(r, 3000))
+      await actions.diag()
+      const report = {
+        client: clientId,
+        at: new Date().toISOString(),
+        renderer_origin: location.origin,
+        gateway: (() => {
+          try { return String(host.state.gateway.get()) } catch { return '?' }
+        })(),
+        stats: $stats.get(),
+        last: $last.get(),
+        log: $log.get()
+      }
+      try {
+        await fetch(`http://127.0.0.1:${port()}/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(report)
+        })
+      } catch (err) {
+        log(`rapporto non inviato: ${describe(err)}`)
+      }
+    }, 4000)
   }
 }
