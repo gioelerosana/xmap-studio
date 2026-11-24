@@ -1,0 +1,54 @@
+# Pubblica il plugin di Hermes (integrations/hermes/xmap-studio) nel repository
+# gioelerosana/xmap-studio-hermes-connector, con il plugin alla radice: il link
+# di installazione di Hermes Desktop (hermes://plugin/install?repo=…) accetta
+# solo un repository intero, non una sottocartella. Il codice resta qui; là
+# finisce una copia, con un commit per ogni cambiamento. Il push usa la deploy
+# key del repository del connettore (secret HERMES_CONNECTOR_SSH_KEY).
+name: Connettore Hermes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/hermes/xmap-studio/**'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-connector
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Copia nel repository del connettore
+        env:
+          SSH_KEY: ${{ secrets.HERMES_CONNECTOR_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/connector && chmod 600 ~/.ssh/connector
+          # Chiave host di github.com (ED25519, SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU).
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/connector -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+          git clone --depth 1 git@github.com:gioelerosana/xmap-studio-hermes-connector.git connector
+          # La copia rispecchia la cartella: ciò che sparisce qui sparisce anche là.
+          find connector -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R integrations/hermes/xmap-studio/. connector/
+          cp LICENSE connector/LICENSE
+          find connector -name __pycache__ -type d -prune -exec rm -rf {} +
+          cd connector
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Connettore già aggiornato."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "sync: xmap-studio@${GITHUB_SHA::7}" -m "Copia di integrations/hermes/xmap-studio da https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          git push origin HEAD:main
