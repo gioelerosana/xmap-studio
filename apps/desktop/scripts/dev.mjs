@@ -69,7 +69,9 @@ if (await isServing(DEV_URL)) {
   }
 }
 
-const tsc = run(process.execPath, [require.resolve('typescript/bin/tsc'), '-p', desktopDir]);
+// TypeScript 7 non esporta più `typescript/bin/tsc`: si parte dal package.json, che resta esportato.
+const tscBin = resolve(dirname(require.resolve('typescript/package.json')), 'bin', 'tsc');
+const tsc = run(process.execPath, [tscBin, '-p', desktopDir]);
 const tscCode = await new Promise((r) => tsc.on('exit', r));
 if (tscCode !== 0) {
   stopVite();
