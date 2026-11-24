@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permessi della finestra principale: solo il core di Tauri (i comandi dell'app sono registrati in main.rs).",
+  "windows": ["*"],
+  "permissions": ["core:default"]
+}

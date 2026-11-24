@@ -1,0 +1,30 @@
+[package]
+name = "xmap-studio-tauri"
+version = "0.0.0"
+description = "XMap Studio: guscio desktop Tauri (prototipo)"
+license = "MIT"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[features]
+# Senza questa feature la finestra carica `devUrl` (server Vite) invece della UI compilata.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

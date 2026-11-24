@@ -11,6 +11,7 @@
     "build:web": "pnpm --filter @xmap/web build",
     "dev:desktop": "pnpm --filter @xmap/desktop dev",
     "build:desktop": "pnpm --filter @xmap/desktop build",
+    "build:tauri": "pnpm build:web && cargo build --release --manifest-path apps/tauri/src-tauri/Cargo.toml",
     "build:core": "pnpm --filter @xmap/core build",
     "build:ui": "pnpm --filter @xmap/ui-kit build",
     "test": "pnpm --filter @xmap/core test",

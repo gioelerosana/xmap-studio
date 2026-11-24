@@ -42,3 +42,7 @@ packaging/arch/aur/pkg/
 packaging/arch/aur/*.tar.gz
 packaging/arch/aur/*.pkg.tar.*
 packaging/arch/aur/.SRCINFO
+
+# Guscio Tauri (prototipo): build di Cargo e schemi generati
+apps/tauri/src-tauri/target/
+apps/tauri/src-tauri/gen/
