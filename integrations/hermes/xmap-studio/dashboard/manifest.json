@@ -1,0 +1,8 @@
+{
+  "name": "xmap-studio",
+  "label": "XMap Studio",
+  "description": "Backend del plugin XMap Studio per Hermes Desktop: nessuna scheda nella dashboard.",
+  "version": "0.1.0",
+  "tab": { "path": "/xmap-studio", "hidden": true },
+  "api": "plugin_api.py"
+}

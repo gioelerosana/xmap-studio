@@ -1,0 +1,17 @@
+name: xmap-studio
+version: 0.1.0
+description: Permette all'agente di leggere e modificare la mappa aperta in XMap Studio, passando da Hermes Desktop sul computer dell'utente.
+provides_tools:
+  - xmap_list_maps
+  - xmap_read_map
+  - xmap_get_topic
+  - xmap_find_topics
+  - xmap_list_markers
+  - xmap_add_topics
+  - xmap_update_topic
+  - xmap_set_equation
+  - xmap_move_topic
+  - xmap_delete_topic
+  - xmap_add_relationship
+  - xmap_select_topic
+  - xmap_save_map

@@ -1,0 +1,482 @@
+{
+  "name": "xmap-studio",
+  "instructions": "Questi strumenti lavorano sulla mappa mentale aperta in questo momento in XMap Studio, accanto all'utente. Leggi prima la mappa con read_map: dà gli id dei blocchi e la selezione dell'utente. Ogni modifica compare subito nell'app e si annulla con Ctrl+Z; niente viene scritto su disco finché non si salva (save_map, solo se l'utente lo chiede). Scrivi i contenuti nella lingua della mappa.",
+  "tools": [
+    {
+      "name": "list_maps",
+      "title": "Mappe aperte",
+      "description": "Elenca le mappe aperte in XMap Studio (una per finestra), con file, modifiche non salvate e finestra in primo piano.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Mappe aperte",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "read_map",
+      "title": "Leggi la mappa",
+      "description": "Struttura della mappa come elenco indentato: [id] titolo, note (abbreviate), etichette, marker, formule e link. Indica anche il foglio mostrato e i blocchi selezionati dall'utente: \"questo blocco\" di solito è la selezione. Usalo prima di modificare, per conoscere gli id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "sheet": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numero del foglio (da 1). Se manca: il foglio mostrato."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Mostra solo il ramo di questo blocco."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Livelli da mostrare sotto il punto di partenza (0 = solo quello)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Leggi la mappa",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_topic",
+      "title": "Dettagli di un blocco",
+      "description": "Tutto il contenuto di un blocco: titolo, note complete, etichette, marker, link, formula, percorso e figli.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Id del blocco, come in read_map (tra parentesi quadre)."
+          }
+        },
+        "required": [
+          "topicId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Dettagli di un blocco",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "find_topics",
+      "title": "Cerca blocchi",
+      "description": "Cerca un testo (senza distinguere maiuscole) in titoli, note, etichette e formule di tutti i fogli.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "query": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Cerca blocchi",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "list_markers",
+      "title": "Marker disponibili",
+      "description": "Elenca gli id dei marker utilizzabili in add_topics e update_topic, per gruppo.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Marker disponibili",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "add_topics",
+      "title": "Aggiungi blocchi",
+      "description": "Aggiunge come figli di parentId uno o più blocchi, anche con i loro sottoalberi, in un solo passo annullabile. Le formule (latex) si applicano subito dopo, in un secondo passo.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Id del blocco genitore."
+          },
+          "topics": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/topic"
+            }
+          }
+        },
+        "required": [
+          "parentId",
+          "topics"
+        ],
+        "additionalProperties": false,
+        "$defs": {
+          "topic": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Titolo del blocco. Formule dentro il testo con $...$ (in linea) o $$...$$ (a blocco). Può essere vuoto se c'è latex."
+              },
+              "latex": {
+                "type": "string",
+                "description": "Rende il blocco una formula MathJax (sorgente LaTeX senza delimitatori $), come set_equation."
+              },
+              "notes": {
+                "type": "string",
+                "description": "Note in testo semplice."
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "markers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Id dei marker (vedi list_markers)."
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/topic"
+                }
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "annotations": {
+        "title": "Aggiungi blocchi",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "update_topic",
+      "title": "Modifica un blocco",
+      "description": "Modifica titolo, note, etichette, link, colore e marker di un blocco in un solo passo annullabile. I campi non indicati restano com'erano. Per le formule usa set_equation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Id del blocco, come in read_map (tra parentesi quadre)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Nuovo titolo; formule in linea con $...$."
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Note in testo semplice; \"\" o null le tolgono."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sostituisce le etichette; [] le toglie."
+          },
+          "href": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "URL, oppure \"#<id>\" per un blocco della mappa; \"\" o null tolgono il link."
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Riempimento \"#RRGGBB\"; \"\" o null lo tolgono."
+          },
+          "addMarkers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removeMarkers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "topicId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Modifica un blocco",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "set_equation",
+      "title": "Formula di un blocco",
+      "description": "Rende il blocco una formula MathJax nativa (si apre e si modifica anche in XMind). latex è il sorgente senza delimitatori $. Con latex vuoto il blocco torna testo. Per una formula dentro una frase usa invece $...$ nel titolo.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Id del blocco, come in read_map (tra parentesi quadre)."
+          },
+          "latex": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "topicId",
+          "latex"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Formula di un blocco",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "move_topic",
+      "title": "Sposta un blocco",
+      "description": "Sposta un blocco (con il suo ramo) prima o dopo targetId, oppure dentro targetId come ultimo figlio.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Id del blocco, come in read_map (tra parentesi quadre)."
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after",
+              "into"
+            ]
+          }
+        },
+        "required": [
+          "topicId",
+          "targetId",
+          "placement"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Sposta un blocco",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "delete_topic",
+      "title": "Elimina un blocco",
+      "description": "Elimina un blocco con tutto il suo ramo; con keepChildren elimina solo il blocco e ricollega i figli al genitore. La radice non si elimina. Si annulla con Ctrl+Z.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Id del blocco, come in read_map (tra parentesi quadre)."
+          },
+          "keepChildren": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "topicId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Elimina un blocco",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "add_relationship",
+      "title": "Collega due blocchi",
+      "description": "Aggiunge una relazione (freccia) tra due blocchi dello stesso foglio.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "fromId": {
+            "type": "string"
+          },
+          "toId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromId",
+          "toId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Collega due blocchi",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "select_topic",
+      "title": "Mostra un blocco",
+      "description": "Seleziona un blocco nell'app e passa al suo foglio, per mostrarlo all'utente. Non modifica la mappa.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Id del blocco, come in read_map (tra parentesi quadre)."
+          }
+        },
+        "required": [
+          "topicId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Mostra un blocco",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "save_map",
+      "title": "Salva la mappa",
+      "description": "Salva la mappa nel suo file, con validazione e backup come il comando Salva. Rifiuta se XMind è aperto o se la mappa non ha ancora un file. Salva solo se l'utente lo chiede.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "map": {
+            "type": "integer",
+            "description": "Mappa su cui lavorare (numero da list_maps). Se manca: la finestra in primo piano."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Salva la mappa",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    }
+  ]
+}
