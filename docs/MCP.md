@@ -11,33 +11,37 @@ Solo desktop: la web app non può ospitare un server MCP.
 
 ## Configurazione
 
-Il client di Claude avvia il server su stdio; XMap Studio deve essere aperto.
+Il server è dentro l'app: con XMap Studio aperto risponde su
 
-| Installazione | Comando |
-|---|---|
-| AppImage | `/percorso/XMap-Studio-….AppImage --mcp` |
-| AUR / pacchetto Arch | `xmap-studio --mcp` |
-| exe portable (Windows) | `C:\…\XMap-Studio-…-portable-x64.exe --mcp` |
-| Sviluppo (repo compilato) | `node /percorso/xmap-studio/apps/desktop/dist/mcp-bridge.js` |
+```text
+http://127.0.0.1:47616/mcp
+```
+
+con il trasporto **Streamable HTTP** di MCP, **senza autenticazione**. Non c'è
+niente da avviare a parte l'app; Impostazioni › Claude mostra stato, indirizzo e
+comandi da copiare.
 
 Claude Code:
 
 ```bash
-claude mcp add xmap-studio -- xmap-studio --mcp
+claude mcp add --transport http xmap-studio http://127.0.0.1:47616/mcp
 ```
 
-Claude Desktop (`claude_desktop_config.json`):
+Altri client che accettano server HTTP in una configurazione `mcpServers`:
 
 ```json
 {
   "mcpServers": {
-    "xmap-studio": { "command": "xmap-studio", "args": ["--mcp"] }
+    "xmap-studio": { "type": "http", "url": "http://127.0.0.1:47616/mcp" }
   }
 }
 ```
 
-Con `--mcp` l'eseguibile non apre finestre e non prende il blocco di istanza
-singola: fa solo da ponte verso l'istanza normale dell'app.
+Il vecchio server su stdio (`xmap-studio --mcp`, `mcp-bridge.js`) non esiste più:
+era fragile (un processo ponte per client, socket da ripulire, stdout da tenere
+pulito). Con `--mcp` l'eseguibile ora scrive su stderr l'indirizzo nuovo ed esce
+con codice 1, senza aprire finestre. `XMAP_MCP_PORT` cambia la porta (sviluppo,
+due istanze sulla stessa macchina).
 
 ## Strumenti
 
@@ -63,33 +67,55 @@ finestra in primo piano o l'ultima usata.
 ## Architettura
 
 ```text
-client di Claude ──stdio (JSON-RPC)── mcp-bridge.ts ──socket locale── mcp-host.ts (main) ──IPC── useMcpBridge (renderer)
-                                       createMcpServer                  sceglie la finestra        runAgentTool(controller)
+client di Claude ──HTTP POST /mcp (JSON-RPC)── mcp-http.ts (main) ── createMcpServer ── mcp-host.ts ──IPC── useMcpBridge (renderer)
+                                                                                         sceglie la finestra   runAgentTool(controller)
 ```
 
 - `packages/core/src/agent/`: definizioni degli strumenti, esecuzione sul
   `AppController` (`tools.ts`) e protocollo MCP senza I/O (`mcp.ts`), testati in
   `tests/agent-*.test.ts`. Nessuna dipendenza nuova: il protocollo (initialize,
   ping, tools/list, tools/call) è scritto a mano.
-- `apps/desktop/src/mcp-socket.ts`: percorso del canale e lettura a righe.
-  Socket Unix in `$XDG_RUNTIME_DIR` (o nella cartella temporanea), permessi
-  `0600`; named pipe dell'utente su Windows. `XMAP_MCP_SOCKET` lo sostituisce
-  (sviluppo, test). Se il socket è già servito da un'altra istanza (es. app
-  installata e versione di sviluppo) la seconda non lo usa.
-- `apps/desktop/src/mcp-host.ts`: nel main process ascolta il canale e gira la
-  chiamata alla finestra (`mcp:request` / `mcp:response`), con timeout.
+- `packages/core/src/node/mcp-http.ts`: trasporto Streamable HTTP, testato in
+  `tests/mcp-http.test.ts`. Senza stato: ogni POST porta un messaggio JSON-RPC
+  (o un array) e riceve la risposta in `application/json`; una notifica riceve
+  `202`. Niente SSE, niente `Mcp-Session-Id`; GET e DELETE rispondono `405`, come
+  ammette la specifica per un server che non apre stream.
+- `apps/desktop/src/mcp-host.ts`: nel main process avvia il server, gira la
+  chiamata alla finestra (`mcp:request` / `mcp:response`) con timeout ed espone
+  lo stato alla UI (`mcpServer:get`). Se la porta è occupata (es. versione
+  installata e versione di sviluppo aperte insieme) la seconda istanza non serve
+  MCP e lo dice in Impostazioni › Claude.
 - `apps/web/src/app/useMcpBridge.ts`: nel renderer esegue gli strumenti in coda,
   uno alla volta, dopo aver confermato un titolo in corso di modifica; aggiorna la
   vista e seleziona il blocco toccato.
 
-Il bridge non tocca file e non ha stato: apre una connessione per chiamata, così
-chiudere e riaprire l'app non richiede di riavviare il client. Su stdout passano
-solo messaggi del protocollo.
+Chiudere e riaprire l'app non richiede di riavviare il client: ogni richiesta è
+indipendente.
+
+### Sicurezza senza autenticazione
+
+Il server è pensato per il client di Claude sulla stessa macchina, quindi non
+chiede token. Al loro posto:
+
+- ascolta solo su `127.0.0.1` e rifiuta connessioni da altri indirizzi;
+- header `Host` uguale a `127.0.0.1:<porta>` o `localhost:<porta>` (contro il DNS
+  rebinding), altrimenti `403`;
+- header `Origin`, se presente, solo di loopback (`http(s)://localhost`,
+  `127.0.0.1`, `[::1]`), altrimenti `403` come impone la specifica;
+- `Content-Type: application/json` obbligatorio (`415`) e nessun header CORS:
+  una pagina web non può mandare una richiesta "semplice" né leggere le risposte;
+- `MCP-Protocol-Version`, se presente, fra quelle supportate (`400`);
+- corpo fino a 4 MiB (`413`), 30 s per ricevere la richiesta.
+
+Limite accettato: qualunque programma dell'utente (o di un altro account della
+stessa macchina) che apre `127.0.0.1:47616` può usare gli strumenti, come farebbe
+il client di Claude. Su disco si scrive comunque solo con `save_map`, che passa
+dalle stesse protezioni del salvataggio dell'app.
 
 ## Secondo trasporto: Hermes Desktop (WebSocket)
 
 Per un agente che non gira sulla stessa macchina (un gateway Hermes remoto) c'è
-un secondo trasporto per le stesse richieste: un WebSocket su `127.0.0.1`, che
+un secondo trasporto per le stesse richieste, con token: un WebSocket su `127.0.0.1`, che
 usa il plugin "xmap-studio" di Hermes Desktop sul computer dell'utente
 (`integrations/hermes/`, pubblicato come `gioelerosana/xmap-studio-hermes-connector`).
 È spento di default: si accende in Impostazioni › Hermes, che mostra porta,
@@ -131,7 +157,7 @@ richiesta; il server manda un ping ogni 30 s e chiude chi non risponde.
 
 ```bash
 pnpm build
-XMAP_MCP_SOCKET=/tmp/xmap.sock pnpm dev:desktop    # app con una mappa aperta
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_map","arguments":{}}}' \
-  | XMAP_MCP_SOCKET=/tmp/xmap.sock node apps/desktop/dist/mcp-bridge.js
+pnpm dev:desktop    # app con una mappa aperta
+curl -s http://127.0.0.1:47616/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_map","arguments":{}}}'
 ```

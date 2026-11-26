@@ -72,10 +72,11 @@ yay -S xmap-studio-bin
 
 ### Claude accanto alla mappa
 
-Sul desktop puoi far lavorare Claude (Claude Desktop, Claude Code) sulla mappa che
+Sul desktop puoi far lavorare Claude (Claude Code o un altro client MCP) sulla mappa che
 hai aperto: la legge, aggiunge e modifica blocchi e formule, e tu vedi ogni
-modifica subito e la annulli con Ctrl+Z. Basta aggiungere `xmap-studio --mcp`
-come server MCP nel client di Claude. Dettagli in [`docs/MCP.md`](docs/MCP.md).
+modifica subito e la annulli con Ctrl+Z. Con l'app aperta, aggiungi nel client di
+Claude il server MCP HTTP `http://127.0.0.1:47616/mcp` (indirizzo e comando
+pronti in Impostazioni › Claude). Dettagli in [`docs/MCP.md`](docs/MCP.md).
 
 ## Sviluppo
 
