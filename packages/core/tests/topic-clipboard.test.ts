@@ -7,6 +7,7 @@ import {
   validateArchiveBytes,
   XMAP_CLIPBOARD_VERSION,
 } from '../src/index.js';
+import JSZip from 'jszip';
 import { minimalXmind } from './helpers.js';
 
 describe('cloneTopicSubtree', () => {
@@ -206,5 +207,105 @@ describe('copia/incolla tra file diversi', () => {
     const report = await validateArchiveBytes(prepared.bytes);
     expect(report.resources).toBeGreaterThanOrEqual(1);
     expect(report.resourceRefs).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('copia e incolla di più blocchi', () => {
+  const multiSheets = () => [
+    {
+      id: 's1',
+      class: 'sheet',
+      title: 'Foglio',
+      rootTopic: {
+        id: 'r',
+        class: 'topic',
+        title: 'Radice',
+        children: {
+          attached: [
+            {
+              id: 'a',
+              title: 'A',
+              children: { attached: [{ id: 'a1', title: 'A1', extra: { keep: true } }] },
+            },
+            { id: 'b', title: 'B' },
+            { id: 'c', title: 'C', children: { attached: [{ id: 'c1', title: 'C1' }] } },
+          ],
+        },
+      },
+      relationships: [
+        { id: 'rel-in', end1Id: 'a1', end2Id: 'c', title: 'dentro' },
+        { id: 'rel-out', end1Id: 'a', end2Id: 'b', title: 'fuori' },
+      ],
+    },
+  ];
+
+  it('copia tutti i blocchi selezionati con i sottoalberi, in ordine di documento', async () => {
+    const c = new AppController();
+    await c.open(await minimalXmind(multiSheets()));
+
+    // a1 è già dentro a: non va copiato due volte; l'ordine segue il documento, non la selezione.
+    const payload = JSON.parse(c.copyTopics(['c', 'a1', 'a']));
+    expect(payload.topics.map((t: Topic) => t.id)).toEqual(['a', 'c']);
+    expect(payload.topic.id).toBe('a');
+    expect(payload.relationships.map((r: { id: string }) => r.id)).toEqual(['rel-in']);
+  });
+
+  it('incolla tutti i blocchi sotto il bersaglio con struttura e relazioni, in un passo di undo', async () => {
+    const c = new AppController();
+    await c.open(await minimalXmind(multiSheets()));
+
+    const payload = c.copyTopics(['a', 'c']);
+    const { newId, newIds } = c.pasteTopic('b', payload);
+    expect(newIds).toHaveLength(2);
+    expect(newId).toBe(newIds[0]);
+
+    const topics = c.workbook()!.sheets[0].topics;
+    const pastedA = topics.find((t) => t.id === newIds[0]);
+    const pastedC = topics.find((t) => t.id === newIds[1]);
+    expect(pastedA?.title).toBe('A');
+    expect(pastedA?.parentId).toBe('b');
+    expect(pastedC?.title).toBe('C');
+    expect(pastedC?.parentId).toBe('b');
+    const pastedA1 = topics.find((t) => t.parentId === newIds[0]);
+    expect(pastedA1?.title).toBe('A1');
+    expect(topics.find((t) => t.parentId === newIds[1])?.title).toBe('C1');
+
+    const rels = c.workbook()!.sheets[0].relationships;
+    expect(rels).toHaveLength(3);
+    const cloned = rels.find((r) => r.title === 'dentro' && r.id !== 'rel-in');
+    expect(cloned?.end1Id).toBe(pastedA1?.id);
+    expect(cloned?.end2Id).toBe(newIds[1]);
+
+    c.undo();
+    const after = c.workbook()!.sheets[0].topics;
+    expect(after.some((t) => newIds.includes(t.id))).toBe(false);
+    expect(c.workbook()!.sheets[0].relationships).toHaveLength(2);
+  });
+
+  it('preserva i campi sconosciuti e resta un archivio valido', async () => {
+    const c = new AppController();
+    await c.open(await minimalXmind(multiSheets()));
+    c.pasteTopic('r', c.copyTopics(['a', 'b']));
+    const prepared = await c.prepareArchiveBytes();
+    await expect(validateArchiveBytes(prepared.bytes)).resolves.toBeDefined();
+    const zip = await JSZip.loadAsync(prepared.bytes);
+    const content = JSON.parse(await zip.file('content.json')!.async('string')) as Sheet[];
+    const attached = content[0]?.rootTopic?.children?.attached ?? [];
+    const copyA = attached[3];
+    expect(copyA?.title).toBe('A');
+    expect(copyA?.id).not.toBe('a');
+    expect(copyA?.children?.attached?.[0]?.extra).toEqual({ keep: true });
+    expect(attached[4]?.title).toBe('B');
+  });
+
+  it('removeTopics toglie più blocchi in un passo e salta la radice', async () => {
+    const c = new AppController();
+    await c.open(await minimalXmind(multiSheets()));
+    c.removeTopics(['r', 'a', 'a1', 'c']);
+    const ids = c.workbook()!.sheets[0].topics.map((t) => t.id);
+    expect(ids).toEqual(['r', 'b']);
+    c.undo();
+    expect(c.workbook()!.sheets[0].topics.map((t) => t.id)).toContain('c1');
+    expect(() => c.removeTopics(['r'])).toThrow();
   });
 });

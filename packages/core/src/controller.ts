@@ -24,6 +24,7 @@ import type { Platform } from './platform.js';
 import {
   base64ToBytes,
   bytesToBase64,
+  cloneClipboardTopics,
   cloneTopicSubtree,
   subtreeResourceNames,
   XMAP_CLIPBOARD_VERSION,
@@ -41,6 +42,7 @@ import {
   MovePlacement,
   moveTopic,
   moveTopics,
+  outermostTopicIds,
   removeBoundary,
   removeRelationship,
   removeSummary,
@@ -61,7 +63,7 @@ import {
   siblingRange,
   SiblingRange,
 } from './model/edit.js';
-import { Sheet, Topic } from './model/types.js';
+import { Relationship, Sheet, Topic } from './model/types.js';
 import { setTitleRuns, setTextStyle, TextStylePatch } from './model/style.js';
 import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
 import { setSheetTheme, ThemePatch } from './model/theme.js';
@@ -79,6 +81,7 @@ import {
   sheetIndexOf,
   topicLatex,
   topicTitle,
+  walkTopic,
 } from './model/utils.js';
 import { applyEquation, removeEquation, TitleMode } from './latex/equation.js';
 import { renderLatexToSvg, renderLatexToSvgAsync } from './latex/mathjax.js';
@@ -624,17 +627,45 @@ export class AppController {
    * con marcatore { xmapStudioClipboard: 1, topic }.
    */
   public copyTopic(topicId: string): string {
-    const wb = this.ensureWorkbook();
-    const topic = this.requireTopic(wb, topicId);
+    return this.copyTopics([topicId]);
+  }
 
-    const resources = encodeAssets(wb.archive.resources, subtreeResourceNames(topic));
+  /**
+   * Copia più blocchi, ognuno con il suo sottoalbero, in un unico payload. Un blocco che ha un
+   * antenato nella selezione viaggia già dentro di lui; l'ordine è quello del documento.
+   * Le relazioni con entrambi gli estremi tra i blocchi copiati si copiano anch'esse.
+   */
+  public copyTopics(topicIds: string[]): string {
+    const wb = this.ensureWorkbook();
+    const ids = outermostTopicIds(wb.content, topicIds);
+    if (ids.length === 0) {
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, 'Nessun blocco da copiare trovato.');
+    }
+    const topics = ids.map((id) => this.requireTopic(wb, id));
+
+    const resourceNames = new Set<string>();
     const attachmentNames = new Set<string>();
-    collectAttachmentRefs(topic, attachmentNames);
+    const copiedIds = new Set<string>();
+    for (const topic of topics) {
+      for (const name of subtreeResourceNames(topic)) resourceNames.add(name);
+      collectAttachmentRefs(topic, attachmentNames);
+      walkTopic(topic, (t) => {
+        if (t.id) copiedIds.add(t.id);
+      });
+    }
+    const resources = encodeAssets(wb.archive.resources, resourceNames);
     const attachments = encodeAssets(wb.archive.entries, attachmentNames);
+    const relationships: Relationship[] = wb.content.flatMap((sheet) =>
+      (sheet.relationships ?? []).filter(
+        (r) => !!r.end1Id && !!r.end2Id && copiedIds.has(r.end1Id) && copiedIds.has(r.end2Id)
+      )
+    );
 
     const payload: XmapClipboardPayload = {
       xmapStudioClipboard: XMAP_CLIPBOARD_VERSION,
-      topic,
+      topic: topics[0] as Topic,
+      ...(topics.length > 1 ? { topics } : {}),
+      ...(relationships.length > 0 ? { relationships } : {}),
       ...(Object.keys(resources).length > 0 ? { resources } : {}),
       ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
     };
@@ -642,17 +673,18 @@ export class AppController {
   }
 
   /**
-   * Incolla un topic copiato come sotto-blocco del blocco `parentId`.
-   * Rigenera tutti gli id del sottoalbero preservando le proprietà sconosciute e
-   * la coerenza dei riferimenti interni (sommari, ecc.).
+   * Incolla i blocchi copiati come sotto-blocchi di `parentId`, nell'ordine in cui sono stati
+   * copiati, in un unico passo di cronologia. Rigenera tutti gli id dei sottoalberi preservando
+   * le proprietà sconosciute e la coerenza dei riferimenti interni (sommari, relazioni, ecc.).
    * Le risorse referenziate (image.src xap:resources/…) restano valide perché incolli
    * nello stesso file; se il payload viene da un altro file e la risorsa manca,
    * conserva comunque il riferimento per non perdere dati.
+   * `newId` è il primo blocco incollato, `newIds` tutti.
    */
   public pasteTopic(
     parentId: string,
     payload: string | XmapClipboardPayload
-  ): { dto: WorkbookDto; newId: string } {
+  ): { dto: WorkbookDto; newId: string; newIds: string[] } {
     const wb = this.ensureWorkbook();
     const parent = findTopic(wb.content, parentId);
     if (!parent) throw new XmapError(CODE_TOPIC_NOT_FOUND, `Topic genitore ${parentId} non trovato`);
@@ -661,11 +693,18 @@ export class AppController {
     this.importClipboardResources(wb, data);
     this.importClipboardAttachments(wb, data);
 
-    const cloned = cloneTopicSubtree(data.topic);
-    appendAttachedChild(parent, cloned);
+    const sources = Array.isArray(data.topics) && data.topics.length > 0 ? data.topics : [data.topic];
+    const relationships = Array.isArray(data.relationships) ? data.relationships : [];
+    const cloned = cloneClipboardTopics(sources, relationships);
+    for (const topic of cloned.topics) appendAttachedChild(parent, topic);
+    if (cloned.relationships.length > 0) {
+      const sheet = wb.content[sheetIndexOf(wb.content, parentId)];
+      if (sheet) sheet.relationships = [...(sheet.relationships ?? []), ...cloned.relationships];
+    }
     setTopicFolded(parent, false);
-    const newId = cloned.id!;
-    return { dto: this.commitCreation(wb, newId), newId };
+    const newIds = cloned.topics.map((t) => t.id as string);
+    const newId = newIds[0] as string;
+    return { dto: this.commitCreation(wb, newId), newId, newIds };
   }
 
   /** Le risorse mancanti (blocco copiato da un altro file) si aggiungono all'archivio, altrimenti la validazione prima del salvataggio fallirebbe. */
@@ -724,6 +763,23 @@ export class AppController {
     if (!removed) {
       throw new XmapError(CODE_TOPIC_NOT_FOUND, `Impossibile rimuovere il topic ${topicId} (o è la radice)`);
     }
+    return this.commit(wb);
+  }
+
+  /**
+   * Rimuove più blocchi (con i loro figli) in un unico passo di cronologia. La radice si salta;
+   * un blocco con un antenato nella selezione se ne va con lui.
+   */
+  public removeTopics(topicIds: string[]): WorkbookDto {
+    const wb = this.ensureWorkbook();
+    const ids = outermostTopicIds(
+      wb.content,
+      topicIds.filter((id) => !isRootTopic(wb.content, id))
+    );
+    if (ids.length === 0) {
+      throw new XmapError(CODE_TOPIC_NOT_FOUND, 'Nessun blocco da rimuovere (la radice non si elimina).');
+    }
+    for (const id of ids) removeTopic(wb.content, id);
     return this.commit(wb);
   }
 
