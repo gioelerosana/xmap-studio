@@ -50,6 +50,14 @@ export type McpMapInfo = { fileName: string; path: string | null; dirty: boolean
 export type McpRendererReply =
   | { requestId: number; ok: true; text: string; info?: McpMapInfo | null }
   | { requestId: number; ok: false; error: string };
+/** Stato del server MCP HTTP dell'app; ricalca `McpServerStatus` di apps/desktop/src/mcp-host.ts. */
+export type McpServerStatus = {
+  /** `starting`: in avvio; `listening`: in ascolto su `url`; `error`: non è partito (vedi `error`). */
+  state: 'starting' | 'listening' | 'error';
+  /** Indirizzo da dare al client di Claude, es. `http://127.0.0.1:47616/mcp`. */
+  url: string;
+  error: string | null;
+};
 /** Stato del collegamento con Hermes Desktop; ricalca `HermesLinkStatus` di apps/desktop/src/hermes-link.ts. */
 export type HermesLinkStatus = {
   enabled: boolean;
@@ -117,6 +125,8 @@ declare global {
       /** Collegamento con Claude; assente nelle shell desktop più vecchie. */
       onMcpRequest?: (callback: (request: McpRendererRequest) => void) => () => void;
       respondMcp?: (reply: McpRendererReply) => void;
+      /** Server MCP HTTP; assente nelle shell desktop più vecchie. */
+      getMcpServer?: () => Promise<McpServerStatus>;
       /** Collegamento con Hermes Desktop; assente nelle shell desktop più vecchie. */
       getHermesLink?: () => Promise<HermesLinkStatus>;
       setHermesLinkEnabled?: (enabled: boolean) => Promise<HermesLinkStatus>;
