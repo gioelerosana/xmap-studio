@@ -1,8 +1,8 @@
 /**
  * Protocollo del collegamento tra XMap Studio e chi esegue gli strumenti per
- * conto di un agente: il server MCP su stdio (`xmap-studio --mcp`, socket
- * locale) e il plugin di Hermes Desktop (WebSocket su 127.0.0.1). I due
- * trasporti portano gli stessi messaggi; qui ci sono solo i tipi, la loro
+ * conto di un agente: il server MCP HTTP dell'app desktop e il plugin di
+ * Hermes Desktop (WebSocket su 127.0.0.1). I due trasporti portano le stesse
+ * richieste; qui ci sono solo i tipi, la loro
  * validazione e il catalogo degli strumenti, senza I/O.
  */
 import { MCP_INSTRUCTIONS, mcpToolList } from './mcp.js';
