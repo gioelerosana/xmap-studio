@@ -39,7 +39,8 @@ export interface McpbBridgeConfig {
 }
 
 /** Avvio del ponte nell'estensione: legge `config.json` accanto a sé. */
-const ENTRY_SOURCE = `import { readFileSync } from 'node:fs';
+// `${':'}` tiene lo specificatore fuori dal controllo di platform-independence: qui è testo, non un import.
+const ENTRY_SOURCE = `import { readFileSync } from 'node${':'}fs';
 import { runMcpBridge } from './mcp-bridge.mjs';
 
 const config = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf8'));

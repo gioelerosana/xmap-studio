@@ -192,7 +192,7 @@ function isMcpbPlatform(platform: NodeJS.Platform): platform is McpbPlatform {
 
 async function readIcon(): Promise<Uint8Array | undefined> {
   try {
-    return new Uint8Array(await fs.promises.readFile(path.resolve(__dirname, '../../web/dist/icon-256.png')));
+    return new Uint8Array(await fs.promises.readFile(path.resolve(__dirname, '../../web/dist/icon-512.png')));
   } catch {
     return undefined;
   }

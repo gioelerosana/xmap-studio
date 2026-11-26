@@ -1,7 +1,7 @@
 /**
  * Server WebSocket del collegamento con gli agenti (plugin di Hermes Desktop):
- * ascolta solo su 127.0.0.1 e porta le stesse richieste del server MCP HTTP
- * dell'app (`AgentLinkRequest` / `AgentLinkResponse`). Chi lo usa
+ * ascolta solo su 127.0.0.1 e porta le stesse richieste del ponte MCP di Claude
+ * (`agent-socket.ts`) (`AgentLinkRequest` / `AgentLinkResponse`). Chi lo usa
  * fornisce `dispatch`, che esegue la richiesta: qui ci sono solo trasporto e
  * controlli d'accesso.
  *

@@ -76,6 +76,10 @@ class Bridge {
         }
       });
       input.on('end', () => {
+        // Un ultimo messaggio senza `\n` finale vale comunque.
+        const last = buffer.trim();
+        buffer = '';
+        if (last !== '') pending.add(this.handleLine(last));
         void Promise.allSettled([...pending]).then(() => {
           this.link?.close();
           resolve();
