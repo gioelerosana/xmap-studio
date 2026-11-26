@@ -24,7 +24,7 @@ Desktop collegati: il tool risponde subito che XMap non è collegato.
 
 ### Con il link (consigliato)
 
-In XMap Studio: **Impostazioni › Hermes › Installa in Hermes Desktop**, oppure
+In XMap Studio: **Impostazioni › Integrazioni › Hermes › Installa in Hermes Desktop**, oppure
 apri questo link con Hermes Desktop avviato:
 
 ```
@@ -80,7 +80,7 @@ passo 1: Desktop copia `desktop/plugin.js` da solo.
 
 ## Accoppiamento
 
-1. In XMap Studio: **Impostazioni › Hermes**, accendi **Collega a Hermes**.
+1. In XMap Studio: **Impostazioni › Integrazioni › Hermes**, accendi **Collega a Hermes**.
    Compaiono porta (47615) e token.
 2. Copia il token (pulsante *Copia*).
 3. In Hermes Desktop: **Impostazioni → Plugin → XMap Studio**, inserisci porta
@@ -113,7 +113,7 @@ passo 1: Desktop copia `desktop/plugin.js` da solo.
 | Sintomo | Causa e rimedio |
 |---|---|
 | Il tool dice «XMap non è collegato» | nessun Hermes Desktop ha fatto poll negli ultimi 45 s: apri Hermes Desktop, attiva il plugin; oppure la chat non è di Desktop (Telegram, API) |
-| «Hermes Desktop è collegato ma XMap Studio no» | XMap chiuso o collegamento spento in Impostazioni › Hermes; controlla porta e token nel plugin |
+| «Hermes Desktop è collegato ma XMap Studio no» | XMap chiuso o collegamento spento in Impostazioni › Integrazioni › Hermes; controlla porta e token nel plugin |
 | Plugin: «Token rifiutato da XMap Studio» | token vecchio o sbagliato: ricopialo da XMap, *Salva* |
 | Plugin: «XMap Studio non raggiungibile» | XMap chiuso, collegamento spento, o porta diversa; in XMap lo stato dice se la porta è occupata |
 | `ctx.rest` 404 nella pagina del plugin | metà agente non attiva: `hermes plugins enable xmap-studio` e riavvio del gateway |

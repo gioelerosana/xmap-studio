@@ -91,9 +91,10 @@ dell'hash ([`NEXTCLOUD.md`](NEXTCLOUD.md)).
 
 ## Collegamento con Claude (MCP)
 
-Nel desktop il main process ospita un server MCP Streamable HTTP senza
-autenticazione su `http://127.0.0.1:47616/mcp` e gira le chiamate di Claude alla
-finestra della mappa,
+Nel desktop il main process ascolta su un socket locale (socket Unix in una
+cartella `0700`, named pipe su Windows, con chiave di accoppiamento) e gira le
+chiamate di Claude alla finestra della mappa; Claude Desktop (estensione `.mcpb`)
+e Claude Code (`xmap-studio --mcp`) ci arrivano da un ponte MCP su stdio,
 dove gli strumenti di `agent/` lavorano sullo stesso `AppController` della UI.
 Le stesse richieste arrivano anche da un WebSocket su 127.0.0.1 (spento di
 default), usato dal plugin di Hermes Desktop per un agente remoto.
