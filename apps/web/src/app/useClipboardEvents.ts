@@ -41,7 +41,7 @@ export function useClipboardEvents({
   handleCutTopic,
   suspended,
 }: ClipboardEventsOptions) {
-  const { selectSingle, exitSelectionMode } = selection;
+  const { selectSingle, selectMany, exitSelectionMode, selectedTopicIds } = selection;
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -78,11 +78,11 @@ export function useClipboardEvents({
       if (text.includes('"xmapStudioClipboard"')) {
         e.preventDefault();
         try {
-          const { newId } = controller.pasteTopic(targetParentId, text);
-          selectSingle(newId);
+          const { newIds } = controller.pasteTopic(targetParentId, text);
+          selectMany(newIds);
           exitSelectionMode();
           refreshState();
-          addToast('success', 'Blocco incollato');
+          addToast('success', newIds.length > 1 ? `${newIds.length} blocchi incollati` : 'Blocco incollato');
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           addToast('error', `Impossibile incollare il blocco: ${msg}`, err);
@@ -129,7 +129,9 @@ export function useClipboardEvents({
       if (isDialogOpen()) return;
       const target = e.target as Element | null;
       if (target?.closest?.(TEXT_FIELD)) return;
-      if (!selectedTopic || selectedTopic.depth === 0) return;
+      if (!selectedTopic) return;
+      // Radice da sola: niente da tagliare. Con altri blocchi selezionati la radice si salta.
+      if (selectedTopic.depth === 0 && selectedTopicIds.length <= 1) return;
 
       e.preventDefault();
       handleCutTopic(selectedTopic.id);
@@ -174,5 +176,5 @@ export function useClipboardEvents({
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, exitSelectionMode, inMemoryClipboard, suspended]);
+  }, [editing, insertImage, controller, selectedTopic, allTopics, refreshState, addToast, handleCopyTopic, handleCutTopic, selectSingle, selectMany, exitSelectionMode, selectedTopicIds, inMemoryClipboard, suspended]);
 }

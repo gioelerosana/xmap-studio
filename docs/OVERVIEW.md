@@ -197,6 +197,10 @@ Selezione multipla: `Maiusc`/`Ctrl`+clic aggiunge o toglie un blocco; `Maiusc`+t
 sfondo disegna un'area che aggiunge i blocchi che tocca. Il pulsante **Seleziona più blocchi** (primo
 della barra flottante) attiva la modalità selezione: clic o tap alternano un blocco e trascinando
 sullo sfondo si seleziona un'area, come in un file manager (su touch la mappa si sposta con due dita).
+**Copia** e **Taglia** (`Ctrl+C`/`Ctrl+X` o menu contestuale) agiscono su tutta la selezione:
+ogni blocco viaggia con il suo sottoalbero (un blocco già dentro un altro selezionato non si
+duplica), insieme alle relazioni tra i blocchi copiati. **Incolla** li inserisce tutti come
+sotto-blocchi del blocco scelto, nell'ordine della mappa, in un solo passo di undo.
 
 Nell'albero a sinistra puoi **cercare**, filtrare per tipo (**Testo/Formule/
 Immagini**) e **trascinare un blocco** su un altro: rilasciando al centro diventa
