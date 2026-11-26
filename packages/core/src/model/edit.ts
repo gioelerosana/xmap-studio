@@ -780,17 +780,12 @@ export function moveTopic(
  * si inseriscono in fila accanto a lui. Tutto o niente: se uno spostamento non è valido, `sheets`
  * resta com'era.
  */
-export function moveTopics(
-  sheets: Sheet[],
-  ids: string[],
-  targetId: string,
-  placement: MovePlacement
-): void {
+/**
+ * Radici dell'insieme `ids` in ordine di documento: un blocco il cui antenato è già nell'insieme
+ * si scarta, perché segue comunque l'antenato. Gli id inesistenti si ignorano.
+ */
+export function outermostTopicIds(sheets: Sheet[], ids: Iterable<string>): string[] {
   const wanted = new Set(ids);
-  if (wanted.has(targetId)) {
-    throw new MoveError('cycle', 'Un blocco non può essere spostato dentro sé stesso.');
-  }
-  // Ordine del documento e radici dell'insieme (i discendenti di un blocco scelto lo seguono già).
   const ordered: string[] = [];
   const visit = (topic: Topic, coveredByAncestor: boolean): void => {
     const id = topic.id;
@@ -804,6 +799,20 @@ export function moveTopics(
     }
   };
   for (const sheet of sheets) if (sheet.rootTopic) visit(sheet.rootTopic, false);
+  return ordered;
+}
+
+export function moveTopics(
+  sheets: Sheet[],
+  ids: string[],
+  targetId: string,
+  placement: MovePlacement
+): void {
+  const wanted = new Set(ids);
+  if (wanted.has(targetId)) {
+    throw new MoveError('cycle', 'Un blocco non può essere spostato dentro sé stesso.');
+  }
+  const ordered = outermostTopicIds(sheets, ids);
   if (ordered.length === 0) {
     throw new MoveError('not_found', 'Blocco da spostare non trovato.');
   }

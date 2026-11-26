@@ -24,6 +24,22 @@ async function readClipboardImage(): Promise<Blob | null> {
   }
 }
 
+/**
+ * Blocchi su cui agisce copia/taglia: tutta la selezione multipla se `id` ne fa parte,
+ * altrimenti solo `id` (es. menu contestuale su un blocco fuori dalla selezione).
+ */
+function clipboardTargets(id: string, selectedIds: string[]): string[] {
+  return selectedIds.length > 1 && selectedIds.includes(id) ? selectedIds : [id];
+}
+
+/** Primo antenato di `id` che resta sulla mappa dopo aver tolto `removed`. */
+function survivingAncestor(allTopics: TopicView[], id: string, removed: Set<string>): string | undefined {
+  const byId = new Map(allTopics.map((t) => [t.id, t]));
+  let parentId = byId.get(id)?.parentId;
+  while (parentId && removed.has(parentId)) parentId = byId.get(parentId)?.parentId;
+  return parentId;
+}
+
 interface TopicClipboardOptions {
   controller: AppController;
   selectedTopic: TopicView | null;
@@ -48,53 +64,60 @@ export function useTopicClipboard({
   setEditing,
   insertImage,
 }: TopicClipboardOptions) {
-  const { selectSingle, exitSelectionMode } = selection;
+  const { selectSingle, selectMany, exitSelectionMode, selectedTopicIds } = selection;
   const inMemoryClipboard = useRef<string | null>(null);
 
   const handleCopyTopic = useCallback(
     (topicId?: string) => {
       const id = topicId ?? selectedTopic?.id;
       if (!id) return;
+      const ids = clipboardTargets(id, selectedTopicIds);
       try {
-        const payload = controller.copyTopic(id);
+        const payload = controller.copyTopics(ids);
         inMemoryClipboard.current = payload;
         navigator.clipboard?.writeText(payload).catch(() => {});
         exitSelectionMode();
-        addToast('info', 'Blocco copiato');
+        addToast('info', ids.length > 1 ? `${ids.length} blocchi copiati` : 'Blocco copiato');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile copiare il blocco: ${msg}`, err);
+        addToast('error', `Impossibile copiare i blocchi: ${msg}`, err);
       }
     },
-    [controller, selectedTopic, addToast, exitSelectionMode]
+    [controller, selectedTopic, selectedTopicIds, addToast, exitSelectionMode]
   );
 
   const handleCutTopic = useCallback(
     (topicId?: string) => {
       const id = topicId ?? selectedTopic?.id;
       if (!id) return;
-      const topic = allTopics.find((t) => t.id === id);
-      if (!topic || topic.depth === 0) {
+      const rootIds = new Set(allTopics.filter((t) => t.depth === 0).map((t) => t.id));
+      const ids = clipboardTargets(id, selectedTopicIds).filter((t) => !rootIds.has(t));
+      if (ids.length === 0) {
         addToast('warning', 'La radice non può essere tagliata');
         return;
       }
       try {
-        const payload = controller.copyTopic(id);
+        const payload = controller.copyTopics(ids);
         inMemoryClipboard.current = payload;
         navigator.clipboard?.writeText(payload).catch(() => {});
-        const next = currentLayout ? selectionAfterDelete(currentLayout, id) : undefined;
-        controller.removeTopic(id);
+        const next =
+          ids.length === 1
+            ? currentLayout
+              ? selectionAfterDelete(currentLayout, ids[0] as string)
+              : undefined
+            : survivingAncestor(allTopics, ids[0] as string, new Set(ids));
+        controller.removeTopics(ids);
         selectSingle(next);
         exitSelectionMode();
         setEditing(null);
         refreshState();
-        addToast('info', 'Blocco tagliato');
+        addToast('info', ids.length > 1 ? `${ids.length} blocchi tagliati` : 'Blocco tagliato');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        addToast('error', `Impossibile tagliare il blocco: ${msg}`, err);
+        addToast('error', `Impossibile tagliare i blocchi: ${msg}`, err);
       }
     },
-    [controller, selectedTopic, allTopics, currentLayout, refreshState, addToast, selectSingle, exitSelectionMode, setEditing]
+    [controller, selectedTopic, selectedTopicIds, allTopics, currentLayout, refreshState, addToast, selectSingle, exitSelectionMode, setEditing]
   );
 
   const handleDuplicateTopic = useCallback(
@@ -146,11 +169,11 @@ export function useTopicClipboard({
 
       if (text && text.includes('"xmapStudioClipboard"')) {
         try {
-          const { newId } = controller.pasteTopic(targetId, text);
-          selectSingle(newId);
+          const { newIds } = controller.pasteTopic(targetId, text);
+          selectMany(newIds);
           exitSelectionMode();
           refreshState();
-          addToast('success', 'Blocco incollato');
+          addToast('success', newIds.length > 1 ? `${newIds.length} blocchi incollati` : 'Blocco incollato');
           return;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -173,7 +196,7 @@ export function useTopicClipboard({
         }
       }
     },
-    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, exitSelectionMode, insertImage]
+    [controller, selectedTopic, allTopics, refreshState, addToast, selectSingle, selectMany, exitSelectionMode, insertImage]
   );
 
   return {

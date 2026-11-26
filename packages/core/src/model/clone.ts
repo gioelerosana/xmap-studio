@@ -1,11 +1,16 @@
-import { Topic } from './types.js';
+import { Relationship, Topic } from './types.js';
 import { newTopicId, walkTopic } from './utils.js';
 
 export const XMAP_CLIPBOARD_VERSION = 1;
 
 export interface XmapClipboardPayload {
   xmapStudioClipboard: number;
+  /** Primo blocco copiato: da solo basta alle versioni che conoscono un blocco per volta. */
   topic: Topic;
+  /** Tutti i blocchi copiati (selezione multipla), in ordine di documento; `topics[0]` è `topic`. */
+  topics?: Topic[];
+  /** Relazioni con entrambi gli estremi dentro i blocchi copiati. */
+  relationships?: Relationship[];
   /** Risorse del sottoalbero (`resources/<nome>` → base64), per incollare in un altro file. */
   resources?: Record<string, string>;
   /** Allegati del sottoalbero (`attachments/<nome>` → base64): senza, il file di destinazione non si salverebbe. */
@@ -47,8 +52,22 @@ export function base64ToBytes(b64: string): Uint8Array {
  * Le relazioni di foglio che puntavano al topic originale non vengono duplicate.
  */
 export function cloneTopicSubtree(topic: Topic): Topic {
+  return cloneClipboardTopics([topic], []).topics[0] as Topic;
+}
+
+/**
+ * Come `cloneTopicSubtree`, per più sottoalberi insieme alle relazioni tra loro: una sola mappa
+ * di riassegnazione degli id, così gli estremi delle relazioni puntano ai blocchi clonati.
+ */
+export function cloneClipboardTopics(
+  topics: Topic[],
+  relationships: Relationship[]
+): { topics: Topic[]; relationships: Relationship[] } {
   // Copia profonda completa via JSON per preservare ogni proprietà nota e sconosciuta
-  const cloned: Topic = JSON.parse(JSON.stringify(topic));
+  const cloned = JSON.parse(JSON.stringify({ topics, relationships })) as {
+    topics: Topic[];
+    relationships: Relationship[];
+  };
 
   // Mappa di riassegnazione dei vecchi ID a nuovi UUID
   const idMap = new Map<string, string>();
@@ -70,11 +89,9 @@ export function cloneTopicSubtree(topic: Topic): Topic {
   };
   collect(cloned);
 
-  // Se per qualsiasi ragione il topic radice clonato non aveva un ID valido, gliene assegniamo uno
-  if (!cloned.id || !idMap.has(cloned.id)) {
-    const freshId = newTopicId();
-    idMap.set(cloned.id ?? '', freshId);
-    cloned.id = freshId;
+  // Un blocco copiato senza ID valido ne riceve uno nuovo
+  for (const topic of cloned.topics) {
+    if (!topic.id || !idMap.has(topic.id)) topic.id = newTopicId();
   }
 
   const rewrite = (value: unknown): void => {
