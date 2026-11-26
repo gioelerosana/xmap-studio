@@ -67,7 +67,7 @@ import { Relationship, Sheet, Topic } from './model/types.js';
 import { setTitleRuns, setTextStyle, TextStylePatch } from './model/style.js';
 import { setRelationshipControlPoint, setRelationshipShape } from './model/relationship.js';
 import { setSheetTheme, ThemePatch } from './model/theme.js';
-import { cloneSheet, createSheet, nextSheetTitle } from './model/sheets.js';
+import { cloneSheet, createSheet, nextSheetTitle, syncNewSheetTitle } from './model/sheets.js';
 import {
   countTopics,
   collectAttachmentRefs,
@@ -273,6 +273,12 @@ export class AppController {
     return this.commit(wb);
   }
 
+  /** Se `topic` è il blocco centrale di un foglio, applica `syncNewSheetTitle` (stesso passo di cronologia). */
+  private syncSheetTitleOfRoot(wb: OpenWorkbook, topic: Topic, prevTitle: string | undefined): void {
+    const sheet = wb.content.find((s) => s.rootTopic === topic);
+    if (sheet) syncNewSheetTitle(sheet, prevTitle);
+  }
+
   private commit(wb: OpenWorkbook): WorkbookDto {
     wb.pushHistory();
     return wb.toDto();
@@ -430,7 +436,9 @@ export class AppController {
     const topic = this.requireTopic(wb, topicId);
 
     if (topic.title === title && topic.titleUnedited === undefined) return wb.toDto();
+    const prevTitle = topic.title;
     setTitle(topic, title);
+    this.syncSheetTitleOfRoot(wb, topic, prevTitle);
     return this.commitTitleChange(wb, topicId, opts?.mergeWithPrevious);
   }
 
@@ -460,6 +468,7 @@ export class AppController {
     if (prevTitle === nextTitle && prevAttributed === nextAttributed && prevUnedited === undefined) {
       return wb.toDto();
     }
+    this.syncSheetTitleOfRoot(wb, topic, prevTitle);
     return this.commitTitleChange(wb, topicId, opts?.mergeWithPrevious);
   }
 
@@ -571,14 +580,18 @@ export class AppController {
    * assenti restano com'erano; `null` o stringa vuota tolgono note, link e colore.
    */
   public updateTopic(topicId: string, patch: TopicPatch): WorkbookDto {
-    return this.editTopic(topicId, (topic) => {
+    return this.editTopic(topicId, (topic, wb) => {
       const add = (patch.addMarkers ?? []).map((m) => m.trim());
       const remove = new Set((patch.removeMarkers ?? []).map((m) => m.trim()));
       for (const marker of add) {
         validateMarkerId(marker);
         if (!isMarkerKnown(marker)) throw new XmapError(CODE_INVALID_INPUT, `Marker sconosciuto: ${marker}`);
       }
-      if (patch.title !== undefined) setTitle(topic, patch.title);
+      if (patch.title !== undefined) {
+        const prevTitle = topic.title;
+        setTitle(topic, patch.title);
+        this.syncSheetTitleOfRoot(wb, topic, prevTitle);
+      }
       if (patch.notes !== undefined) setNotes(topic, patch.notes ?? '');
       if (patch.labels !== undefined) setLabels(topic, patch.labels);
       if (patch.href !== undefined) setHref(topic, patch.href);

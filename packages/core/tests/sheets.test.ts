@@ -153,6 +153,51 @@ describe('addSheet', () => {
   });
 });
 
+describe('titolo di un foglio nuovo', () => {
+  const rootOf = (dto: WorkbookDto, i: number) => dto.sheets[i]?.topics[0]?.id ?? '';
+
+  it('la prima rinomina del blocco centrale rinomina anche la linguetta', async () => {
+    const { c } = await openSheets(['Alfa']);
+    const added = c.addSheet();
+    const dto = c.setTopicTitle(rootOf(added, 1), '  Termodinamica  ');
+    expect(titlesOf(dto)).toEqual(['Alfa', 'Termodinamica']);
+  });
+
+  it('vale anche per il titolo formattato e un solo undo annulla entrambi', async () => {
+    const { c } = await openSheets(['Alfa']);
+    const added = c.addSheet();
+    const dto = c.setTopicTitleRuns(rootOf(added, 1), [{ text: 'Ottica', bold: true }]);
+    expect(titlesOf(dto)).toEqual(['Alfa', 'Ottica']);
+    const undone = c.undo();
+    expect(titlesOf(undone)).toEqual(['Alfa', 'Foglio 2']);
+    expect(undone.sheets[1]?.topics[0]?.title).toBe(NEW_SHEET_ROOT_TITLE);
+  });
+
+  it('le rinomine successive non toccano più la linguetta', async () => {
+    const { c } = await openSheets(['Alfa']);
+    const added = c.addSheet();
+    const root = rootOf(added, 1);
+    c.setTopicTitle(root, 'Ottica');
+    c.renameSheet(1, 'Capitolo 3');
+    expect(titlesOf(c.setTopicTitle(root, 'Ottica geometrica'))).toEqual(['Alfa', 'Capitolo 3']);
+    c.renameSheet(1, 'Foglio 2');
+    expect(titlesOf(c.setTopicTitle(root, 'Ottica fisica'))).toEqual(['Alfa', 'Foglio 2']);
+  });
+
+  it('una linguetta già rinominata dall\'utente resta com\'è', async () => {
+    const { c } = await openSheets(['Alfa']);
+    const added = c.addSheet();
+    c.renameSheet(1, 'Esercizi');
+    expect(titlesOf(c.setTopicTitle(rootOf(added, 1), 'Ottica'))).toEqual(['Alfa', 'Esercizi']);
+  });
+
+  it('non tocca la linguetta quando si rinomina un blocco che non è il centrale', async () => {
+    const { c, dto } = await openSheets(['Alfa']);
+    const child = dto.sheets[0]?.topics.find((t) => t.title === 'A')?.id ?? '';
+    expect(titlesOf(c.setTopicTitle(child, 'Nuovo'))).toEqual(['Alfa']);
+  });
+});
+
 describe('renameSheet', () => {
   it('cambia il titolo della linguetta', async () => {
     const { c } = await openSheets(['Alfa', 'Beta']);
