@@ -15,7 +15,7 @@ di compatibilità, non come modello da pareggiare) è in
 | [`TESTING.md`](TESTING.md) | Test del core TypeScript e verifica in XMind |
 | [`RELEASE.md`](RELEASE.md) | Versioning, checklist di rilascio, artefatti |
 | [`DEPLOY.md`](DEPLOY.md) | Pubblicazione della web app su Cloudflare (Workers Static Assets) |
-| [`MCP.md`](MCP.md) | Claude accanto alla mappa: server MCP su stdio dell'app desktop, strumenti e architettura |
+| [`MCP.md`](MCP.md) | Claude accanto alla mappa: server MCP HTTP (127.0.0.1) dell'app desktop, strumenti e architettura |
 | [`NEXTCLOUD.md`](NEXTCLOUD.md) | Integrazione opt-in con Nextcloud: Login Flow v2, proxy `/nc/`, salvataggio con ETag |
 | [`SITE.md`](SITE.md) | Sito di presentazione su GitHub Pages (xmap-studio.jshep.xyz) e indicizzazione |
 | [`MAP-VIEW.md`](MAP-VIEW.md) | Piano della vista mappa ad albero (Fase 7) |

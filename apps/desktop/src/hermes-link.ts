@@ -1,5 +1,5 @@
 // Collegamento con Hermes Desktop: un secondo trasporto per le stesse richieste
-// del socket di `xmap-studio --mcp` (`mcp-host.ts`), su WebSocket a 127.0.0.1.
+// del server MCP HTTP (`mcp-host.ts`), su WebSocket a 127.0.0.1.
 // Lo usa il plugin "xmap-studio" di Hermes Desktop, che inoltra a XMap le chiamate
 // dell'agente (anche di un gateway remoto). Spento di default; il token di
 // accoppiamento e lo stato acceso/spento restano in userData/hermes-link.json.

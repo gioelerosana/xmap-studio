@@ -18,3 +18,5 @@ export const nodePlatform: Platform = {
 };
 export { startAgentLinkServer, tokensMatch, AGENT_LINK_HOST, AGENT_LINK_PROTOCOL } from './agent-link.js';
 export type { AgentLinkServer, AgentLinkServerOptions } from './agent-link.js';
+export { startMcpHttpServer, MCP_HTTP_HOST, MCP_HTTP_PATH, MCP_HTTP_PORT } from './mcp-http.js';
+export type { McpHttpServer, McpHttpServerOptions } from './mcp-http.js';

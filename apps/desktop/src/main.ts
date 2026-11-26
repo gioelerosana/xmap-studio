@@ -7,7 +7,6 @@ import { cancelRestartRequest, registerUpdater, relaunchIfRequested } from './up
 import { registerDebugLog } from './debug-log.js';
 import { startMcpHost } from './mcp-host.js';
 import { registerHermesLink } from './hermes-link.js';
-import { runMcpBridge } from './mcp-bridge.js';
 import type { PrintToPdfOptions } from './preload.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
@@ -58,18 +57,20 @@ function findXmindFiles(args: string[]): string[] {
 }
 
 /**
- * `xmap-studio --mcp`: niente finestre, solo il server MCP su stdio che Claude
- * avvia per lavorare sulle mappe aperte nell'istanza normale dell'app
- * (`mcp-bridge.ts`). Non prende il blocco di istanza singola, altrimenti
- * passerebbe gli argomenti all'app aperta e uscirebbe.
+ * `xmap-studio --mcp` avviava il vecchio server MCP su stdio, sostituito dal
+ * server HTTP dell'app (`mcp-host.ts`). Chi ha ancora la vecchia configurazione
+ * riceve su stderr l'indirizzo nuovo invece di una finestra in più.
  */
-const MCP_MODE = process.argv.includes('--mcp');
+const LEGACY_MCP_MODE = process.argv.includes('--mcp');
 
 // Ogni workbook ha una finestra e uno stato React indipendenti.
-const gotTheLock = MCP_MODE || app.requestSingleInstanceLock();
-if (MCP_MODE) {
-  app.dock?.hide();
-  runMcpBridge({ version: app.getVersion(), onEnd: () => app.exit(0) });
+const gotTheLock = LEGACY_MCP_MODE || app.requestSingleInstanceLock();
+if (LEGACY_MCP_MODE) {
+  process.stderr.write(
+    '[xmap-mcp] Il server MCP su stdio (--mcp) non esiste più: con XMap Studio aperto, configura nel client di Claude ' +
+      "il server HTTP http://127.0.0.1:47616/mcp (es. `claude mcp add --transport http xmap-studio http://127.0.0.1:47616/mcp`).\n"
+  );
+  app.exit(1);
 } else if (!gotTheLock) {
   app.quit();
 } else {
@@ -275,7 +276,7 @@ async function readFileForRenderer(filePath: string) {
 }
 
 // IPC handlers
-if (!MCP_MODE) {
+if (!LEGACY_MCP_MODE) {
   registerDebugLog();
   registerUpdater();
   startMcpHost();
