@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import type { DesktopDebugInfo } from './debug-log.js';
-import type { McpRendererReply, McpRendererRequest, McpServerStatus } from './mcp-host.js';
+import type { McpRendererReply, McpRendererRequest } from './mcp-host.js';
+import type { ClaudeInstallResult, ClaudeLinkStatus } from './claude-link.js';
 import type { HermesLinkStatus } from './hermes-link.js';
 
 /** Esito di un salvataggio sotto guardia (vedi `guardedSave` in @xmap/core/node). */
@@ -64,7 +65,7 @@ export type PrintToPdfOptions = {
   landscape: boolean;
 };
 export type OpenedFile = { path: string; name: string; bytes: Uint8Array };
-export type { DesktopDebugInfo, McpRendererReply, McpRendererRequest, McpServerStatus };
+export type { ClaudeInstallResult, ClaudeLinkStatus, DesktopDebugInfo, McpRendererReply, McpRendererRequest };
 
 export interface ElectronAPI {
   getUpdateStatus: () => Promise<UpdateStatus>;
@@ -119,11 +120,18 @@ export interface ElectronAPI {
   onThemeUpdated: (callback: (dark: boolean) => void) => () => void;
   /** Informazioni di ambiente e log del main process, per Impostazioni › Debug. */
   getDebugInfo: () => Promise<DesktopDebugInfo>;
-  /** Richieste di Claude (server MCP) per la mappa di questa finestra (vedi `mcp-host.ts`). */
+  /** Richieste degli agenti (Claude, Hermes) per la mappa di questa finestra (vedi `mcp-host.ts`). */
   onMcpRequest: (callback: (request: McpRendererRequest) => void) => () => void;
   respondMcp: (reply: McpRendererReply) => void;
-  /** Stato e indirizzo del server MCP HTTP, per Impostazioni › Claude. */
-  getMcpServer: () => Promise<McpServerStatus>;
+  /** Collegamento con Claude Desktop e Claude Code (socket locale, vedi `claude-link.ts`). */
+  getClaudeLink: () => Promise<ClaudeLinkStatus>;
+  /** Genera l'estensione `.mcpb` e la apre con Claude Desktop. */
+  installClaudeDesktopExtension: () => Promise<ClaudeInstallResult>;
+  /** Mostra l'estensione generata nella cartella. */
+  revealClaudeExtension: () => Promise<void>;
+  /** Nuova chiave di accoppiamento: scollega estensione e Claude Code finché non si reinstalla. */
+  regenerateClaudeLinkKey: () => Promise<ClaudeLinkStatus>;
+  onClaudeLinkStatus: (callback: (status: ClaudeLinkStatus) => void) => () => void;
   /** Collegamento con Hermes Desktop (WebSocket su 127.0.0.1, vedi `hermes-link.ts`). */
   getHermesLink: () => Promise<HermesLinkStatus>;
   setHermesLinkEnabled: (enabled: boolean) => Promise<HermesLinkStatus>;
@@ -188,7 +196,15 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('mcp:request', handler);
   },
   respondMcp: (reply) => ipcRenderer.send('mcp:response', reply),
-  getMcpServer: () => ipcRenderer.invoke('mcpServer:get'),
+  getClaudeLink: () => ipcRenderer.invoke('claudeLink:get'),
+  installClaudeDesktopExtension: () => ipcRenderer.invoke('claudeLink:installDesktop'),
+  revealClaudeExtension: () => ipcRenderer.invoke('claudeLink:revealBundle'),
+  regenerateClaudeLinkKey: () => ipcRenderer.invoke('claudeLink:regenerateKey'),
+  onClaudeLinkStatus: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, status: ClaudeLinkStatus) => callback(status);
+    ipcRenderer.on('claudeLink:status', handler);
+    return () => ipcRenderer.removeListener('claudeLink:status', handler);
+  },
   getHermesLink: () => ipcRenderer.invoke('hermesLink:get'),
   setHermesLinkEnabled: (enabled) => ipcRenderer.invoke('hermesLink:setEnabled', enabled),
   regenerateHermesLinkToken: () => ipcRenderer.invoke('hermesLink:regenerateToken'),

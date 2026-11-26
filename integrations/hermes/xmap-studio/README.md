@@ -13,7 +13,7 @@ collegato e autenticato con il gateway: niente tunnel né porte aperte.
 ## Installazione
 
 Con Hermes Desktop aperto, usa il link (oppure il pulsante **Installa in Hermes
-Desktop** in XMap Studio › Impostazioni › Hermes):
+Desktop** in XMap Studio › Impostazioni › Integrazioni › Hermes):
 
 ```
 hermes://plugin/install?repo=gioelerosana/xmap-studio-hermes-connector&enable=1
@@ -25,7 +25,7 @@ gateway (anche remoto) e quella desktop sul computer. In alternativa:
 
 ## Accoppiamento
 
-1. In XMap Studio: **Impostazioni › Hermes**, accendi **Collega a Hermes** e copia il token.
+1. In XMap Studio: **Impostazioni › Integrazioni › Hermes**, accendi **Collega a Hermes** e copia il token.
 2. In Hermes Desktop: **Impostazioni → Plugin → XMap Studio**, inserisci porta
    (47615) e token, **Salva**.
 3. In una chat nuova: «leggi la mappa aperta in XMap».

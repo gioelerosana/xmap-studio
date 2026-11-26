@@ -1,11 +1,8 @@
-// Server MCP dell'app desktop: Streamable HTTP senza autenticazione su
-// http://127.0.0.1:47616/mcp (`@xmap/core/node`, `mcp-http.ts`), per il client di
-// Claude sulla stessa macchina. Ogni chiamata va alla finestra della mappa: gli
+// Esecuzione delle richieste degli agenti (Claude tramite `claude-link.ts`, Hermes
+// tramite `hermes-link.ts`): ogni chiamata va alla finestra della mappa. Gli
 // strumenti si eseguono nel renderer, sullo stesso controller della UI, quindi le
 // modifiche compaiono subito e si annullano con Ctrl+Z. Qui non si tocca nessun file.
 import { app, BrowserWindow, ipcMain } from 'electron';
-import type { McpHttpServer } from '@xmap/core/node';
-import { logMain } from './debug-log.js';
 import type { AgentLinkRequest, AgentLinkResponse } from '@xmap/core/agent';
 
 /** Mappa aperta in una finestra, come la descrive il renderer. */
@@ -22,16 +19,6 @@ export const MCP_DESCRIBE = '__describe';
 const DESCRIBE_TIMEOUT_MS = 3000;
 /** Una formula può dover aspettare il caricamento di MathJax; un salvataggio, la scrittura su disco. */
 const CALL_TIMEOUT_MS = 120_000;
-/** Override della porta per sviluppo e test (due istanze sulla stessa macchina). */
-const PORT_ENV = 'XMAP_MCP_PORT';
-
-/** Stato del server MCP per Impostazioni › Claude; ricalcato da apps/web/src/app/electronBridge.ts. */
-export type McpServerStatus = {
-  state: 'starting' | 'listening' | 'error';
-  /** Indirizzo da dare al client di Claude. */
-  url: string;
-  error: string | null;
-};
 
 type Pending = {
   webContentsId: number;
@@ -43,9 +30,7 @@ const pending = new Map<number, Pending>();
 let nextRequestId = 1;
 let lastFocusedId: number | null = null;
 
-let status: McpServerStatus = { state: 'starting', url: '', error: null };
-
-/** Avvia il server MCP su 127.0.0.1. Se la porta è occupata (es. un'altra istanza), lo segnala nello stato. */
+/** Registra il canale con le finestre; i trasporti chiamano `dispatchAgentRequest`. */
 export function startMcpHost(): void {
   app.on('browser-window-focus', (_event, window) => {
     lastFocusedId = window.id;
@@ -60,49 +45,11 @@ export function startMcpHost(): void {
     clearTimeout(entry.timer);
     entry.resolve(reply);
   });
-  ipcMain.handle('mcpServer:get', () => status);
-
-  void listen();
-}
-
-async function listen(): Promise<void> {
-  const { startMcpHttpServer, MCP_HTTP_HOST, MCP_HTTP_PATH, MCP_HTTP_PORT } = await import('@xmap/core/node');
-  const { createMcpServer } = await import('@xmap/core/agent');
-  const port = configuredPort(MCP_HTTP_PORT);
-  status = { state: 'starting', url: `http://${MCP_HTTP_HOST}:${port}${MCP_HTTP_PATH}`, error: null };
-  const handle = createMcpServer({ name: 'xmap-studio', version: app.getVersion(), callTool });
-  let server: McpHttpServer;
-  try {
-    server = await startMcpHttpServer({ port, handle, log: (level, message) => logMain(level, message) });
-  } catch (error: unknown) {
-    const code = (error as NodeJS.ErrnoException).code;
-    const message =
-      code === 'EADDRINUSE'
-        ? `La porta ${port} è già occupata (forse da un'altra istanza di XMap Studio).`
-        : `Server MCP non avviato: ${errorMessage(error)}`;
-    status = { ...status, state: 'error', error: message };
-    logMain('warn', message, error);
-    return;
-  }
-  status = { state: 'listening', url: server.url, error: null };
-  app.on('will-quit', () => void server.close());
-}
-
-function configuredPort(fallback: number): number {
-  const value = Number(process.env[PORT_ENV]);
-  return Number.isInteger(value) && value > 0 && value < 65536 ? value : fallback;
-}
-
-/** Strumento MCP → richiesta comune ai trasporti; `map` diventa l'id della finestra. */
-async function callTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }> {
-  const response = await dispatchAgentRequest({ id: 0, op: 'call', tool: name, args });
-  if ('catalog' in response) return { text: 'Risposta inattesa.', isError: true };
-  return response.ok ? { text: response.text } : { text: response.error, isError: true };
 }
 
 /**
- * Esegue una richiesta di un agente, da qualunque trasporto arrivi (server MCP
- * HTTP o WebSocket di Hermes): è l'unico punto in cui le richieste diventano
+ * Esegue una richiesta di un agente, da qualunque trasporto arrivi (ponte MCP
+ * su socket locale o WebSocket di Hermes): è l'unico punto in cui le richieste diventano
  * chiamate alla finestra.
  */
 export async function dispatchAgentRequest(request: AgentLinkRequest): Promise<AgentLinkResponse> {

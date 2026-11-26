@@ -50,14 +50,22 @@ export type McpMapInfo = { fileName: string; path: string | null; dirty: boolean
 export type McpRendererReply =
   | { requestId: number; ok: true; text: string; info?: McpMapInfo | null }
   | { requestId: number; ok: false; error: string };
-/** Stato del server MCP HTTP dell'app; ricalca `McpServerStatus` di apps/desktop/src/mcp-host.ts. */
-export type McpServerStatus = {
-  /** `starting`: in avvio; `listening`: in ascolto su `url`; `error`: non è partito (vedi `error`). */
+/** Stato del collegamento con Claude Desktop e Claude Code; ricalca `ClaudeLinkStatus` di apps/desktop/src/claude-link.ts. */
+export type ClaudeLinkStatus = {
   state: 'starting' | 'listening' | 'error';
-  /** Indirizzo da dare al client di Claude, es. `http://127.0.0.1:47616/mcp`. */
-  url: string;
   error: string | null;
+  /** Percorso del socket locale (o della named pipe). */
+  socketPath: string;
+  /** Ponti collegati in questo momento (Claude Desktop, Claude Code…). */
+  clients: number;
+  /** Comando da incollare nel terminale per Claude Code. */
+  claudeCodeCommand: string;
+  /** Claude Desktop sa installare estensioni su questa piattaforma. */
+  desktopSupported: boolean;
 };
+/** Esito di "Aggiungi a Claude Desktop"; ricalca `ClaudeInstallResult` di apps/desktop/src/claude-link.ts. */
+export type ClaudeInstallResult = { ok: true; path: string } | { ok: false; error: string; path: string | null };
+
 /** Stato del collegamento con Hermes Desktop; ricalca `HermesLinkStatus` di apps/desktop/src/hermes-link.ts. */
 export type HermesLinkStatus = {
   enabled: boolean;
@@ -125,8 +133,15 @@ declare global {
       /** Collegamento con Claude; assente nelle shell desktop più vecchie. */
       onMcpRequest?: (callback: (request: McpRendererRequest) => void) => () => void;
       respondMcp?: (reply: McpRendererReply) => void;
-      /** Server MCP HTTP; assente nelle shell desktop più vecchie. */
-      getMcpServer?: () => Promise<McpServerStatus>;
+      /** Collegamento con Claude (socket locale); assente nelle shell desktop più vecchie. */
+      getClaudeLink?: () => Promise<ClaudeLinkStatus>;
+      /** Genera l'estensione `.mcpb` e la apre con Claude Desktop, che chiede conferma. */
+      installClaudeDesktopExtension?: () => Promise<ClaudeInstallResult>;
+      /** Mostra nella cartella l'estensione generata. */
+      revealClaudeExtension?: () => Promise<void>;
+      /** Nuova chiave: scollega estensione e Claude Code finché non si reinstalla. */
+      regenerateClaudeLinkKey?: () => Promise<ClaudeLinkStatus>;
+      onClaudeLinkStatus?: (callback: (status: ClaudeLinkStatus) => void) => () => void;
       /** Collegamento con Hermes Desktop; assente nelle shell desktop più vecchie. */
       getHermesLink?: () => Promise<HermesLinkStatus>;
       setHermesLinkEnabled?: (enabled: boolean) => Promise<HermesLinkStatus>;

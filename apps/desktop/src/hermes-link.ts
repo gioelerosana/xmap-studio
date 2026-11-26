@@ -1,5 +1,5 @@
 // Collegamento con Hermes Desktop: un secondo trasporto per le stesse richieste
-// del server MCP HTTP (`mcp-host.ts`), su WebSocket a 127.0.0.1.
+// del collegamento con Claude (`claude-link.ts`), su WebSocket a 127.0.0.1.
 // Lo usa il plugin "xmap-studio" di Hermes Desktop, che inoltra a XMap le chiamate
 // dell'agente (anche di un gateway remoto). Spento di default; il token di
 // accoppiamento e lo stato acceso/spento restano in userData/hermes-link.json.
@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { logMain } from './debug-log.js';
 import { dispatchAgentRequest } from './mcp-host.js';
 
-/** Stato mostrato in Impostazioni › Hermes; ricalcato da apps/web/src/app/electronBridge.ts. */
+/** Stato mostrato in Impostazioni › Integrazioni › Hermes; ricalcato da apps/web/src/app/electronBridge.ts. */
 export type HermesLinkStatus = {
   enabled: boolean;
   port: number;

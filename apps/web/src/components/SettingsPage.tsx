@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bot, Bug, Cloud, FileLock2, Info, Keyboard, Network, Palette, Plug, RefreshCw, SpellCheck, X } from 'lucide-react';
+import { ArrowLeft, Bug, Cloud, FileLock2, Info, Keyboard, Network, Palette, Plug, RefreshCw, SpellCheck, X } from 'lucide-react';
 import {
   Button,
   IconButton,
@@ -29,8 +29,7 @@ import { AppMark } from './AppMark.js';
 import { SettingRow, SettingsSection } from './SettingsLayout.js';
 import { UpdatesSection } from './UpdatesSection.js';
 import { NextcloudSection } from './NextcloudSection.js';
-import { HermesSection } from './HermesSection.js';
-import { ClaudeSection } from './ClaudeSection.js';
+import { IntegrationsSection } from './IntegrationsSection.js';
 import { DebugSection } from './DebugSection.js';
 
 interface SettingsPageProps {
@@ -81,7 +80,7 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', ','], action: 'Impostazioni' },
 ];
 
-type SectionId = 'appearance' | 'map' | 'spelling' | 'files' | 'cloud' | 'shortcuts' | 'updates' | 'claude' | 'hermes' | 'about' | 'debug';
+type SectionId = 'appearance' | 'map' | 'spelling' | 'files' | 'cloud' | 'shortcuts' | 'updates' | 'integrations' | 'about' | 'debug';
 
 export type SettingsSectionId = SectionId;
 
@@ -95,8 +94,7 @@ const NOTICE_MS = 3000;
 /**
  * La sezione Aggiornamenti esiste solo nell'app desktop: nel browser non ha nulla da mostrare.
  * Nextcloud solo nel browser: il desktop ha già il file system.
- * Claude solo se il main process espone il server MCP (`getMcpServer`).
- * Hermes solo se il main process espone il collegamento (`getHermesLink`).
+ * Integrazioni (Claude e Hermes) solo se il main process espone almeno uno dei due collegamenti (`getClaudeLink`, `getHermesLink`).
  * Debug solo con il menu sbloccato (`developerMode`).
  */
 const SECTIONS: {
@@ -104,8 +102,7 @@ const SECTIONS: {
   label: string;
   icon: React.ReactNode;
   desktopOnly?: boolean;
-  hermesOnly?: boolean;
-  claudeOnly?: boolean;
+  integrationsOnly?: boolean;
   webOnly?: boolean;
   devOnly?: boolean;
 }[] = [
@@ -116,8 +113,7 @@ const SECTIONS: {
   { id: 'cloud', label: 'Nextcloud', icon: <Cloud className="size-4" />, webOnly: true },
   { id: 'shortcuts', label: 'Scorciatoie', icon: <Keyboard className="size-4" /> },
   { id: 'updates', label: 'Aggiornamenti', icon: <RefreshCw className="size-4" />, desktopOnly: true },
-  { id: 'claude', label: 'Claude', icon: <Bot className="size-4" />, desktopOnly: true, claudeOnly: true },
-  { id: 'hermes', label: 'Hermes', icon: <Plug className="size-4" />, desktopOnly: true, hermesOnly: true },
+  { id: 'integrations', label: 'Integrazioni', icon: <Plug className="size-4" />, desktopOnly: true, integrationsOnly: true },
   { id: 'about', label: 'Informazioni', icon: <Info className="size-4" /> },
   { id: 'debug', label: 'Debug', icon: <Bug className="size-4" />, devOnly: true },
 ];
@@ -183,13 +179,12 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
   const [active, setActive] = useState<SectionId>(() =>
     initialSection === 'debug' && !settings.developerMode ? 'appearance' : (initialSection ?? 'appearance')
   );
-  const hasMcpServer = typeof window.electronAPI?.getMcpServer === 'function';
-  const hasHermesLink = typeof window.electronAPI?.getHermesLink === 'function';
+  const hasIntegrations =
+    typeof window.electronAPI?.getClaudeLink === 'function' || typeof window.electronAPI?.getHermesLink === 'function';
   const visibleSections = SECTIONS.filter(
     (section) =>
       (!section.desktopOnly || isElectron) &&
-      (!section.hermesOnly || hasHermesLink) &&
-      (!section.claudeOnly || hasMcpServer) &&
+      (!section.integrationsOnly || hasIntegrations) &&
       (!section.webOnly || !isElectron) &&
       (!section.devOnly || settings.developerMode)
   );
@@ -477,9 +472,7 @@ export function SettingsPage({ onClose, settings, onUpdate, onReset, initialSect
 
           {active === 'updates' && isElectron && <UpdatesSection status={updateStatus} />}
 
-          {active === 'claude' && hasMcpServer && <ClaudeSection />}
-
-          {active === 'hermes' && hasHermesLink && <HermesSection />}
+          {active === 'integrations' && <IntegrationsSection />}
 
           {active === 'about' && (
             <SettingsSection title="Informazioni">

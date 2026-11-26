@@ -7,6 +7,7 @@ import { cancelRestartRequest, registerUpdater, relaunchIfRequested } from './up
 import { registerDebugLog } from './debug-log.js';
 import { startMcpHost } from './mcp-host.js';
 import { registerHermesLink } from './hermes-link.js';
+import { registerClaudeLink, runClaudeCodeBridge } from './claude-link.js';
 import type { PrintToPdfOptions } from './preload.js';
 
 // @xmap/core è solo ESM e questo processo è CommonJS: Electron 34 (Node 20) non
@@ -57,20 +58,24 @@ function findXmindFiles(args: string[]): string[] {
 }
 
 /**
- * `xmap-studio --mcp` avviava il vecchio server MCP su stdio, sostituito dal
- * server HTTP dell'app (`mcp-host.ts`). Chi ha ancora la vecchia configurazione
- * riceve su stderr l'indirizzo nuovo invece di una finestra in più.
+ * `xmap-studio --mcp`: ponte MCP su stdio per Claude Code (`claude-link.ts`). Gira
+ * accanto all'app aperta, senza finestre e senza il blocco di istanza singola;
+ * stdout è riservato ai messaggi MCP.
  */
-const LEGACY_MCP_MODE = process.argv.includes('--mcp');
+const MCP_BRIDGE_MODE = process.argv.includes('--mcp');
 
 // Ogni workbook ha una finestra e uno stato React indipendenti.
-const gotTheLock = LEGACY_MCP_MODE || app.requestSingleInstanceLock();
-if (LEGACY_MCP_MODE) {
-  process.stderr.write(
-    '[xmap-mcp] Il server MCP su stdio (--mcp) non esiste più: con XMap Studio aperto, configura nel client di Claude ' +
-      "il server HTTP http://127.0.0.1:47616/mcp (es. `claude mcp add --transport http xmap-studio http://127.0.0.1:47616/mcp`).\n"
+const gotTheLock = MCP_BRIDGE_MODE || app.requestSingleInstanceLock();
+if (MCP_BRIDGE_MODE) {
+  app.disableHardwareAcceleration();
+  app.dock?.hide();
+  runClaudeCodeBridge().then(
+    () => app.exit(0),
+    (error: unknown) => {
+      process.stderr.write(`[xmap-studio] Ponte MCP interrotto: ${error instanceof Error ? error.message : String(error)}\n`);
+      app.exit(1);
+    }
   );
-  app.exit(1);
 } else if (!gotTheLock) {
   app.quit();
 } else {
@@ -276,10 +281,11 @@ async function readFileForRenderer(filePath: string) {
 }
 
 // IPC handlers
-if (!LEGACY_MCP_MODE) {
+if (!MCP_BRIDGE_MODE) {
   registerDebugLog();
   registerUpdater();
   startMcpHost();
+  registerClaudeLink();
   registerHermesLink();
 }
 ipcMain.handle('app:getInitialFile', (event) => {

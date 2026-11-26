@@ -1,4 +1,4 @@
-# Claude accanto alla mappa (server MCP)
+# Claude accanto alla mappa (MCP)
 
 L'app desktop espone le mappe aperte a Claude con il
 [Model Context Protocol](https://modelcontextprotocol.io): mentre lavori su una
@@ -7,41 +7,62 @@ modifica compare subito, seleziona il blocco toccato e si annulla con Ctrl+Z com
 quelle fatte a mano. Su disco si scrive solo con `save_map`, che passa dallo
 stesso salvataggio dell'app (validazione, backup, blocco con XMind aperto).
 
-Solo desktop: la web app non può ospitare un server MCP.
+Solo desktop: la web app non può ospitare il collegamento.
 
 ## Configurazione
 
-Il server è dentro l'app: con XMap Studio aperto risponde su
+Tutto parte da **Impostazioni › Integrazioni › Claude**, che mostra anche lo
+stato del collegamento.
 
-```text
-http://127.0.0.1:47616/mcp
-```
+**Claude Desktop**: *Aggiungi a Claude Desktop* genera l'estensione
+`xmap-studio.mcpb` (in `userData/claude/`) e la apre con Claude Desktop, che
+chiede conferma e la installa. Se il sistema non associa i `.mcpb` a Claude,
+la si installa a mano da Claude › Impostazioni › Estensioni › Impostazioni
+avanzate › *Installa estensione…* (il pulsante *Mostra il file* apre la
+cartella). L'estensione gira sul Node incluso in Claude Desktop: non serve
+installare altro.
 
-con il trasporto **Streamable HTTP** di MCP, **senza autenticazione**. Non c'è
-niente da avviare a parte l'app; Impostazioni › Claude mostra stato, indirizzo e
-comandi da copiare.
-
-Claude Code:
+**Claude Code**: il comando da copiare avvia lo stesso eseguibile dell'app in
+modalità ponte, per esempio
 
 ```bash
-claude mcp add --transport http xmap-studio http://127.0.0.1:47616/mcp
+claude mcp add xmap-studio -- /percorso/XMap-Studio.AppImage --mcp
 ```
 
-Altri client che accettano server HTTP in una configurazione `mcpServers`:
+(AppImage ed `.exe` portable usano il percorso del file originale; in sviluppo e
+nel pacchetto Arch è `electron <app> --mcp`). È un server MCP **stdio** standard.
 
-```json
-{
-  "mcpServers": {
-    "xmap-studio": { "type": "http", "url": "http://127.0.0.1:47616/mcp" }
-  }
-}
+In entrambi i casi XMap Studio deve essere aperto quando Claude usa gli
+strumenti; ad app chiusa il client vede comunque gli strumenti e riceve
+«XMap Studio non è aperto…».
+
+## Perché non come Claude in Chrome
+
+Il riferimento è il collegamento di Claude in Chrome con Claude Desktop, letto
+nel codice di Claude Desktop (build Linux 45.3.3):
+
+```text
+Claude Desktop ──socket Unix──▶ chrome-native-host ◀──stdio (native messaging)── Chrome ◀── estensione
+  /tmp/claude-mcp-browser-bridge-<utente>/<pid>.sock
 ```
 
-Il vecchio server su stdio (`xmap-studio --mcp`, `mcp-bridge.js`) non esiste più:
-era fragile (un processo ponte per client, socket da ripulire, stdout da tenere
-pulito). Con `--mcp` l'eseguibile ora scrive su stderr l'indirizzo nuovo ed esce
-con codice 1, senza aprire finestre. `XMAP_MCP_PORT` cambia la porta (sviluppo,
-due istanze sulla stessa macchina).
+- il socket sta in una cartella `0700`; Claude Desktop rifiuta link simbolici,
+  permessi diversi da 700 e proprietari diversi dall'utente;
+- le due parti si accoppiano con `claude-local-pairing/v1`: entrambe con
+  l'accesso a claude.ai, attestazioni firmate da
+  `claude.ai/api/oauth/local_pairing/attest` e verificate con le JWKS di
+  Anthropic (tipo di client `desktop`/`extension`, stessa organizzazione, chiave
+  legata al canale);
+- ID dell'estensione, nome dell'host e server `claude-in-chrome` sono scritti nel
+  codice di Claude Desktop.
+
+È un'integrazione interna di Anthropic: le attestazioni le firma solo claude.ai
+per i propri client, e non c'è un'API per terze parti. La strada documentata per
+un server MCP locale di terzi sono le **Desktop Extensions** (`.mcpb`). XMap
+Studio ne riprende la struttura (ponte locale + socket in una cartella `0700`
+verificata dal client) e sostituisce l'attestazione con una chiave di
+accoppiamento generata dall'app e messa dentro l'estensione, così l'utente non
+copia nessun token.
 
 ## Strumenti
 
@@ -67,50 +88,73 @@ finestra in primo piano o l'ultima usata.
 ## Architettura
 
 ```text
-client di Claude ──HTTP POST /mcp (JSON-RPC)── mcp-http.ts (main) ── createMcpServer ── mcp-host.ts ──IPC── useMcpBridge (renderer)
-                                                                                         sceglie la finestra   runAgentTool(controller)
+Claude Desktop ──stdio── estensione .mcpb (mcp-bridge.mjs) ─┐
+                                                            ├─socket locale── agent-socket.ts (main) ── dispatchAgentRequest ── mcp-host.ts ──IPC── useMcpBridge (renderer)
+Claude Code ──stdio── xmap-studio --mcp (mcp-bridge.ts) ────┘                                                                                    runAgentTool(controller)
 ```
 
 - `packages/core/src/agent/`: definizioni degli strumenti, esecuzione sul
-  `AppController` (`tools.ts`) e protocollo MCP senza I/O (`mcp.ts`), testati in
-  `tests/agent-*.test.ts`. Nessuna dipendenza nuova: il protocollo (initialize,
-  ping, tools/list, tools/call) è scritto a mano.
-- `packages/core/src/node/mcp-http.ts`: trasporto Streamable HTTP, testato in
-  `tests/mcp-http.test.ts`. Senza stato: ogni POST porta un messaggio JSON-RPC
-  (o un array) e riceve la risposta in `application/json`; una notifica riceve
-  `202`. Niente SSE, niente `Mcp-Session-Id`; GET e DELETE rispondono `405`, come
-  ammette la specifica per un server che non apre stream.
-- `apps/desktop/src/mcp-host.ts`: nel main process avvia il server, gira la
-  chiamata alla finestra (`mcp:request` / `mcp:response`) con timeout ed espone
-  lo stato alla UI (`mcpServer:get`). Se la porta è occupata (es. versione
-  installata e versione di sviluppo aperte insieme) la seconda istanza non serve
-  MCP e lo dice in Impostazioni › Claude.
+  `AppController` (`tools.ts`), protocollo MCP (`mcp.ts`), richieste comuni ai
+  trasporti e catalogo (`link.ts`), estensione `.mcpb` (`mcpb.ts`, manifest 0.3,
+  `server.type: node`). Testati in `tests/agent-*.test.ts` e `tests/mcpb.test.ts`.
+  Nessuna dipendenza nuova: il protocollo è scritto a mano.
+- `packages/core/src/node/mcp-bridge.ts`: il ponte. MCP su stdio (una riga
+  JSON-RPC per messaggio); `initialize`, `ping` e `tools/list` rispondono anche ad
+  app chiusa (catalogo del ponte), con l'app aperta il catalogo lo dà l'app;
+  `tools/call` va all'app. Deve restare **autosufficiente** (solo moduli `node:`):
+  il JavaScript compilato si copia così com'è nell'estensione. Testato in
+  `tests/mcp-bridge.test.ts`.
+- `packages/core/src/node/agent-socket.ts`: il server del socket, testato in
+  `tests/agent-socket.test.ts`.
+- `apps/desktop/src/claude-link.ts`: chiave in `userData/claude-link.json`
+  (`0600`), avvio del server, generazione e apertura del `.mcpb`, comando per
+  Claude Code, modalità `--mcp` (`runClaudeCodeBridge`, senza finestre e senza
+  blocco di istanza singola). Se un'altra istanza ha già il socket (versione
+  installata e versione di sviluppo aperte insieme) la seconda non si collega a
+  Claude e lo dice in Impostazioni. `XMAP_MCP_SOCKET` cambia il percorso
+  (sviluppo, due istanze).
+- `apps/desktop/src/mcp-host.ts`: `dispatchAgentRequest`, punto comune a Claude
+  e Hermes: sceglie la finestra e gira la chiamata (`mcp:request` /
+  `mcp:response`) con timeout.
 - `apps/web/src/app/useMcpBridge.ts`: nel renderer esegue gli strumenti in coda,
   uno alla volta, dopo aver confermato un titolo in corso di modifica; aggiorna la
   vista e seleziona il blocco toccato.
 
-Chiudere e riaprire l'app non richiede di riavviare il client: ogni richiesta è
-indipendente.
+Il ponte si ricollega da solo: chiudere e riaprire l'app non richiede di
+riavviare Claude.
 
-### Sicurezza senza autenticazione
+### Socket e chiave
 
-Il server è pensato per il client di Claude sulla stessa macchina, quindi non
-chiede token. Al loro posto:
+- Percorso: `$XDG_RUNTIME_DIR/xmap-studio-<uid>/mcp.sock` (senza
+  `XDG_RUNTIME_DIR`, sotto la cartella temporanea); su Windows
+  `\\.\pipe\xmap-studio-mcp-<utente>`. L'estensione ne porta il percorso
+  assoluto.
+- L'app crea la cartella `0700` (rifiuta link simbolici e cartelle di altri
+  utenti), toglie un socket rimasto da un'app chiusa male, rifiuta di partire se
+  il socket risponde (un'altra istanza) e mette il socket a `0600`.
+- Prima di collegarsi il ponte controlla, come Claude Desktop con Chrome, che
+  cartella e socket siano dell'utente, che la cartella sia `0700` e che non ci
+  siano link simbolici.
+- Protocollo: una riga JSON per messaggio. Il primo è
+  `{"type":"auth","token":"…"}` (entro 5 s, confronto a tempo costante); l'app
+  risponde `{"type":"auth","ok":true,"app":"xmap-studio","protocol":1,"version":…}`
+  oppure `ok:false` con il motivo, e chiude. Poi le richieste di `link.ts`
+  (`{"id":1,"op":"call","tool":"read_map","args":{}}`, `op: "catalog"`,
+  `op: "maps"`), anche in parallelo.
+- Limiti: 8 client, 16 richieste in corso per client, messaggi fino a 4 MiB.
+- *Rigenera* la chiave: i ponti collegati con la vecchia cadono, il `.mcpb`
+  generato si cancella e l'estensione installata va aggiunta di nuovo; Claude
+  Code legge la chiave dal file a ogni collegamento e non richiede niente.
 
-- ascolta solo su `127.0.0.1` e rifiuta connessioni da altri indirizzi;
-- header `Host` uguale a `127.0.0.1:<porta>` o `localhost:<porta>` (contro il DNS
-  rebinding), altrimenti `403`;
-- header `Origin`, se presente, solo di loopback (`http(s)://localhost`,
-  `127.0.0.1`, `[::1]`), altrimenti `403` come impone la specifica;
-- `Content-Type: application/json` obbligatorio (`415`) e nessun header CORS:
-  una pagina web non può mandare una richiesta "semplice" né leggere le risposte;
-- `MCP-Protocol-Version`, se presente, fra quelle supportate (`400`);
-- corpo fino a 4 MiB (`413`), 30 s per ricevere la richiesta.
+Cosa protegge: niente porte di rete, quindi nessun sito web e nessun altro
+computer; su Unix nessun altro utente (cartella `0700`); su Windows, dove la
+named pipe non ha permessi restrittivi, la chiave. Limite accettato: un
+programma dello stesso utente può leggere la chiave come la legge Claude. Su
+disco si scrive comunque solo con `save_map`, che passa dalle stesse protezioni
+del salvataggio dell'app.
 
-Limite accettato: qualunque programma dell'utente (o di un altro account della
-stessa macchina) che apre `127.0.0.1:47616` può usare gli strumenti, come farebbe
-il client di Claude. Su disco si scrive comunque solo con `save_map`, che passa
-dalle stesse protezioni del salvataggio dell'app.
+Il vecchio server MCP HTTP su `127.0.0.1:47616` non c'è più: chi lo aveva
+configurato in Claude Code lo sostituisce con il comando stdio di Impostazioni.
 
 ## Secondo trasporto: Hermes Desktop (WebSocket)
 
@@ -118,7 +162,7 @@ Per un agente che non gira sulla stessa macchina (un gateway Hermes remoto) c'è
 un secondo trasporto per le stesse richieste, con token: un WebSocket su `127.0.0.1`, che
 usa il plugin "xmap-studio" di Hermes Desktop sul computer dell'utente
 (`integrations/hermes/`, pubblicato come `gioelerosana/xmap-studio-hermes-connector`).
-È spento di default: si accende in Impostazioni › Hermes, che mostra porta,
+È spento di default: si accende in Impostazioni › Integrazioni › Hermes, che mostra porta,
 token di accoppiamento e stato, e ha il pulsante che installa il plugin in
 Hermes Desktop (link `hermes://plugin/install?repo=…`).
 
@@ -158,6 +202,6 @@ richiesta; il server manda un ping ogni 30 s e chiude chi non risponde.
 ```bash
 pnpm build
 pnpm dev:desktop    # app con una mappa aperta
-curl -s http://127.0.0.1:47616/mcp -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_map","arguments":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_map","arguments":{}}}' \
+  | pnpm --filter @xmap/desktop exec electron . --mcp
 ```
